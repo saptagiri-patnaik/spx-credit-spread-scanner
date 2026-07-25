@@ -1,0 +1,13 @@
+pydantic>=2.6
+pydantic-settings>=2.2
+SQLAlchemy>=2.0
+psycopg2-binary>=2.9
+feedparser>=6.0
+requests>=2.31
+beautifulsoup4>=4.12
+trafilatura>=1.8
+youtube-transcript-api>=0.6
+APScheduler>=3.10
+python-dateutil>=2.9
+tenacity>=8.2
+pytest>=8.0

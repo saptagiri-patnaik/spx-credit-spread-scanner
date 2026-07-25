@@ -1,0 +1,690 @@
+<title>SPX Scanner — Pipeline Architecture</title>
+
+<style>
+  :root {
+    --ink:        #10161d;
+    --ink-soft:   #3d4954;
+    --slate:      #63717f;
+    --slate-dim:  #8b98a6;
+    --paper:      #f6f8fa;
+    --card:       #ffffff;
+    --rule:       #dde4ec;
+    --accent:     #16697a;
+    --accent-dim: #d3e5e9;
+    --bull:       #1a7f5a;
+    --bear:       #b0393c;
+    --gate:       #a2711a;
+    --plate:      #eaeff4;
+    --plate-rule: #ccd6e0;
+    --shadow:     0 1px 2px rgba(16,22,29,.06), 0 8px 24px -12px rgba(16,22,29,.18);
+
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink:        #e6edf4;
+      --ink-soft:   #b3c0cd;
+      --slate:      #8b98a6;
+      --slate-dim:  #6b7885;
+      --paper:      #0e141a;
+      --card:       #151d25;
+      --rule:       #26313c;
+      --accent:     #4fb3c6;
+      --accent-dim: #1b3a42;
+      --bull:       #3fae80;
+      --bear:       #d4696b;
+      --gate:       #d0a044;
+      --plate:      #dfe6ed;
+      --plate-rule: #b9c5d1;
+      --shadow:     0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ink: #e6edf4; --ink-soft: #b3c0cd; --slate: #8b98a6; --slate-dim: #6b7885;
+    --paper: #0e141a; --card: #151d25; --rule: #26313c;
+    --accent: #4fb3c6; --accent-dim: #1b3a42;
+    --bull: #3fae80; --bear: #d4696b; --gate: #d0a044;
+    --plate: #dfe6ed; --plate-rule: #b9c5d1;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+  }
+  :root[data-theme="light"] {
+    --ink: #10161d; --ink-soft: #3d4954; --slate: #63717f; --slate-dim: #8b98a6;
+    --paper: #f6f8fa; --card: #ffffff; --rule: #dde4ec;
+    --accent: #16697a; --accent-dim: #d3e5e9;
+    --bull: #1a7f5a; --bear: #b0393c; --gate: #a2711a;
+    --plate: #eaeff4; --plate-rule: #ccd6e0;
+    --shadow: 0 1px 2px rgba(16,22,29,.06), 0 8px 24px -12px rgba(16,22,29,.18);
+  }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 4rem 1.5rem 6rem;
+    display: flex;
+    flex-direction: column;
+    gap: 3.5rem;
+  }
+
+  /* ---------- masthead ---------- */
+  .masthead { display: flex; flex-direction: column; gap: 1rem; }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: .72rem;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0;
+  }
+  h1 {
+    font-family: var(--sans);
+    font-size: clamp(2rem, 5vw, 2.9rem);
+    line-height: 1.1;
+    letter-spacing: -.025em;
+    font-weight: 650;
+    margin: 0;
+    text-wrap: balance;
+  }
+  .standfirst {
+    max-width: 62ch;
+    color: var(--ink-soft);
+    font-size: 1.06rem;
+    margin: 0;
+  }
+
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem 1.75rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--rule);
+    font-family: var(--mono);
+    font-size: .78rem;
+    color: var(--slate);
+  }
+  .meta b { color: var(--ink); font-weight: 600; }
+
+  /* ---------- stage sections ---------- */
+  .stage { display: flex; flex-direction: column; gap: 1.25rem; }
+  .stage-head { display: flex; align-items: baseline; gap: .9rem; }
+  .stage-num {
+    font-family: var(--mono);
+    font-size: .8rem;
+    font-weight: 600;
+    color: var(--accent);
+    background: var(--accent-dim);
+    padding: .15rem .5rem;
+    border-radius: 3px;
+    letter-spacing: .04em;
+  }
+  h2 {
+    font-family: var(--sans);
+    font-size: 1.45rem;
+    letter-spacing: -.015em;
+    font-weight: 620;
+    margin: 0;
+    text-wrap: balance;
+  }
+  .stage p { margin: 0; max-width: 68ch; color: var(--ink-soft); }
+  .stage > p + p { margin-top: -.35rem; }
+
+  h3 {
+    font-family: var(--mono);
+    font-size: .74rem;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--slate);
+    font-weight: 600;
+    margin: .75rem 0 0;
+  }
+
+  /* ---------- diagram plate ---------- */
+  .plate {
+    background: var(--plate);
+    border: 1px solid var(--plate-rule);
+    border-radius: 6px;
+    padding: 1.5rem 1rem;
+    overflow-x: auto;
+    box-shadow: var(--shadow);
+  }
+  .plate pre.mermaid {
+    margin: 0;
+    background: none;
+    min-width: 560px;
+    text-align: center;
+  }
+
+  /* ---------- tables ---------- */
+  .tablewrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: 6px; background: var(--card); }
+  table { border-collapse: collapse; width: 100%; font-size: .875rem; min-width: 520px; }
+  caption {
+    caption-side: top;
+    text-align: left;
+    padding: .85rem 1rem .1rem;
+    font-family: var(--mono);
+    font-size: .72rem;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: var(--slate);
+  }
+  th, td { padding: .6rem 1rem; text-align: left; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  thead th {
+    font-family: var(--mono);
+    font-size: .7rem;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--slate);
+    font-weight: 600;
+    border-bottom-width: 2px;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--ink); }
+  td code, th code { font-size: .93em; }
+
+  code {
+    font-family: var(--mono);
+    font-size: .87em;
+    background: var(--accent-dim);
+    color: var(--ink);
+    padding: .1em .38em;
+    border-radius: 3px;
+  }
+
+  /* ---------- formula ---------- */
+  .formula {
+    background: var(--card);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--accent);
+    border-radius: 4px;
+    padding: 1.1rem 1.25rem;
+    font-family: var(--mono);
+    font-size: .85rem;
+    line-height: 1.9;
+    overflow-x: auto;
+    color: var(--ink);
+  }
+  .formula .cmt { color: var(--slate-dim); }
+  .formula .lbl { color: var(--accent); }
+
+  /* ---------- callout ---------- */
+  .note {
+    border-left: 3px solid var(--gate);
+    background: var(--card);
+    border-radius: 0 4px 4px 0;
+    padding: .9rem 1.15rem;
+    font-size: .92rem;
+    color: var(--ink-soft);
+  }
+  .note b { color: var(--ink); }
+  .note .tag {
+    display: block;
+    font-family: var(--mono);
+    font-size: .68rem;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--gate);
+    margin-bottom: .3rem;
+  }
+
+  /* ---------- gate cards ---------- */
+  .gates { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1rem; }
+  .gate-card {
+    background: var(--card);
+    border: 1px solid var(--rule);
+    border-top: 3px solid var(--gate);
+    border-radius: 5px;
+    padding: 1rem 1.1rem;
+    display: flex;
+    flex-direction: column;
+    gap: .4rem;
+  }
+  .gate-card .k {
+    font-family: var(--mono);
+    font-size: .7rem;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--slate);
+  }
+  .gate-card .v { font-family: var(--mono); font-size: 1.05rem; font-weight: 600; color: var(--ink); }
+  .gate-card .d { font-size: .84rem; color: var(--ink-soft); line-height: 1.5; }
+
+  /* ---------- direction legend ---------- */
+  .legend { display: flex; flex-wrap: wrap; gap: 1.5rem; font-size: .85rem; font-family: var(--mono); }
+  .legend span { display: inline-flex; align-items: center; gap: .45rem; }
+  .swatch { width: 11px; height: 11px; border-radius: 2px; display: inline-block; }
+  .sw-bull { background: var(--bull); }
+  .sw-bear { background: var(--bear); }
+  .sw-gate { background: var(--gate); }
+  .sw-io   { background: var(--accent); }
+
+  hr { border: none; border-top: 1px solid var(--rule); margin: 0; }
+
+  a { color: var(--accent); text-underline-offset: 2px; }
+  a:focus-visible, .plate:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <p class="eyebrow">Pipeline Architecture</p>
+    <h1>SPX Scanner: from RSS feed to credit spread</h1>
+    <p class="standfirst">
+      Every 45 minutes the scheduler runs one full pass — six collectors, a local LLM scoring
+      each new item, a two-channel directional blend, then an exhaustive scan of every vertical
+      in the 20–25 DTE window. Three independent gates decide whether any of it becomes a trade.
+    </p>
+    <div class="meta">
+      <span><b>Interval</b> 45 min</span>
+      <span><b>Cycle time</b> ~14 min</span>
+      <span><b>Underlying</b> SPX</span>
+      <span><b>Horizon</b> 6 days</span>
+      <span><b>Model</b> llama3.1:8b</span>
+    </div>
+  </header>
+
+  <div class="legend">
+    <span><i class="swatch sw-io"></i> I/O &amp; external</span>
+    <span><i class="swatch sw-gate"></i> Decision gate</span>
+    <span><i class="swatch sw-bull"></i> Bullish path</span>
+    <span><i class="swatch sw-bear"></i> Bearish path</span>
+  </div>
+
+  <!-- ============ FULL CYCLE ============ -->
+  <section class="stage">
+    <div class="stage-head">
+      <span class="stage-num">00</span>
+      <h2>The full cycle</h2>
+    </div>
+    <p>
+      One pass of <code>Pipeline.run_once()</code>. The early exit after collection is the
+      key structural decision: if nothing new arrived, the previous prediction stands and
+      no LLM work happens at all.
+    </p>
+
+    <div class="plate">
+<pre class="mermaid">
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#ffffff','primaryTextColor':'#10161d','primaryBorderColor':'#8fa3b5','lineColor':'#5c6773','secondaryColor':'#dfe9ef','tertiaryColor':'#f2f6f9','fontFamily':'ui-monospace, Menlo, Consolas, monospace','fontSize':'13px'}}}%%
+flowchart TB
+  SCHED(["APScheduler · interval 45 min · UTC"]):::io
+
+  subgraph COL ["① COLLECT — six collectors, independent failure"]
+    direction LR
+    C1["News<br/>5 RSS + NewsAPI"]
+    C2["Macro<br/>Fed · ECB · world · oil"]
+    C3["Econ calendar<br/>FRED · Finnhub · FOMC"]
+    C4["Social<br/>StockTwits · Reddit"]
+    C5["YouTube<br/>search + transcripts"]
+    C6["X / Twitter<br/>daily budget cap"]
+  end
+
+  SCHED --> COL
+  COL --> UPSERT[("upsert_item()<br/>dedupe on content hash")]:::io
+  UPSERT --> Q0{"any new<br/>items?"}:::gate
+
+  Q0 -- "no" --> HOLD["Keep prior prediction.<br/>Cycle ends — no LLM cost."]
+  Q0 -- "yes" --> SCORE
+
+  SCORE["② SCORE<br/>fetch_unscored(limit 80)<br/>→ Ollama llama3.1:8b"]
+  SCORE --> STORE[("item_scores")]:::io
+
+  STORE --> LOAD["③ LOAD WINDOW<br/>recent_scores(last 7 days)"]
+  LOAD --> AGG["④ AGGREGATE<br/>macro ⊕ sentiment ⊕ trend<br/>→ direction · confidence · label"]
+
+  MKT(["Schwab API"]):::io -.->|"trend · price · VIX"| AGG
+  MKT -.->|"option chain<br/>20–25 DTE"| SCAN
+
+  AGG --> SCAN["⑤ SCAN<br/>rank every vertical by edge"]
+  SCAN --> Q1{"⑥ three gates<br/>all pass?"}:::gate
+
+  Q1 -- "yes" --> TRADE["TRADE SIGNAL<br/>push to Telegram / Discord"]:::bull
+  Q1 -- "no" --> OUTLOOK["SPX OUTLOOK<br/>log only"]:::bear
+
+  TRADE --> SAVE[("predictions +<br/>spread_suggestions")]:::io
+  OUTLOOK --> SAVE
+
+  classDef io fill:#d3e5e9,stroke:#16697a,color:#0d3b45,stroke-width:1.5px
+  classDef gate fill:#f2e3c4,stroke:#a2711a,color:#4a340a,stroke-width:1.5px
+  classDef bull fill:#cfe8dd,stroke:#1a7f5a,color:#0c3e2b,stroke-width:1.5px
+  classDef bear fill:#f0d7d8,stroke:#b0393c,color:#5a1c1e,stroke-width:1.5px
+</pre>
+    </div>
+
+    <div class="note">
+      <span class="tag">Naming trap</span>
+      The alert line <code>items=2133</code> reads as "new items" but comes from
+      <code>num_new_items</code>, which is <code>len(scored_items)</code> over the
+      <b>7-day lookback window</b> — not the ~45 items collected this cycle. Every pass
+      re-aggregates the whole week; collection only decides <em>whether</em> to re-run.
+    </div>
+  </section>
+
+  <hr />
+
+  <!-- ============ SCORING ============ -->
+  <section class="stage">
+    <div class="stage-head">
+      <span class="stage-num">02</span>
+      <h2>Scoring — where the 14 minutes goes</h2>
+    </div>
+    <p>
+      Each unscored item is chunked and sent to the local model as strict-JSON prompts.
+      An item with a long article body costs up to three inference calls, which is why
+      this stage dominates the cycle while collection finishes in under a second.
+    </p>
+
+    <div class="plate">
+<pre class="mermaid">
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#ffffff','primaryTextColor':'#10161d','primaryBorderColor':'#8fa3b5','lineColor':'#5c6773','fontFamily':'ui-monospace, Menlo, Consolas, monospace','fontSize':'13px'}}}%%
+flowchart LR
+  A[("items<br/>WHERE not scored")]:::io --> B{"Ollama<br/>reachable?"}:::gate
+  B -- "no" --> SKIP["Log warning.<br/>Skip scoring entirely."]:::bear
+  B -- "yes" --> C["Split item text<br/>6000 chars/chunk<br/>max 3 chunks"]
+  C --> D["Prompt per chunk<br/>system: markets analyst<br/>horizon: next 5–7 sessions"]
+  D --> E(["llama3.1:8b<br/>format=json · temp 0.2"]):::io
+  E --> F["direction −1…+1<br/>confidence 0…1<br/>macro_impact"]
+  F --> G["Average across chunks"]
+  G --> H[("item_scores")]:::io
+
+  classDef io fill:#d3e5e9,stroke:#16697a,color:#0d3b45,stroke-width:1.5px
+  classDef gate fill:#f2e3c4,stroke:#a2711a,color:#4a340a,stroke-width:1.5px
+  classDef bear fill:#f0d7d8,stroke:#b0393c,color:#5a1c1e,stroke-width:1.5px
+</pre>
+    </div>
+  </section>
+
+  <hr />
+
+  <!-- ============ DIRECTION ============ -->
+  <section class="stage">
+    <div class="stage-head">
+      <span class="stage-num">04</span>
+      <h2>The direction decision</h2>
+    </div>
+    <p>
+      Scored items are split into two independent channels by source type, each weighted
+      four ways, then blended. Market trend is folded in last, and confidence is computed
+      separately from direction — a strong direction with thin coverage still fails the gate.
+    </p>
+
+    <div class="plate">
+<pre class="mermaid">
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#ffffff','primaryTextColor':'#10161d','primaryBorderColor':'#8fa3b5','lineColor':'#5c6773','fontFamily':'ui-monospace, Menlo, Consolas, monospace','fontSize':'13px'}}}%%
+flowchart TB
+  IN[("scored items · 7-day window")]:::io --> SPLIT{"source_type"}:::gate
+
+  SPLIT -- "macro · econ" --> MCH["MACRO channel"]
+  SPLIT -- "news · youtube · social" --> SCH["SENTIMENT channel"]
+
+  W["Per-item weight — four multipliers<br/>① source trust  macro 1.2 → social 0.5<br/>② recency  exp decay, 48h half-life<br/>③ LLM confidence  0.5 + 0.5·conf<br/>④ engagement  1 + ln(1+eng)/10"]
+
+  MCH -.-> W
+  SCH -.-> W
+
+  MCH --> BLEND["direction =<br/>0.5·macro + 0.5·sentiment"]
+  SCH --> BLEND
+
+  BLEND --> TREND["direction =<br/>0.85·blend + 0.15·trend"]
+  MKT(["Schwab 5-day trend<br/>0.0 when unavailable"]):::io -.-> TREND
+
+  TREND --> CLAMP["clamp to −1…+1"]
+  CLAMP --> LABEL{"threshold<br/>±0.12"}:::gate
+
+  LABEL -- "> +0.12" --> UP["UP → put credit spread"]:::bull
+  LABEL -- "< −0.12" --> DOWN["DOWN → call credit spread"]:::bear
+  LABEL -- "between" --> NEU["NEUTRAL → no trade"]
+
+  CONF["confidence =<br/>0.60·magnitude + 0.20·coverage + 0.20·agreement<br/>×0.92 if high-impact event in window"]
+  CLAMP -.-> CONF
+
+  classDef io fill:#d3e5e9,stroke:#16697a,color:#0d3b45,stroke-width:1.5px
+  classDef gate fill:#f2e3c4,stroke:#a2711a,color:#4a340a,stroke-width:1.5px
+  classDef bull fill:#cfe8dd,stroke:#1a7f5a,color:#0c3e2b,stroke-width:1.5px
+  classDef bear fill:#f0d7d8,stroke:#b0393c,color:#5a1c1e,stroke-width:1.5px
+</pre>
+    </div>
+
+    <h3>Confidence terms</h3>
+    <div class="formula">
+<span class="lbl">magnitude</span> = min(1, |direction| / 0.6)     <span class="cmt">— conviction, rescaled: a blended avg rarely exceeds ~0.5</span>
+<span class="lbl">coverage</span>  = min(1, num_items / 20)       <span class="cmt">— saturates at 20 scored items</span>
+<span class="lbl">agreement</span> = 1 − min(1, |macro − sentiment|)  <span class="cmt">— penalty when the two channels disagree</span>
+
+<span class="lbl">confidence</span> = 0.60·magnitude + 0.20·coverage + 0.20·agreement
+</div>
+
+    <div class="note">
+      <span class="tag">Failure mode</span>
+      <code>trend_score</code> falls back to <b>0.0</b> when the Schwab token is stale — and
+      <code>0.85·blend + 0.15·trend</code> applies unconditionally. A missing trend therefore
+      shrinks direction by 15% toward neutral rather than being excluded, which also depresses
+      confidence. Compare the macro/sentiment path, which <em>reweights</em> to 100% when one
+      channel is empty.
+    </div>
+  </section>
+
+  <hr />
+
+  <!-- ============ SPREAD SELECTION ============ -->
+  <section class="stage">
+    <div class="stage-head">
+      <span class="stage-num">05</span>
+      <h2>Finding the best credit spread</h2>
+    </div>
+    <p>
+      Rather than forcing a trade, the scanner enumerates <em>every</em> valid vertical
+      across every expiry in the window — each qualifying short leg paired against every
+      qualifying long leg — then ranks the whole set by a single edge score.
+    </p>
+
+    <div class="plate">
+<pre class="mermaid">
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#ffffff','primaryTextColor':'#10161d','primaryBorderColor':'#8fa3b5','lineColor':'#5c6773','fontFamily':'ui-monospace, Menlo, Consolas, monospace','fontSize':'13px'}}}%%
+flowchart TB
+  START(["prediction + option chain"]):::io --> PRE{"confidence ≥ 0.65<br/>AND label ≠ NEUTRAL?"}:::gate
+  PRE -- "no" --> NONE["No candidates.<br/>Stay flat."]:::bear
+  PRE -- "yes" --> SIDE{"direction<br/>sign"}:::gate
+
+  SIDE -- "positive" --> PUTS["putExpDateMap<br/>sell OTM put below spot"]:::bull
+  SIDE -- "negative" --> CALLS["callExpDateMap<br/>sell OTM call above spot"]:::bear
+
+  PUTS --> EXP
+  CALLS --> EXP
+
+  EXP["For each expiry in 20–25 DTE"] --> IV["ATM implied vol → expected move<br/>move = price · IV · √(dte/365)"]
+
+  IV --> SHORTS["Filter SHORT legs<br/>• delta 0.10 – 0.30<br/>• ≥ 0.8× expected move OTM<br/>• rel bid-ask ≤ 0.6"]
+
+  EVT{"high-impact<br/>event in window?"}:::gate
+  SHORTS --> EVT
+  EVT -- "yes" --> TIGHT["Tighten: delta cap 0.20<br/>buffer floor 0.90×"]
+  EVT -- "no" --> PAIR
+  TIGHT --> PAIR
+
+  PAIR["Pair each short × every long<br/>width 5 – 50 pts"]
+  PAIR --> ECON["Economics filter<br/>• credit > 0 and max_loss > 0<br/>• RoR = credit/max_loss ≥ 0.20<br/>• POP = 1 − short delta ≥ 0.68"]
+
+  ECON --> EDGE["Score edge, sort descending"]
+  EDGE --> BEST["best = rank 1<br/>alternatives = ranks 2–4"]:::io
+
+  classDef io fill:#d3e5e9,stroke:#16697a,color:#0d3b45,stroke-width:1.5px
+  classDef gate fill:#f2e3c4,stroke:#a2711a,color:#4a340a,stroke-width:1.5px
+  classDef bull fill:#cfe8dd,stroke:#1a7f5a,color:#0c3e2b,stroke-width:1.5px
+  classDef bear fill:#f0d7d8,stroke:#b0393c,color:#5a1c1e,stroke-width:1.5px
+</pre>
+    </div>
+
+    <h3>Edge score</h3>
+    <div class="formula">
+<span class="lbl">ev_ratio</span> = POP · RoR − (1 − POP)          <span class="cmt">— expected return per $1 of risk</span>
+<span class="lbl">align</span>    = direction, sign-flipped for call spreads  <span class="cmt">— agreement with the directional read</span>
+
+<span class="lbl">edge</span> = ev_ratio
+     + 0.15 · align · confidence        <span class="cmt">— reward spreads that agree with the thesis</span>
+     + 0.05 · min(buffer, 2.0)          <span class="cmt">— reward strikes further beyond the expected move</span>
+</div>
+    <p>
+      The alignment term is what makes this directional rather than a pure premium harvest:
+      two spreads with identical economics rank differently depending on whether they lean
+      with the week's read, scaled by how much the model trusts that read.
+    </p>
+  </section>
+
+  <hr />
+
+  <!-- ============ GATES ============ -->
+  <section class="stage">
+    <div class="stage-head">
+      <span class="stage-num">06</span>
+      <h2>Three gates before a trade is called</h2>
+    </div>
+    <p>
+      A ranked candidate is not a recommendation. All three must pass, or the alert
+      downgrades from <code>TRADE SIGNAL</code> to <code>SPX OUTLOOK</code> and stays in
+      the log rather than going out to Telegram or Discord.
+    </p>
+
+    <div class="gates">
+      <div class="gate-card">
+        <span class="k">Gate 1 · Timing</span>
+        <span class="v">Market open</span>
+        <span class="d">Regular hours only, Mon–Fri 09:30–16:00 ET. Holidays are not
+        handled — this is why every overnight cycle reports <code>Market: CLOSED</code>.</span>
+      </div>
+      <div class="gate-card">
+        <span class="k">Gate 2 · Conviction</span>
+        <span class="v">confidence ≥ 0.65</span>
+        <span class="d">Applied earlier, during candidate generation. Below the gate,
+        or on a NEUTRAL label, zero candidates are produced at all.</span>
+      </div>
+      <div class="gate-card">
+        <span class="k">Gate 3 · Edge</span>
+        <span class="v">edge ≥ 0.05</span>
+        <span class="d">The top-ranked candidate must clear the threshold. A best-of-a-bad-set
+        spread is surfaced as a candidate but never recommended.</span>
+      </div>
+    </div>
+
+    <div class="note">
+      <span class="tag">Alert routing</span>
+      <code>alert_only_on_trade=true</code> means external push happens <b>only</b> when all
+      three gates pass. Everything else is written to <code>logs/spx_scanner.log</code> and
+      the <code>predictions</code> table, so a quiet phone is the expected state, not a failure.
+    </div>
+  </section>
+
+  <hr />
+
+  <!-- ============ PARAMS ============ -->
+  <section class="stage">
+    <div class="stage-head">
+      <span class="stage-num">—</span>
+      <h2>Tuning surface</h2>
+    </div>
+    <p>Every threshold in the diagrams above, with its configured value.</p>
+
+    <div class="tablewrap">
+      <table>
+        <caption>Prediction &amp; window</caption>
+        <thead>
+          <tr><th>Setting</th><th>Value</th><th>Effect</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>interval_minutes</code></td><td class="num">45</td><td>Scheduler cadence</td></tr>
+          <tr><td><code>lookback_days</code></td><td class="num">7</td><td>Scoring window fed to the aggregator</td></tr>
+          <tr><td><code>horizon_days</code></td><td class="num">6</td><td>Directional call is for the next 5–7 sessions</td></tr>
+          <tr><td><code>macro_weight</code></td><td class="num">0.50</td><td>Macro vs sentiment channel split</td></tr>
+          <tr><td><code>confidence_dir_scale</code></td><td class="num">0.60</td><td>Direction value treated as full conviction</td></tr>
+          <tr><td><code>event_risk_confidence_factor</code></td><td class="num">0.92</td><td>Confidence haircut near binary events</td></tr>
+          <tr><td><code>confidence_gate</code></td><td class="num">0.65</td><td>Minimum conviction to generate candidates</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="tablewrap">
+      <table>
+        <caption>Spread construction</caption>
+        <thead>
+          <tr><th>Setting</th><th>Value</th><th>Effect</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>dte_min</code> / <code>dte_max</code></td><td class="num">20 / 25</td><td>Expiry window scanned</td></tr>
+          <tr><td><code>short_delta_min</code> / <code>max</code></td><td class="num">0.10 / 0.30</td><td>Short-leg delta band</td></tr>
+          <tr><td><code>event_risk_delta_cap</code></td><td class="num">0.20</td><td>Delta ceiling near high-impact events</td></tr>
+          <tr><td><code>min_buffer</code></td><td class="num">0.80</td><td>Short strike distance in expected moves</td></tr>
+          <tr><td><code>event_risk_min_buffer</code></td><td class="num">0.90</td><td>Widened buffer near events</td></tr>
+          <tr><td><code>min_width</code> / <code>max_width</code></td><td class="num">5 / 50</td><td>Vertical width range, points</td></tr>
+          <tr><td><code>min_credit_to_width</code></td><td class="num">0.20</td><td>Return-on-risk floor</td></tr>
+          <tr><td><code>min_pop</code></td><td class="num">0.68</td><td>Probability-of-profit floor</td></tr>
+          <tr><td><code>max_rel_bid_ask</code></td><td class="num">0.60</td><td>Liquidity filter on both legs</td></tr>
+          <tr><td><code>align_weight</code></td><td class="num">0.15</td><td>Directional agreement weight in edge</td></tr>
+          <tr><td><code>min_edge_score</code></td><td class="num">0.05</td><td>Recommendation threshold</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="tablewrap">
+      <table>
+        <caption>Source trust weights</caption>
+        <thead>
+          <tr><th>source_type</th><th>Weight</th><th>Channel</th><th>Collector</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>macro</code></td><td class="num">1.2</td><td>Macro</td><td>Fed / ECB / world / politics / oil RSS</td></tr>
+          <tr><td><code>econ</code></td><td class="num">1.1</td><td>Macro</td><td>FRED releases, Finnhub, FOMC calendar</td></tr>
+          <tr><td><code>news</code></td><td class="num">1.0</td><td>Sentiment</td><td>Yahoo, CNBC, MarketWatch, Reuters, Investing</td></tr>
+          <tr><td><code>youtube</code></td><td class="num">0.7</td><td>Sentiment</td><td>Search + transcripts</td></tr>
+          <tr><td><code>social</code></td><td class="num">0.5</td><td>Sentiment</td><td>StockTwits, Reddit, X</td></tr>
+          <tr><td><em>unknown</em></td><td class="num">0.6</td><td>Sentiment</td><td>Fallback</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <hr />
+
+  <!-- ============ PERSISTENCE ============ -->
+  <section class="stage">
+    <div class="stage-head">
+      <span class="stage-num">—</span>
+      <h2>State</h2>
+    </div>
+    <p>
+      Six tables on AWS Lightsail Postgres. <code>collector_state</code> and
+      <code>api_usage</code> are what make the paid X collector safe to run every 45 minutes —
+      they carry the cursor and the daily spend counter across restarts.
+    </p>
+
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th>Table</th><th>Holds</th><th>Written by</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>items</code></td><td>Collected content, deduped by hash</td><td>Stage 1</td></tr>
+          <tr><td><code>item_scores</code></td><td>Per-item LLM direction &amp; confidence</td><td>Stage 2</td></tr>
+          <tr><td><code>predictions</code></td><td>Blended call per cycle</td><td>Stage 4</td></tr>
+          <tr><td><code>spread_suggestions</code></td><td>The best spread, when one exists</td><td>Stage 5</td></tr>
+          <tr><td><code>api_usage</code></td><td>Daily paid-API call counts and cost</td><td>X collector</td></tr>
+          <tr><td><code>collector_state</code></td><td>Cursors; Schwab token under <code>app_data</code></td><td>Collectors / refresher</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+</div>
