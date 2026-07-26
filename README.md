@@ -1,73 +1,150 @@
 # SPX Sentiment + Macro Edge Scanner
 
-A Python service that periodically ingests **only newly-published** (last 7 days) content about
-**SPX / S&P 500** from news, YouTube, and social media, **plus a macro / economic-intelligence layer**
-(fiscal & tax policy, tariffs/trade, geopolitics, central banks, yields, commodities, and a scheduled
-economic calendar). A **local Ollama LLM** scores each item, an aggregator produces a **5–7 day up/down
-prediction with a confidence score**, and a strategy module suggests a **20–25 DTE vertical credit spread**
-to harvest theta — with **event-risk awareness**.
+**A local 8B LLM reads the news, and the output drives an options strategy.**
 
-> Educational research tool only. It generates reports/alerts. It does **not** place trades.
-> Nothing here is financial advice.
+Every 45 minutes this pipeline pulls from six sources — financial RSS, central-bank and
+geopolitical feeds, the US economic calendar, StockTwits, Reddit, X, and YouTube transcripts —
+scores each new item with a local Ollama model, blends the scores into a 5–7 day directional
+call on the S&P 500, then scans *every* SPX vertical in the 20–25 DTE window and ranks them
+by an edge score. Three independent gates decide whether any of it becomes a trade signal.
 
-## Architecture
+It runs on one laptop at **zero marginal inference cost**. No LLM API bill — the scoring
+happens on a local `llama3.1:8b`.
+
+> ### ⚠️ Educational research only
+> This is a research tool that prints reports. **It does not place trades, and nothing it
+> outputs is financial advice.** The directional model has *not* been validated against
+> realised returns — see [Known issues](#known-issues-and-open-questions). Do not trade
+> from its output.
+
+---
+
+## Why this might be interesting
+
+Most retail sentiment projects stop at "score the headlines and print a number." The part
+worth looking at here is what happens *after* the score:
+
+- **Two independent channels.** Macro/econ items and news/social items are weighted and
+  averaged separately, then blended — so a policy shift and a Reddit thread can't drown
+  each other out. If one channel is empty, weights redistribute instead of averaging in zero.
+- **Confidence is computed separately from direction**, from conviction, coverage, and
+  cross-channel agreement. A strong direction built on eight items still fails the gate.
+- **The strategy is exhaustive, not templated.** It doesn't pick a delta and build one spread;
+  it enumerates every valid short/long pairing across every expiry in the window and ranks
+  the full set by expected value, directional agreement, and distance beyond the expected move.
+- **Refusing to trade is a first-class outcome.** Most cycles produce an outlook and no
+  position, by design.
+
+Full walkthrough with diagrams: **[`docs/architecture.html`](docs/architecture.html)** — open
+it in a browser; it's self-contained.
+
+## How it works
 
 ```
-collectors/  news, youtube, social, macro, econ_calendar   -> only NEW items (deduped)
-analysis/    llm (Ollama) -> sentiment scoring -> aggregator (2 channels + event risk)
-market/      schwab_client (options chain) -> options_strategy (expected move, strikes)
-alerts/      notifier (console/log + Telegram/Discord)
-db/          Postgres persistence (items, scores, predictions, spreads)
-main.py      scheduler + orchestration (incremental: re-predict only on new info)
+collectors/  news · macro · econ calendar · social · YouTube · X   → dedupe by content hash
+     ↓  (skip everything below if nothing new arrived)
+analysis/    Ollama scores each item  →  aggregator blends 2 channels + market trend
+     ↓
+market/      Schwab option chain  →  rank every 20–25 DTE vertical by edge
+     ↓
+alerts/      Telegram / Discord, gated on market-hours + confidence + edge
+db/          Postgres: items, scores, predictions, spreads, API budget
 ```
+
+**Direction → spread side:** bullish sells a put credit spread, bearish sells a call credit
+spread, neutral trades nothing.
+
+**Edge score** for each candidate vertical:
+
+```
+ev_ratio = POP · RoR − (1 − POP)
+edge     = ev_ratio  +  0.15 · directional_agreement · confidence  +  0.05 · min(buffer, 2)
+```
+
+**Three gates before a trade is recommended** — market open, `confidence ≥ 0.65`,
+and `edge ≥ 0.05`. Any one failing downgrades the alert to an outlook.
 
 ## Setup
 
-1. Python 3.11+ and a running [Ollama](https://ollama.com) with a model pulled:
-   ```powershell
-   ollama pull llama3.1:8b
-   ```
-2. Install deps:
-   ```powershell
-   python -m venv .venv; .\.venv\Scripts\Activate.ps1
-   pip install -r requirements.txt
-   ```
-3. Copy env and fill in what you have (all data sources are free tiers):
-   ```powershell
-   Copy-Item .env.example .env
-   ```
-4. Initialise the database schema on your AWS Postgres:
-   ```powershell
-   python main.py --setup
-   ```
-5. Check connectivity (Ollama / Postgres / Schwab):
-   ```powershell
-   python main.py --check
-   ```
+Requires Python 3.11+, Postgres, and [Ollama](https://ollama.com).
 
-## Run
+```bash
+ollama pull llama3.1:8b          # ~5 GB
 
-```powershell
-python main.py --once            # single pass
-python main.py --once --dry-run  # single pass, no DB writes / prints only
-python main.py                   # continuous loop every INTERVAL_MINUTES
+python -m venv .venv && . .venv/bin/activate     # Windows: .\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+
+cp .env.example .env             # fill in what you have — every key is optional
+python main.py --setup           # create tables
+python main.py --check           # verify Ollama / Postgres / Schwab
 ```
 
-## Data sources (all free)
+Run it:
 
-| Layer      | Source                                                        | Key needed          |
-|------------|---------------------------------------------------------------|---------------------|
-| News       | RSS (Yahoo/CNBC/MarketWatch/Reuters) + NewsAPI free tier       | NEWSAPI_KEY (opt.)  |
-| Video      | YouTube Data API + transcripts                                | YOUTUBE_API_KEY     |
-| Social     | StockTwits public API, Reddit public JSON                     | none                |
-| Macro      | World/policy/central-bank RSS                                 | none                |
-| Econ cal.  | Finnhub economic calendar (free)                              | FINNHUB_KEY         |
-| Market     | Schwab Trader API (options chain, quotes)                     | SCHWAB_* (OAuth)    |
+```bash
+python main.py --once            # single pass
+python main.py --once --dry-run  # single pass, no DB writes
+python main.py                   # scheduler loop, every INTERVAL_MINUTES
+```
 
-> Note: the free X/Twitter API can no longer keyword-search, so StockTwits + Reddit stand in for "social".
+Every collector is skipped when its key is blank, so it runs with none of them configured —
+you'll just get fewer items. Only the Schwab credentials are needed for the options half;
+without them the sentiment/macro half still produces a directional call.
 
-## Tests
+## Data sources
 
-```powershell
+| Layer     | Source                                                   | Key             | Cost      |
+|-----------|----------------------------------------------------------|-----------------|-----------|
+| News      | Yahoo · CNBC · MarketWatch · Reuters · Investing RSS      | —               | free      |
+| News+     | NewsAPI                                                   | `NEWSAPI_KEY`   | free tier |
+| Macro     | Fed · ECB · world · politics · commodities RSS            | —               | free      |
+| Econ cal. | FRED release dates · Finnhub · FOMC schedule              | `FRED_API_KEY`, `FINNHUB_KEY` | free tier |
+| Social    | StockTwits · Reddit public JSON                           | —               | free      |
+| Social    | X / Twitter recent search                                 | `X_BEARER_TOKEN`| **paid** — budget-capped |
+| Video     | YouTube Data API + transcripts                            | `YOUTUBE_API_KEY` | free tier |
+| Market    | Schwab Trader API — option chain, quotes                  | `SCHWAB_*` OAuth | free w/ account |
+
+The X collector is the only paid source. It enforces a daily post budget
+(`X_DAILY_POST_BUDGET`) tracked in Postgres, so cost is bounded across restarts.
+
+## Known issues and open questions
+
+Listed honestly, because these are where feedback would help most.
+
+**1. Nothing validates the predictions.** There is no backtest and no tracked hit rate. The
+`predictions` table has been accumulating with entry prices in `market_context`, so the data
+exists — `tools/backtest.py` is a first pass at measuring it, but the sample is still small.
+**Until this is answered, treat every number the tool prints as unvalidated.**
+
+**2. Every weight is hand-chosen.** `SOURCE_WEIGHTS`, the 48-hour recency half-life, the
+`0.85/0.15` direction-vs-trend blend, the `0.60/0.20/0.20` confidence formula, `align_weight`,
+the `±0.12` label threshold, `min_edge_score` — all priors, none fitted to anything. They are
+plausible, not empirical.
+
+**3. Missing market data is silently treated as neutral.** When the Schwab token is stale,
+`trend_score` falls back to `0.0` and the blend still applies it at 15% weight, shrinking
+direction toward neutral rather than excluding it. This is asymmetric with the macro/sentiment
+path, which reweights when a channel is empty. See `analysis/aggregator.py:54`.
+
+**4. `num_new_items` is misnamed.** It's `len(scored_items)` over the whole 7-day lookback,
+not the count of items collected that cycle.
+
+**5. POP is approximated by delta.** `pop = 1 − short_delta` is the standard shorthand and is
+biased; it ignores the volatility skew that makes it wrong in exactly the tails this strategy
+sells into.
+
+**6. Market hours ignore holidays.** `is_market_hours()` checks weekday and clock only.
+
+**7. Spread outcomes aren't tracked.** `spread_suggestions` records what was proposed but
+nothing records what it would have been worth at expiry, so the strategy layer can't be
+scored even once the directional layer can.
+
+## Testing
+
+```bash
 pytest -q
 ```
+
+## License
+
+MIT — see [LICENSE](LICENSE).
