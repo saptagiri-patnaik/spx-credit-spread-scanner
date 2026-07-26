@@ -1,5 +1,6 @@
 .env
 logs/
+chat-history/
 __pycache__/
 *.pyc
 .venv/
