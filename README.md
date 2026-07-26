@@ -66,26 +66,144 @@ and `edge ≥ 0.05`. Any one failing downgrades the alert to an outlook.
 
 ## Setup
 
-Requires Python 3.11+, Postgres, and [Ollama](https://ollama.com).
+### What you need first
+
+| | |
+|---|---|
+| **Python** | 3.11 or newer |
+| **Postgres** | Any reachable instance — local Docker is fine |
+| **[Ollama](https://ollama.com)** | Running locally |
+| **Disk** | ~5 GB for the model |
+| **RAM/GPU** | 8B at Q4 wants ~6 GB. It runs CPU-only, just slower — expect a few minutes per cycle with GPU offload, considerably more without |
+
+**No API keys are required to start.** Every collector skips itself when its key is
+blank, so a zero-key install still runs — you just get fewer items and no options data.
+
+### 1. Get the model running
 
 ```bash
-ollama pull llama3.1:8b          # ~5 GB
+ollama pull llama3.1:8b
+ollama list                      # confirm it's there
+```
 
-python -m venv .venv && . .venv/bin/activate     # Windows: .\.venv\Scripts\Activate.ps1
+Ollama must be running when the scanner starts. It serves on `localhost:11434`.
+
+### 2. Install the project
+
+```bash
+git clone https://github.com/saptagiri-patnaik/market-sentiment-prediction-llm.git
+cd market-sentiment-prediction-llm
+
+python -m venv .venv
+source .venv/bin/activate        # Windows: .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-
-cp .env.example .env             # fill in what you have — every key is optional
-python main.py --setup           # create tables
-python main.py --check           # verify Ollama / Postgres / Schwab
 ```
 
-Run it:
+### 3. Get a Postgres database
+
+Anything reachable works. Locally:
 
 ```bash
-python main.py --once            # single pass
-python main.py --once --dry-run  # single pass, no DB writes
-python main.py                   # scheduler loop, every INTERVAL_MINUTES
+docker run -d --name spx-pg -p 5432:5432 \
+  -e POSTGRES_PASSWORD=spx -e POSTGRES_DB=spx postgres:16
 ```
+
+### 4. Configure
+
+```bash
+cp .env.example .env
+```
+
+Open `.env`. **The only setting you must fill in is the database.** Two options —
+pick one:
+
+```ini
+# (a) full URL — you percent-encode the password yourself
+DATABASE_URL=postgresql+psycopg2://postgres:spx@localhost:5432/spx
+
+# (b) separate parts — password is encoded for you. Setting DB_HOST makes
+#     these take precedence over DATABASE_URL.
+DB_HOST=localhost
+DB_PORT=5432
+DB_USER=postgres
+DB_PASSWORD=spx
+DB_NAME=spx
+```
+
+Everything else is optional. Add keys later to widen coverage:
+
+| Add this | To get |
+|---|---|
+| `FRED_API_KEY`, `FINNHUB_KEY` | Economic calendar and event-risk detection |
+| `NEWSAPI_KEY` | More headlines than RSS alone |
+| `YOUTUBE_API_KEY` | Video transcripts |
+| `SCHWAB_*` | **The entire options half** — chain, expected move, spread scan |
+| `DISCORD_WEBHOOK_URL` / `TELEGRAM_*` | Alerts pushed off the machine |
+| `X_BEARER_TOKEN` | X/Twitter posts (**the one paid source** — budget-capped) |
+
+Without Schwab you still get a directional call every cycle; you just get
+`BEST SPREAD: none` because there's no chain to scan.
+
+### 5. Create the tables
+
+```bash
+python main.py --setup
+```
+
+### 6. Check your wiring
+
+```bash
+python main.py --check
+```
+
+Prints one line each for Ollama, Postgres, and Schwab. Ollama and Postgres should
+both report OK before continuing; Schwab is expected to be `False` until you
+configure it.
+
+### 7. First run
+
+```bash
+python main.py --once --dry-run
+```
+
+One full pass with no database writes. Expect it to take a few minutes — nearly
+all of that is the LLM scoring each new item. It ends by printing an
+`SPX OUTLOOK` block.
+
+Then a real pass, which persists results:
+
+```bash
+python main.py --once
+```
+
+### 8. Run it continuously
+
+```bash
+python main.py
+```
+
+Runs immediately, then every `INTERVAL_MINUTES` (default 45). `Ctrl+C` stops it.
+Logs go to `logs/spx_scanner.log`.
+
+### 9. Once you have data
+
+```bash
+python -m tools.backtest
+```
+
+Scores past predictions against what the market actually did. It needs predictions
+older than the 6-day horizon *and* a working Schwab connection at the time they were
+made, so expect it to report nothing useful for the first week.
+
+### Troubleshooting
+
+| Symptom | Cause |
+|---|---|
+| `Ollama not available; skipping scoring` | Ollama isn't running, or `OLLAMA_MODEL` names a model you haven't pulled |
+| `Schwab access token is stale` | Expected without a token refresher. The sentiment half keeps working; the options half returns nothing |
+| `Market: CLOSED \| scanned 0 verticals` | Normal outside 09:30–16:00 ET. Set `REQUIRE_MARKET_HOURS=false` to scan anyway |
+| `No new information; keeping prior prediction` | Nothing new since last cycle — the pass exits early by design |
+| Cycles take much longer than expected | The model is running on CPU. Check `ollama ps` for GPU offload |
 
 Every collector is skipped when its key is blank, so it runs with none of them configured —
 you'll just get fewer items. Only the Schwab credentials are needed for the options half;
