@@ -91,8 +91,8 @@ Ollama must be running when the scanner starts. It serves on `localhost:11434`.
 ### 2. Install the project
 
 ```bash
-git clone https://github.com/saptagiri-patnaik/market-sentiment-prediction-llm.git
-cd market-sentiment-prediction-llm
+git clone https://github.com/saptagiri-patnaik/spx-credit-spread-scanner.git
+cd spx-credit-spread-scanner
 
 python -m venv .venv
 source .venv/bin/activate        # Windows: .\.venv\Scripts\Activate.ps1
