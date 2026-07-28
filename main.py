@@ -103,7 +103,11 @@ class Pipeline:
         for item in self.repo.fetch_unscored(limit=80):
             score = self.analyzer.score(item)
             if score:
-                self.repo.save_score(item.id, score, self.s.ollama_model)
+                # Record the model that actually produced the score. Hardcoding
+                # the Ollama name here silently mislabelled every Claude-scored
+                # row, which makes it impossible to tell which scorer produced
+                # which score -- and that is the whole basis for comparing them.
+                self.repo.save_score(item.id, score, getattr(self.llm, "model", "unknown"))
 
     def run_once(self) -> None:
         # Collection runs on every cycle regardless of schedule mode: RSS feeds
