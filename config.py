@@ -95,6 +95,13 @@ class Settings(BaseSettings):
     telegram_bot_token: str | None = None
     telegram_chat_id: str | None = None
     discord_webhook_url: str | None = None
+    # Actionable trade signals go here when set, keeping the channel you leave
+    # notifications on separate from routine outlook updates. Falls back to
+    # discord_webhook_url when unset.
+    discord_trade_webhook_url: str | None = None
+    # A recommended scan repeats every cycle while the gates keep passing.
+    # Re-announce the same spread at most once per this many hours.
+    trade_alert_cooldown_hours: float = 24.0
 
     # --- Strategy / behaviour ---
     underlying: str = "SPX"          # SPX (full index); alternatives: XSP (mini), SPY (ETF)

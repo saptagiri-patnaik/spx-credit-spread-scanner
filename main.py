@@ -152,8 +152,48 @@ class Pipeline:
             self.paper.maybe_open(scan, chain, spread_id=None)
             self.paper.maybe_open_baseline(chain)
 
-        push = scan["recommended"] or not getattr(self.s, "alert_only_on_trade", True)
-        self.notifier.send(self._format(prediction, scan), external=push)
+        # A recommended scan repeats across every cycle the gates keep passing,
+        # so without a cooldown the same idea would alert ~9 times a day and
+        # keep re-alerting a position already open. Claim the alert once per
+        # distinct spread.
+        trade_alert = bool(scan["recommended"]) and self._claim_trade_alert(best)
+        push = trade_alert or not getattr(self.s, "alert_only_on_trade", True)
+        self.notifier.send(self._format(prediction, scan), external=push, trade=trade_alert)
+
+    def _claim_trade_alert(self, best: dict | None) -> bool:
+        """True the first time a given spread is announced; False while it repeats.
+
+        Records the claim, so calling this twice for the same spread within the
+        cooldown yields True then False.
+        """
+        if not best:
+            return False
+        signature = (
+            f"{best['strategy']}|{best['short_strike']}|"
+            f"{best['long_strike']}|{best['expiration']}"
+        )
+        cooldown_hours = getattr(self.s, "trade_alert_cooldown_hours", 24)
+        now = dt.datetime.now(dt.timezone.utc)
+
+        previous = self.repo.get_state("last_trade_alert")
+        if previous:
+            try:
+                last_signature, last_iso = previous.rsplit("@", 1)
+                last_at = dt.datetime.fromisoformat(last_iso)
+                if last_at.tzinfo is None:
+                    last_at = last_at.replace(tzinfo=dt.timezone.utc)
+                age_hours = (now - last_at).total_seconds() / 3600.0
+                if last_signature == signature and age_hours < cooldown_hours:
+                    self.log.info(
+                        "Trade alert suppressed: same spread announced %.1fh ago.", age_hours
+                    )
+                    return False
+            except ValueError:
+                pass  # malformed state, treat as no previous alert
+
+        if not self.dry_run:
+            self.repo.set_state("last_trade_alert", f"{signature}@{now.isoformat()}")
+        return True
 
     def _format(self, prediction: dict, scan: dict) -> str:
         now = dt.datetime.now(dt.timezone.utc)
