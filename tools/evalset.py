@@ -182,6 +182,69 @@ def _report(name: str, labelled: list[dict], preds: list) -> None:
     print(f"  true negatives      {tn}  (correctly ignored noise)")
 
 
+# ------------------------------------------------------------------- label --
+_HELP = """
+  r / relevant?   would an index trader act on this at all?
+  d / direction   effect on SPX over ~3 weeks
+  k / risk        does it raise the chance of a LARGE adverse move?
+
+keys:  n = not relevant (sets direction 0, risk 0, and moves on)
+       b = bearish     u = bullish      f = flat but relevant
+  then risk:  y = raises shock risk     enter = no
+  s = skip   q = save and quit
+"""
+
+
+def cmd_label(args) -> None:
+    """Label items one at a time. Far quicker than hand-editing JSON."""
+    path = args.labels
+    with open(path, encoding="utf-8") as handle:
+        rows = [json.loads(line) for line in handle if line.strip()]
+
+    todo = [i for i, r in enumerate(rows) if r.get("label_relevant") is None]
+    print(f"{len(rows)} items, {len(todo)} unlabelled")
+    print(_HELP)
+
+    def save():
+        with open(path, "w", encoding="utf-8") as out:
+            for r in rows:
+                out.write(json.dumps(r, ensure_ascii=False) + "\n")
+
+    for count, idx in enumerate(todo, 1):
+        row = rows[idx]
+        print("\n" + "-" * 70)
+        print(f"[{count}/{len(todo)}]  {row['source_type']} / {row.get('category') or '-'}")
+        if row.get("title"):
+            print(f"TITLE: {row['title']}")
+        text = (row.get("text") or "").strip().replace("\n", " ")
+        print(f"TEXT : {text[:400]}{'...' if len(text) > 400 else ''}")
+
+        choice = input("  [n]ot relevant / [b]earish / [u]p / [f]lat / [s]kip / [q]uit > ").strip().lower()
+        if choice == "q":
+            save()
+            print(f"saved. {sum(1 for r in rows if r.get('label_relevant') is not None)} labelled.")
+            return
+        if choice == "s":
+            continue
+        if choice == "n":
+            row.update(label_relevant=0, label_direction=0, label_risk=0)
+        elif choice in ("b", "u", "f"):
+            row["label_relevant"] = 1
+            row["label_direction"] = {"b": -1, "u": 1, "f": 0}[choice]
+            risk = input("  raises risk of a LARGE move? [y/Enter] > ").strip().lower()
+            row["label_risk"] = 1 if risk == "y" else 0
+        else:
+            print("  (unrecognised, skipping)")
+            continue
+        if count % 10 == 0:
+            save()
+            print(f"  ...saved ({count} done)")
+
+    save()
+    print(f"\ndone. {sum(1 for r in rows if r.get('label_relevant') is not None)} labelled.")
+    print(f"next: python -m tools.evalset grade --labels {path}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -192,6 +255,10 @@ def main() -> None:
     s.add_argument("--pool", type=int, default=6000, help="rows to draw the sample from")
     s.add_argument("--seed", type=int, default=42)
     s.set_defaults(func=cmd_sample)
+
+    lb = sub.add_parser("label", help="label items interactively")
+    lb.add_argument("--labels", default="eval/items.jsonl")
+    lb.set_defaults(func=cmd_label)
 
     g = sub.add_parser("grade", help="score prompts against labelled items")
     g.add_argument("--labels", required=True)
