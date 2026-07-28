@@ -69,7 +69,7 @@ def test_different_headlines_are_different_stories():
 
 def test_repeated_coverage_becomes_one_story_with_a_count():
     items = [_item("Fed holds rates steady after inflation report") for _ in range(8)]
-    stories = SynthesisAggregator(_settings(), _Log(), _LLM()).cluster(items)
+    stories, _ = SynthesisAggregator(_settings(), _Log(), _LLM()).cluster(items)
     assert len(stories) == 1
     assert stories[0]["count"] == 8
 
@@ -77,7 +77,7 @@ def test_repeated_coverage_becomes_one_story_with_a_count():
 def test_macro_stories_outrank_equal_weight_news():
     items = [_item("Federal Reserve signals policy shift", source_type="macro")]
     items += [_item("Widget maker beats earnings estimates", source_type="news")]
-    stories = SynthesisAggregator(_settings(), _Log(), _LLM()).cluster(items)
+    stories, _ = SynthesisAggregator(_settings(), _Log(), _LLM()).cluster(items)
     assert "Federal" in stories[0]["title"]
 
 
@@ -177,3 +177,36 @@ def test_build_aggregator_selects_synthesis():
 def test_synthesis_without_a_client_falls_back_to_mean():
     s = _settings(aggregator_mode="synthesis")
     assert isinstance(build_aggregator(s, _Log(), None), Aggregator)
+
+
+# ------------------------------------------------------------ chatter split --
+def test_untitled_social_posts_do_not_become_stories():
+    # Every social post has unique text; keying on it produced one story per
+    # item (6185 items -> 5265 stories) and defeated de-duplication.
+    items = [(SimpleNamespace(title=None, content=f"$SPY thoughts number {i} here today",
+                              source_type="social",
+                              published_at=dt.datetime.now(dt.timezone.utc), engagement=0.0),
+              SimpleNamespace(direction=-0.2, confidence=0.6, magnitude=0.2))
+             for i in range(50)]
+    stories, chatter = SynthesisAggregator(_settings(), _Log(), _LLM()).cluster(items)
+    assert stories == []
+    assert chatter["count"] == 50
+
+
+def test_chatter_is_summarised_into_the_prompt():
+    items = [_item("Fed holds rates steady after inflation report")]
+    items += [(SimpleNamespace(title=None, content=f"chatter {i}", source_type="social",
+                               published_at=dt.datetime.now(dt.timezone.utc), engagement=0.0),
+               SimpleNamespace(direction=0.4, confidence=0.5, magnitude=0.2))
+              for i in range(20)]
+    agg = SynthesisAggregator(_settings(), _Log(), _LLM(_ok()))
+    out = agg.aggregate(items, {}, [])
+    assert "20 posts" in agg.llm.prompt
+    assert out["market_context"]["chatter_posts"] == 20
+
+
+def test_titled_items_still_cluster_normally():
+    items = [_item("Fed holds rates steady after inflation report") for _ in range(6)]
+    stories, chatter = SynthesisAggregator(_settings(), _Log(), _LLM()).cluster(items)
+    assert len(stories) == 1 and stories[0]["count"] == 6
+    assert chatter["count"] == 0

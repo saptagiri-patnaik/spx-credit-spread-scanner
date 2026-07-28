@@ -81,19 +81,36 @@ class SynthesisAggregator:
         return getattr(self.s, name, default)
 
     # ------------------------------------------------------------ clustering --
-    def cluster(self, scored_items) -> list[dict]:
-        """Group items into stories and weight each by the attention it drew."""
+    def cluster(self, scored_items) -> tuple[list[dict], dict]:
+        """Group titled items into stories; pool untitled chatter separately.
+
+        Roughly three-quarters of the corpus is social posts with no title, and
+        their text is unique per post -- keying on it produces one "story" per
+        item and defeats de-duplication entirely (6185 items -> 5265 stories in
+        practice). Those posts carry sentiment, not events, so they are summarised
+        as a single aggregate rather than competing for story slots.
+        """
         clusters: dict[frozenset, dict] = {}
+        chatter = {"count": 0, "weight": 0.0, "direction": 0.0}
+
         for item, score in scored_items:
-            key = story_key(item.title or (item.content or "")[:120])
+            weight_hint = SOURCE_WEIGHTS.get(item.source_type, 0.6) * (
+                0.5 + 0.5 * score.confidence
+            )
+            if not item.title:
+                chatter["count"] += 1
+                chatter["weight"] += weight_hint
+                chatter["direction"] += weight_hint * score.direction
+                continue
+            key = story_key(item.title)
             if not key:
                 continue
             bucket = clusters.setdefault(key, {
-                "title": item.title or (item.content or "")[:120],
+                "title": item.title,
                 "count": 0, "weight": 0.0, "direction": 0.0,
                 "sources": set(), "macro": False,
             })
-            weight = SOURCE_WEIGHTS.get(item.source_type, 0.6) * (0.5 + 0.5 * score.confidence)
+            weight = weight_hint
             bucket["count"] += 1
             bucket["weight"] += weight
             bucket["direction"] += weight * score.direction
@@ -115,10 +132,14 @@ class SynthesisAggregator:
             )
             stories.append(bucket)
         stories.sort(key=lambda b: b["rank"], reverse=True)
-        return stories
+        if chatter["weight"] > 0:
+            chatter["direction"] /= chatter["weight"]
+        return stories, chatter
 
     # -------------------------------------------------------------- prompting --
-    def build_prompt(self, stories: list[dict], market_context: dict, events: list) -> str:
+    def build_prompt(
+        self, stories: list[dict], market_context: dict, events: list, chatter: dict | None = None
+    ) -> str:
         lines = ["Distinct stories from the last 7 days, most significant first:", ""]
         for i, story in enumerate(stories, 1):
             tone = f"{story['direction']:+.2f}"
@@ -126,6 +147,11 @@ class SynthesisAggregator:
                 f"{i}. [{story['count']} source(s), first-pass {tone}, "
                 f"{'/'.join(sorted(story['sources']))}] {story['title'][:150]}"
             )
+        if chatter and chatter.get("count"):
+            lines += ["", (
+                f"Retail/social chatter: {chatter['count']} posts, aggregate tone "
+                f"{chatter['direction']:+.2f}. Treat as a sentiment backdrop, not as events."
+            )]
         trend = (market_context or {}).get("trend_score")
         vix = (market_context or {}).get("vix")
         lines += ["", "Market context:",
@@ -143,7 +169,7 @@ class SynthesisAggregator:
         if not scored_items:
             return baseline
 
-        stories = self.cluster(scored_items)
+        stories, chatter = self.cluster(scored_items)
         if not stories:
             return baseline
         max_stories = self._cfg("synthesis_max_stories", 40)
@@ -152,7 +178,7 @@ class SynthesisAggregator:
         event_risk, event_notes = self.fallback._event_risk(
             upcoming_events, dt.datetime.now(dt.timezone.utc)
         )
-        prompt = self.build_prompt(selected, market_context, event_notes)
+        prompt = self.build_prompt(selected, market_context, event_notes, chatter)
         out = self.llm.generate_json(prompt, system=SYSTEM, schema=PREDICTION_SCHEMA)
 
         if not out:
@@ -182,6 +208,7 @@ class SynthesisAggregator:
             "tail_risk": round(tail_risk, 3),
             "stories_considered": len(selected),
             "stories_total": len(stories),
+            "chatter_posts": chatter.get("count", 0),
             "aggregator": "synthesis",
         })
 
