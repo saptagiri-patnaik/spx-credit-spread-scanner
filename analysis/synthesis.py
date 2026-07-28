@@ -231,6 +231,20 @@ class SynthesisAggregator:
 
         drivers = out.get("key_drivers") or []
         rationale = str(out.get("rationale", "")).strip()
+
+        # Log the model's answer verbatim and in full. The alert truncates and
+        # the DB row reshapes it, so without this there is no record of what the
+        # synthesis model actually said -- which is the thing worth auditing.
+        self.log.info(
+            "SYNTHESIS (%s) direction %+.3f | confidence %.2f | "
+            "downside %.0f%% | upside %.0f%% | %d of %d stories, %d chatter posts\n"
+            "  rationale: %s\n  drivers  : %s",
+            getattr(self.llm, "model", "?"), direction, confidence,
+            downside_risk * 100, upside_risk * 100,
+            len(selected), len(stories), chatter.get("count", 0),
+            rationale or "(none)",
+            "; ".join(str(d) for d in drivers) or "(none)",
+        )
         if drivers:
             rationale += " Drivers: " + "; ".join(str(d) for d in drivers[:5]) + "."
         rationale += (

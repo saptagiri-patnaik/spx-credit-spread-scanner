@@ -225,6 +225,28 @@ class Pipeline:
         ]
         if prediction["event_risk"]:
             lines.append("  [!] high-impact economic event inside the DTE window")
+
+        # Surface the tail estimates: they decide which side may be sold, so
+        # they matter more to the reader than the direction does.
+        context = prediction.get("market_context") or {}
+        down, up = context.get("downside_risk"), context.get("upside_risk")
+        if down is not None and up is not None:
+            cap = getattr(self.s, "max_tail_risk", 0.55)
+            verdict = []
+            if float(down) > cap:
+                verdict.append("no put spreads")
+            if float(up) > cap:
+                verdict.append("no call spreads")
+            lines.append(
+                f"Tail risk : DOWN {float(down):.0%}  UP {float(up):.0%}   (cap {cap:.0%})"
+                + (f"  -> {', '.join(verdict)}" if verdict else "  -> both sides open")
+            )
+            if context.get("stories_considered"):
+                lines.append(
+                    f"  synthesis: {context['stories_considered']} of "
+                    f"{context.get('stories_total', '?')} stories, "
+                    f"{context.get('chatter_posts', 0)} chatter posts"
+                )
         lines.append(f"Rationale : {prediction['rationale']}")
         lines.append("-" * 56)
         lines.append(
