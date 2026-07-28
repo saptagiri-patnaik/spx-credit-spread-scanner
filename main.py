@@ -10,9 +10,9 @@ import datetime as dt
 from apscheduler.schedulers.blocking import BlockingScheduler
 
 from alerts.notifier import Notifier
-from analysis.aggregator import Aggregator
-from analysis.claude_client import build_llm
+from analysis.claude_client import ClaudeClient, build_llm
 from analysis.sentiment import SentimentAnalyzer
+from analysis.synthesis import build_aggregator
 from collectors.base import has_substance
 from collectors.econ_calendar import EconCalendarCollector
 from collectors.macro import MacroCollector
@@ -36,7 +36,17 @@ class Pipeline:
         self.repo = Repository(settings.database_url)
         self.llm = build_llm(settings, logger)
         self.analyzer = SentimentAnalyzer(self.llm, logger, settings)
-        self.aggregator = Aggregator(settings, logger)
+        # Tier 2 runs on its own (stronger, lower-volume) model: one call per
+        # cycle doing the hard reasoning, versus hundreds doing cheap triage.
+        synthesis_llm = None
+        if getattr(settings, "aggregator_mode", "mean") == "synthesis":
+            synthesis_llm = ClaudeClient(
+                model=getattr(settings, "synthesis_model", "claude-opus-5"),
+                logger=logger,
+                api_key=getattr(settings, "anthropic_api_key", None),
+                max_tokens=getattr(settings, "synthesis_max_tokens", 2048),
+            )
+        self.aggregator = build_aggregator(settings, logger, synthesis_llm)
         self.schwab = SchwabClient(settings, logger)
         self.strategy = OptionsStrategy(settings, logger)
         self.paper = PaperTracker(settings, self.repo, logger)

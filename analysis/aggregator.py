@@ -120,9 +120,12 @@ class Aggregator:
             f"(macro {macro:+.2f}, sentiment {sentiment:+.2f}) from {num_items} items."
         ]
         if market_context:
+            # trend_score can be an explicit None when market data is absent;
+            # formatting None with +.2f raises and would kill the whole cycle.
+            trend = market_context.get("trend_score")
+            trend_text = f"{trend:+.2f}" if isinstance(trend, (int, float)) else "unavailable"
             parts.append(
-                f"Market: trend {market_context.get('trend_score', 0):+.2f}, "
-                f"VIX {market_context.get('vix', '?')}."
+                f"Market: trend {trend_text}, VIX {market_context.get('vix') or 'unavailable'}."
             )
         if events:
             parts.append("Event risk in window: " + "; ".join(events[:5]) + ".")

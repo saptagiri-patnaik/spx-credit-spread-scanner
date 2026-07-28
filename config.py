@@ -174,6 +174,17 @@ class Settings(BaseSettings):
     anthropic_model: str = "claude-haiku-4-5"
     anthropic_max_tokens: int = 512
 
+    # --- Aggregation ---
+    # "mean"      weighted average over every scored item. Cannot compose
+    #             ("hot CPI" + "hawkish Fed" is more than their mean) and
+    #             regresses toward its centre as the corpus grows.
+    # "synthesis" de-duplicate to distinct stories, then one call to a capable
+    #             model. Costs ~1 extra call per cycle; surfaces tail risk.
+    aggregator_mode: str = "mean"
+    synthesis_model: str = "claude-opus-5"
+    synthesis_max_stories: int = 40
+    synthesis_max_tokens: int = 2048
+
     # --- Paper trading (measures whether the suggestions actually pay) ---
     paper_trading_enabled: bool = True
     paper_hold_days: float = 4.0      # close on time after this many days (3-5 typical)

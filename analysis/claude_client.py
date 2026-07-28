@@ -53,7 +53,9 @@ class ClaudeClient:
             return False
         return True
 
-    def generate_json(self, prompt: str, system: str | None = None) -> dict | None:
+    def generate_json(
+        self, prompt: str, system: str | None = None, schema: dict | None = None
+    ) -> dict | None:
         if self._client is None:
             return None
         import anthropic
@@ -64,7 +66,9 @@ class ClaudeClient:
                 max_tokens=self.max_tokens,
                 system=system or "",
                 messages=[{"role": "user", "content": prompt}],
-                output_config={"format": {"type": "json_schema", "schema": SCORE_SCHEMA}},
+                output_config={
+                    "format": {"type": "json_schema", "schema": schema or SCORE_SCHEMA}
+                },
             )
         except anthropic.RateLimitError:
             # The SDK already retried with backoff; a miss here is a dropped
