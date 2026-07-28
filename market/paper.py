@@ -39,19 +39,13 @@ class PaperTracker:
             return (bid + ask) / 2.0
         return float(option.get("mark") or option.get("last") or 0)
 
-    def mark_spread(self, chain: dict | None, position) -> float | None:
-        """Current cost to close: short leg mid minus long leg mid.
-
-        Returns None when either leg is missing from the chain, rather than
-        guessing -- a wrong mark silently corrupts the P&L record.
-        """
-        if not chain:
-            return None
-        want_puts = position.strategy == "PUT_CREDIT_SPREAD"
-        exp_map = chain.get("putExpDateMap" if want_puts else "callExpDateMap", {})
+    def _wing_mark(
+        self, chain: dict, expiration: str, short_strike: float, long_strike: float, puts: bool
+    ) -> float | None:
+        exp_map = chain.get("putExpDateMap" if puts else "callExpDateMap", {})
         legs = {}
         for exp_key, strikes in exp_map.items():
-            if not exp_key.startswith(position.expiration):
+            if not exp_key.startswith(expiration):
                 continue
             for options in strikes.values():
                 for opt in options:
@@ -59,14 +53,39 @@ class PaperTracker:
                         strike = round(float(opt.get("strikePrice", 0)), 2)
                     except (TypeError, ValueError):
                         continue
-                    if strike == round(position.short_strike, 2):
+                    if strike == round(short_strike, 2):
                         legs["short"] = opt
-                    elif strike == round(position.long_strike, 2):
+                    elif strike == round(long_strike, 2):
                         legs["long"] = opt
         if "short" not in legs or "long" not in legs:
             return None
-        mark = self._mid(legs["short"]) - self._mid(legs["long"])
-        return max(0.0, round(mark, 2))
+        return self._mid(legs["short"]) - self._mid(legs["long"])
+
+    def mark_spread(self, chain: dict | None, position) -> float | None:
+        """Current cost to close. Sums both wings for an iron condor.
+
+        Returns None when any leg is missing from the chain, rather than
+        guessing -- a wrong mark silently corrupts the P&L record.
+        """
+        if not chain:
+            return None
+
+        if position.strategy == "IRON_CONDOR":
+            if position.call_short_strike is None or position.call_long_strike is None:
+                return None
+            put_wing = self._wing_mark(chain, position.expiration, position.short_strike,
+                                       position.long_strike, puts=True)
+            call_wing = self._wing_mark(chain, position.expiration, position.call_short_strike,
+                                        position.call_long_strike, puts=False)
+            if put_wing is None or call_wing is None:
+                return None
+            return max(0.0, round(put_wing + call_wing, 2))
+
+        mark = self._wing_mark(
+            chain, position.expiration, position.short_strike, position.long_strike,
+            puts=position.strategy == "PUT_CREDIT_SPREAD",
+        )
+        return None if mark is None else max(0.0, round(mark, 2))
 
     # ---------------------------------------------------------------- open --
     def maybe_open(self, scan: dict, chain: dict | None, spread_id: int | None) -> None:
@@ -101,6 +120,8 @@ class PaperTracker:
             "strategy": best["strategy"],
             "short_strike": best["short_strike"],
             "long_strike": best["long_strike"],
+            "call_short_strike": best.get("call_short_strike"),
+            "call_long_strike": best.get("call_long_strike"),
             "expiration": best["expiration"],
             "dte_at_open": best["dte"],
             "width": best["width"],

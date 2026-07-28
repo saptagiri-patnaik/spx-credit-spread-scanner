@@ -25,14 +25,22 @@ PREDICTION_SCHEMA = {
     "properties": {
         "direction": {"type": "number", "description": "-1 bearish .. +1 bullish for SPX"},
         "confidence": {"type": "number", "description": "0..1 conviction in the call"},
-        "tail_risk": {
+        # Split by side: a premium seller cares which tail is fat, not just that
+        # one is. Selling puts is safe in a market prone to melt-ups and lethal
+        # in one prone to gaps down, and equity indices fall faster than they rise.
+        "downside_risk": {
             "type": "number",
-            "description": "0..1 chance of a move larger than one expected move, either way",
+            "description": "0..1 chance of a sharp move DOWN beyond one expected move",
+        },
+        "upside_risk": {
+            "type": "number",
+            "description": "0..1 chance of a sharp move UP beyond one expected move",
         },
         "rationale": {"type": "string", "description": "two sentences, plain English"},
         "key_drivers": {"type": "array", "items": {"type": "string"}},
     },
-    "required": ["direction", "confidence", "tail_risk", "rationale", "key_drivers"],
+    "required": ["direction", "confidence", "downside_risk", "upside_risk",
+                 "rationale", "key_drivers"],
     "additionalProperties": False,
 }
 
@@ -47,11 +55,16 @@ SYSTEM = (
     "- Reason about COMPOSITION. Several mild negatives pointing the same way at the index "
     "  level matter more than their average; unrelated bad news about single companies does not.\n"
     "- Repetition is not confirmation. A story carried by 40 outlets is one event.\n"
-    "- Set tail_risk high when conditions look prone to a large move in EITHER direction. A "
-    "  volatile week with no clear direction is direction 0 with high tail_risk, and that is "
-    "  a useful answer -- it says do not sell premium.\n"
+    "- Score downside_risk and upside_risk SEPARATELY. They are the decisive outputs: a "
+    "  put spread is safe when downside_risk is low even if upside_risk is high, and vice "
+    "  versa. Equity indices fall faster than they rise, so these are rarely equal.\n"
+    "- Judge each tail on what could actually cause it: gap-down catalysts (policy shock, "
+    "  credit event, geopolitical escalation, a crowded position unwinding) versus gap-up "
+    "  catalysts (de-escalation, dovish surprise, short squeeze, blowout earnings).\n"
+    "- Both tails low means calm -- premium selling is safe on either side. Both high means "
+    "  a two-sided gap environment: say so, it means do not sell premium at all.\n"
     "- If the evidence genuinely does not favour a side, say direction 0. Do not manufacture "
-    "  a view.\n\n"
+    "  a view. Direction only picks which side to sell; the tails decide whether to trade.\n\n"
     "Respond ONLY with strict JSON."
 )
 
@@ -189,7 +202,8 @@ class SynthesisAggregator:
         try:
             direction = max(-1.0, min(1.0, float(out["direction"])))
             confidence = max(0.0, min(1.0, float(out["confidence"])))
-            tail_risk = max(0.0, min(1.0, float(out["tail_risk"])))
+            downside_risk = max(0.0, min(1.0, float(out["downside_risk"])))
+            upside_risk = max(0.0, min(1.0, float(out["upside_risk"])))
         except (KeyError, TypeError, ValueError):
             self.log.warning("Synthesis returned unusable numbers; using the mean aggregator.")
             return baseline
@@ -205,7 +219,10 @@ class SynthesisAggregator:
         # for it, and Prediction(**pred) rejects unknown keys.
         context = dict(market_context or {})
         context.update({
-            "tail_risk": round(tail_risk, 3),
+            "downside_risk": round(downside_risk, 3),
+            "upside_risk": round(upside_risk, 3),
+            # Kept as the summary figure the alert prints.
+            "tail_risk": round(max(downside_risk, upside_risk), 3),
             "stories_considered": len(selected),
             "stories_total": len(stories),
             "chatter_posts": chatter.get("count", 0),
@@ -217,8 +234,8 @@ class SynthesisAggregator:
         if drivers:
             rationale += " Drivers: " + "; ".join(str(d) for d in drivers[:5]) + "."
         rationale += (
-            f" [{len(selected)} of {len(stories)} stories from "
-            f"{len(scored_items)} items; tail risk {tail_risk:.0%}]"
+            f" [{len(selected)} of {len(stories)} stories from {len(scored_items)} items; "
+            f"downside risk {downside_risk:.0%}, upside risk {upside_risk:.0%}]"
         )
 
         return {

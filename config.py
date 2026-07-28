@@ -140,6 +140,13 @@ class Settings(BaseSettings):
     min_pop: float = 0.68                # minimum probability of profit (1 - short delta)
     min_buffer: float = 0.8              # short strike must sit >= 0.8x expected move OTM
     max_rel_bid_ask: float = 0.6         # skip illiquid legs (bid-ask / mid above this)
+    # A credit spread is short a TAIL, not short a direction: a put spread dies
+    # on a gap down whichever way the market was drifting. Sides are gated on
+    # their own tail estimate from the synthesis aggregator; a flat read with
+    # both tails quiet is the best setup a premium seller gets, not a reason to
+    # stand aside. Ignored by the mean aggregator, which produces no tail data.
+    max_tail_risk: float = 0.55
+    allow_iron_condor: bool = True       # sell both wings when both tails are quiet
     min_edge_score: float = 0.05         # only recommend a trade above this edge
     align_weight: float = 0.15           # weight of directional agreement in edge
     require_market_hours: bool = True    # only recommend trades during RTH

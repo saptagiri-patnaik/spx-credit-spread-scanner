@@ -150,6 +150,9 @@ class PaperPosition(Base):
     strategy: Mapped[str] = mapped_column(String(40))
     short_strike: Mapped[float] = mapped_column(Float)
     long_strike: Mapped[float] = mapped_column(Float)
+    # Iron condors carry a second wing; null for single verticals.
+    call_short_strike: Mapped[float | None] = mapped_column(Float, nullable=True)
+    call_long_strike: Mapped[float | None] = mapped_column(Float, nullable=True)
     expiration: Mapped[str] = mapped_column(String(20))
     dte_at_open: Mapped[int] = mapped_column(Integer)
     width: Mapped[float] = mapped_column(Float)

@@ -104,16 +104,54 @@ class OptionsStrategy:
         return candidates[0] if candidates else None
 
     # --- candidate generation --------------------------------------------
+    def _sides_allowed(self, prediction: dict) -> tuple[bool, bool]:
+        """Which sides are safe to sell, from the per-tail risk estimates.
+
+        A credit spread is short a tail, not short a direction. Selling puts is
+        safe when a sharp move DOWN is unlikely, regardless of drift; selling
+        calls is safe when a sharp move UP is unlikely. Blocking on a NEUTRAL
+        label asked the wrong question -- flat with both tails quiet is the best
+        setup a premium seller gets, not a reason to stand aside.
+
+        Falls back to the old direction gate when the aggregator supplies no
+        tail estimates (the mean aggregator does not).
+        """
+        context = prediction.get("market_context") or {}
+        downside = context.get("downside_risk")
+        upside = context.get("upside_risk")
+        if downside is None or upside is None:
+            directional = prediction["label"] != "NEUTRAL"
+            bullish = prediction["direction"] > 0
+            return (directional and bullish, directional and not bullish)
+
+        cap = self._cfg("max_tail_risk", 0.55)
+        return (float(downside) <= cap, float(upside) <= cap)
+
     def _candidates(self, chain: dict | None, prediction: dict) -> list[dict]:
         if not chain:
             return []
         price = self._underlying_price(chain)
         if not price:
             return []
-        if prediction["confidence"] < self.s.confidence_gate or prediction["label"] == "NEUTRAL":
+        if prediction["confidence"] < self.s.confidence_gate:
+            return []
+        put_ok, call_ok = self._sides_allowed(prediction)
+        if not (put_ok or call_ok):
             return []
 
-        want_puts = prediction["direction"] > 0  # bullish -> put credit spread
+        results: list[dict] = []
+        if put_ok:
+            results += self._verticals(chain, prediction, price, want_puts=True)
+        if call_ok:
+            results += self._verticals(chain, prediction, price, want_puts=False)
+        if put_ok and call_ok and self._cfg("allow_iron_condor", True):
+            results += self._condors(results)
+        results.sort(key=lambda c: c["edge"], reverse=True)
+        return results
+
+    def _verticals(
+        self, chain: dict, prediction: dict, price: float, want_puts: bool
+    ) -> list[dict]:
         exp_map = chain.get("putExpDateMap" if want_puts else "callExpDateMap", {})
         if not exp_map:
             return []
@@ -218,8 +256,71 @@ class OptionsStrategy:
                         }
                     )
 
-        results.sort(key=lambda c: c["edge"], reverse=True)
         return results
+
+    # --- iron condors -----------------------------------------------------
+    def _condors(self, verticals: list[dict]) -> list[dict]:
+        """Pair the best put and call spread on each expiry into a condor.
+
+        The right instrument for a flat read with both tails quiet: short pure
+        volatility rather than direction. Only one wing can finish in the money,
+        so max loss is the wider wing's width less the total credit -- roughly
+        double the return on risk of either leg alone.
+        """
+        puts = [v for v in verticals if v["strategy"] == "PUT_CREDIT_SPREAD"]
+        calls = [v for v in verticals if v["strategy"] == "CALL_CREDIT_SPREAD"]
+        if not puts or not calls:
+            return []
+
+        min_ror = self._cfg("min_credit_to_width", 0.20)
+        min_pop = self._cfg("min_pop", 0.68)
+        condors = []
+        for expiration in {v["expiration"] for v in puts} & {v["expiration"] for v in calls}:
+            put = max((p for p in puts if p["expiration"] == expiration),
+                      key=lambda c: c["edge"], default=None)
+            call = max((c for c in calls if c["expiration"] == expiration),
+                       key=lambda c: c["edge"], default=None)
+            if not put or not call:
+                continue
+
+            credit = round(put["credit"] + call["credit"], 2)
+            max_loss = round(max(put["width"], call["width"]) - credit, 2)
+            if credit <= 0 or max_loss <= 0:
+                continue
+            ror = credit / max_loss
+            if ror < min_ror:
+                continue
+            # Both wings must stay OTM, so the breach probabilities add.
+            pop = round(1.0 - (put["short_delta"] + call["short_delta"]), 3)
+            if pop < min_pop:
+                continue
+
+            ev_ratio = pop * ror - (1.0 - pop)
+            buffer = min(put["buffer"], call["buffer"])
+            # No alignment term: a condor expresses no directional view, so
+            # rewarding it for agreeing with one would be incoherent.
+            edge = round(ev_ratio + 0.05 * min(buffer, 2.0), 3)
+
+            condors.append({
+                "underlying": put["underlying"],
+                "strategy": "IRON_CONDOR",
+                "short_strike": put["short_strike"], "long_strike": put["long_strike"],
+                "call_short_strike": call["short_strike"],
+                "call_long_strike": call["long_strike"],
+                "expiration": expiration, "dte": put["dte"],
+                "width": max(put["width"], call["width"]),
+                "credit": credit, "max_loss": max_loss,
+                "pop": pop, "short_delta": round(put["short_delta"] + call["short_delta"], 3),
+                "expected_move": put["expected_move"], "ror": round(ror, 3),
+                "edge": edge, "buffer": round(buffer, 2),
+                "breakeven": put["short_strike"] - credit,
+                "notes": (
+                    f"Iron condor: {put['short_strike']:.0f}/{put['long_strike']:.0f}P + "
+                    f"{call['short_strike']:.0f}/{call['long_strike']:.0f}C. "
+                    f"Both tails quiet; short volatility, no directional view."
+                ),
+            })
+        return condors
 
     # --- helpers ----------------------------------------------------------
     def _underlying_price(self, chain: dict) -> float | None:
@@ -232,6 +333,23 @@ class OptionsStrategy:
     def _no_candidate_reason(self, chain: dict | None, prediction: dict) -> str:
         if not chain:
             return "No option chain available."
+        context = prediction.get("market_context") or {}
+        downside, upside = context.get("downside_risk"), context.get("upside_risk")
+        if downside is not None and upside is not None:
+            cap = self._cfg("max_tail_risk", 0.55)
+            put_ok, call_ok = self._sides_allowed(prediction)
+            if not (put_ok or call_ok):
+                return (
+                    f"Both tails elevated (down {float(downside):.0%}, up {float(upside):.0%} "
+                    f"vs {cap:.0%} cap) - a gap either way breaks a spread. Stay flat."
+                )
+            if prediction["confidence"] < self.s.confidence_gate:
+                return (
+                    f"Confidence {prediction['confidence'] * 100:.0f}% is below the gate "
+                    f"{self.s.confidence_gate * 100:.0f}% - stay flat."
+                )
+            side = "put" if put_ok else "call"
+            return f"No {side} vertical met the return / POP / liquidity filters."
         if prediction["label"] == "NEUTRAL":
             return "Directional read is neutral - no credit-spread edge."
         if prediction["confidence"] < self.s.confidence_gate:

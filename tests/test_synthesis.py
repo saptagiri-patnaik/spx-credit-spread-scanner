@@ -47,7 +47,8 @@ def _item(title, source_type="news", direction=-0.3, confidence=0.8):
 
 
 def _ok(**over):
-    body = {"direction": -0.35, "confidence": 0.72, "tail_risk": 0.6,
+    body = {"direction": -0.35, "confidence": 0.72,
+            "downside_risk": 0.6, "upside_risk": 0.3,
             "rationale": "Macro turning.", "key_drivers": ["CPI", "Fed"]}
     body.update(over)
     return body
@@ -110,11 +111,14 @@ def test_neutral_band_is_respected():
     assert agg.aggregate([_item("Fed holds")], {}, [])["label"] == "NEUTRAL"
 
 
-def test_tail_risk_is_carried_in_market_context():
-    agg = SynthesisAggregator(_settings(), _Log(), _LLM(_ok(tail_risk=0.81)))
+def test_both_tails_are_carried_in_market_context():
+    agg = SynthesisAggregator(_settings(), _Log(), _LLM(_ok(downside_risk=0.81, upside_risk=0.2)))
     out = agg.aggregate([_item("Fed holds")], {}, [])
-    assert out["market_context"]["tail_risk"] == 0.81
-    assert out["market_context"]["aggregator"] == "synthesis"
+    ctx = out["market_context"]
+    assert ctx["downside_risk"] == 0.81
+    assert ctx["upside_risk"] == 0.2
+    assert ctx["tail_risk"] == 0.81          # summary = the fatter tail
+    assert ctx["aggregator"] == "synthesis"
 
 
 def test_output_keys_match_the_mean_aggregator():
