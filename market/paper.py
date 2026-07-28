@@ -77,7 +77,7 @@ class PaperTracker:
         if not scan.get("recommended") or not best:
             return
 
-        open_positions = self.repo.open_paper_positions()
+        open_positions = [p for p in self.repo.open_paper_positions() if p.arm == "model"]
         if len(open_positions) >= self._cfg("paper_max_open", 5):
             self.log.info("Paper: at max open positions, skipping entry.")
             return
@@ -96,6 +96,7 @@ class PaperTracker:
 
         self.repo.open_paper_position({
             "spread_id": spread_id,
+            "arm": "model",
             "underlying": best["underlying"],
             "strategy": best["strategy"],
             "short_strike": best["short_strike"],
@@ -114,6 +115,130 @@ class PaperTracker:
             "Paper: opened %s %s/%s exp %s | credit $%.2f | stop $%.2f",
             best["strategy"], best["short_strike"], best["long_strike"],
             best["expiration"], credit, credit * stop_multiple,
+        )
+
+    # ------------------------------------------------------------ baseline --
+    def pick_baseline_spread(self, chain: dict | None) -> dict | None:
+        """Choose a spread mechanically, with no reference to the prediction.
+
+        This is the control arm. It answers the only question that decides
+        whether the LLM layer earns its place: does sentiment-gated selling
+        beat just selling premium every day?
+        """
+        if not chain:
+            return None
+        price = chain.get("underlyingPrice")
+        if not price:
+            return None
+
+        want_puts = self._cfg("paper_baseline_side", "put") == "put"
+        exp_map = chain.get("putExpDateMap" if want_puts else "callExpDateMap", {})
+        target_delta = self._cfg("paper_baseline_delta", 0.15)
+        width = self._cfg("min_width", 5.0)
+
+        best = None
+        for exp_key, strikes in exp_map.items():
+            try:
+                dte = int(exp_key.split(":")[1])
+                expiration = exp_key.split(":")[0]
+            except (IndexError, ValueError):
+                continue
+            if not (self._cfg("dte_min", 20) <= dte <= self._cfg("dte_max", 25)):
+                continue
+
+            options = [o for arr in strikes.values() for o in arr]
+            by_strike = {}
+            for opt in options:
+                try:
+                    by_strike[round(float(opt.get("strikePrice", 0)), 2)] = opt
+                except (TypeError, ValueError):
+                    continue
+
+            # Short leg: closest to the target delta on the correct side of spot.
+            candidates = []
+            for strike, opt in by_strike.items():
+                try:
+                    delta = abs(float(opt.get("delta")))
+                except (TypeError, ValueError):
+                    continue
+                if delta > 1.0:  # Schwab placeholder
+                    continue
+                if want_puts and strike >= price:
+                    continue
+                if not want_puts and strike <= price:
+                    continue
+                candidates.append((abs(delta - target_delta), strike, opt, delta))
+            # Walk candidates nearest-delta-first and take the first whose long
+            # leg actually exists. Bailing on the whole expiry when the ideal
+            # short leg has no partner would silently skip tradeable spreads on
+            # any chain with gaps in its strike ladder.
+            for score, short_strike, short_opt, short_delta in sorted(candidates):
+                long_strike = short_strike - width if want_puts else short_strike + width
+                long_opt = by_strike.get(round(long_strike, 2))
+                if not long_opt:
+                    continue
+
+                credit = round(self._mid(short_opt) - self._mid(long_opt), 2)
+                max_loss = round(width - credit, 2)
+                if credit <= 0 or max_loss <= 0:
+                    continue
+
+                candidate = {
+                    "underlying": self._cfg("underlying", "SPX"),
+                    "strategy": "PUT_CREDIT_SPREAD" if want_puts else "CALL_CREDIT_SPREAD",
+                    "short_strike": short_strike, "long_strike": long_strike,
+                    "expiration": expiration, "dte": dte, "width": width,
+                    "credit": credit, "max_loss": max_loss,
+                }
+                # Across expiries, prefer the short leg nearest the target delta.
+                if best is None or score < best[0]:
+                    best = (score, candidate)
+                break
+        return best[1] if best else None
+
+    def maybe_open_baseline(self, chain: dict | None) -> None:
+        """Open one control-arm position per day, ignoring sentiment entirely."""
+        if not self._cfg("paper_trading_enabled", True):
+            return
+        if not self._cfg("paper_baseline_enabled", True):
+            return
+
+        now = dt.datetime.now(dt.timezone.utc)
+        for pos in self.repo.open_paper_positions():
+            if pos.arm != "baseline":
+                continue
+            opened = pos.opened_at
+            if opened.tzinfo is None:
+                opened = opened.replace(tzinfo=dt.timezone.utc)
+            if (now - opened).total_seconds() < 86400:
+                return  # already opened today's control position
+
+        spread = self.pick_baseline_spread(chain)
+        if not spread:
+            return
+
+        credit = spread["credit"]
+        self.repo.open_paper_position({
+            "spread_id": None,
+            "arm": "baseline",
+            "underlying": spread["underlying"],
+            "strategy": spread["strategy"],
+            "short_strike": spread["short_strike"],
+            "long_strike": spread["long_strike"],
+            "expiration": spread["expiration"],
+            "dte_at_open": spread["dte"],
+            "width": spread["width"],
+            "credit": credit,
+            "max_loss": spread["max_loss"],
+            "stop_price": round(credit * self._cfg("paper_stop_multiple", 2.0), 2),
+            "underlying_at_open": chain.get("underlyingPrice"),
+            "last_mark": credit,
+            "last_marked_at": now,
+        })
+        self.log.info(
+            "Paper[baseline]: opened %s %s/%s exp %s | credit $%.2f",
+            spread["strategy"], spread["short_strike"], spread["long_strike"],
+            spread["expiration"], credit,
         )
 
     # --------------------------------------------------------------- manage --

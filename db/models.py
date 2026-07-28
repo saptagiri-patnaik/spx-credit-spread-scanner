@@ -137,6 +137,12 @@ class PaperPosition(Base):
     spread_id: Mapped[int | None] = mapped_column(
         ForeignKey("spread_suggestions.id", ondelete="SET NULL"), index=True, nullable=True
     )
+    # "model"    = opened because a scan cleared all three gates
+    # "baseline" = opened mechanically, ignoring sentiment entirely
+    # Without the baseline arm, P&L has nothing to be compared against: the
+    # question is not "did this make money" but "did it beat selling premium
+    # without the model".
+    arm: Mapped[str] = mapped_column(String(12), default="model", index=True)
 
     # --- entry ---
     opened_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)

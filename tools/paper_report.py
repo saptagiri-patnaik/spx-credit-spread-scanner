@@ -50,35 +50,78 @@ def main() -> None:
         print("option chain is available, so check Schwab connectivity first.")
         return
 
-    wins = [p for p in closed if (p.pnl or 0) > 0]
-    losses = [p for p in closed if (p.pnl or 0) <= 0]
-    total = sum(p.pnl or 0 for p in closed)
-    avg_win = sum(p.pnl for p in wins) / len(wins) if wins else 0.0
-    avg_loss = sum(p.pnl for p in losses) / len(losses) if losses else 0.0
-    risked = sum(p.credit * getattr(settings, "paper_stop_multiple", 2.0) - p.credit
-                 for p in closed)
+    def arm_stats(group: list) -> dict | None:
+        if not group:
+            return None
+        wins = [p for p in group if (p.pnl or 0) > 0]
+        losses = [p for p in group if (p.pnl or 0) <= 0]
+        total = sum(p.pnl or 0 for p in group)
+        gross_win = sum(p.pnl for p in wins)
+        gross_loss = abs(sum(p.pnl for p in losses))
+        # Peak-to-trough on the running equity curve, in entry order.
+        equity, peak, drawdown = 0.0, 0.0, 0.0
+        for p in sorted(group, key=lambda x: x.closed_at):
+            equity += p.pnl or 0
+            peak = max(peak, equity)
+            drawdown = min(drawdown, equity - peak)
+        return {
+            "n": len(group), "w": len(wins), "l": len(losses), "total": total,
+            "avg_win": gross_win / len(wins) if wins else 0.0,
+            "avg_loss": -gross_loss / len(losses) if losses else 0.0,
+            "expectancy": total / len(group),
+            "profit_factor": gross_win / gross_loss if gross_loss else float("inf"),
+            "drawdown": drawdown,
+        }
+
+    model = arm_stats([p for p in closed if p.arm == "model"])
+    baseline = arm_stats([p for p in closed if p.arm == "baseline"])
 
     print(f"\nclosed: {len(closed)}")
-    print(f"  win rate      {_pct(len(wins), len(closed))}   ({len(wins)}W / {len(losses)}L)")
-    print(f"  total P&L     ${total:+.2f} per contract")
-    print(f"  avg win       ${avg_win:+.2f}")
-    print(f"  avg loss      ${avg_loss:+.2f}")
-    print(f"  expectancy    ${total / len(closed):+.2f} per trade   <- the number that matters")
-    if risked:
-        print(f"  return on risk {total / risked * 100:+.1f}%")
+    header = f"  {'':<16}{'MODEL':>12}{'BASELINE':>12}"
+    print(header)
+    print("  " + "-" * (len(header) - 2))
+
+    def row(label: str, key: str, fmt: str = "{:+.2f}") -> None:
+        m = fmt.format(model[key]) if model else "-"
+        b = fmt.format(baseline[key]) if baseline else "-"
+        print(f"  {label:<16}{m:>12}{b:>12}")
+
+    print(f"  {'trades':<16}{model['n'] if model else '-':>12}"
+          f"{baseline['n'] if baseline else '-':>12}")
+    print(f"  {'win rate':<16}"
+          f"{_pct(model['w'], model['n']) if model else '-':>12}"
+          f"{_pct(baseline['w'], baseline['n']) if baseline else '-':>12}")
+    row("total P&L", "total")
+    row("avg win", "avg_win")
+    row("avg loss", "avg_loss")
+    row("expectancy", "expectancy")
+    row("profit factor", "profit_factor", "{:.2f}")
+    row("max drawdown", "drawdown")
+
+    if model and baseline:
+        edge = model["expectancy"] - baseline["expectancy"]
+        print(f"\n  EDGE OVER BASELINE  ${edge:+.2f} per trade")
+        if edge > 0:
+            print("  The sentiment layer is adding value on this sample.")
+        else:
+            print("  The sentiment layer is SUBTRACTING value: mechanical premium")
+            print("  selling did better. That is the result that matters most.")
+    elif model and not baseline:
+        print("\n  No baseline trades yet - nothing to compare against. Enable")
+        print("  PAPER_BASELINE_ENABLED so the comparison exists from the start.")
 
     by_reason: dict[str, list] = {}
     for p in closed:
-        by_reason.setdefault(p.exit_reason or "?", []).append(p)
-    print("\n  by exit reason:")
+        by_reason.setdefault(f"{p.arm}/{p.exit_reason or '?'}", []).append(p)
+    print("\n  by arm and exit reason:")
     for reason, group in sorted(by_reason.items()):
         pnl = sum(p.pnl or 0 for p in group)
-        print(f"    {reason:<6} {len(group):3d} trades   ${pnl:+8.2f}   "
+        print(f"    {reason:<18} {len(group):3d} trades   ${pnl:+8.2f}   "
               f"avg ${pnl / len(group):+.2f}")
 
     print("\n  recent closes:")
     for p in closed[-8:]:
-        print(f"    {p.closed_at:%m-%d %H:%M}  {p.strategy:<19} "
+        print(f"    {p.closed_at:%m-%d %H:%M}  {p.arm:<8} {p.strategy:<19} "
               f"{p.short_strike:.0f}/{p.long_strike:.0f}  "
               f"cr ${p.credit:.2f} -> ${p.exit_mark:.2f}  "
               f"{p.exit_reason:<5} ${p.pnl:+.2f}")

@@ -47,7 +47,8 @@ def _settings(**kw):
 
 def _position(days_held=0.0, credit=1.00, stop=2.00, **kw):
     base = dict(
-        id=1, strategy="PUT_CREDIT_SPREAD", short_strike=5000.0, long_strike=4995.0,
+        id=1, arm="model", strategy="PUT_CREDIT_SPREAD",
+        short_strike=5000.0, long_strike=4995.0,
         expiration="2026-08-21", credit=credit, stop_price=stop, max_loss=4.0, width=5.0,
         opened_at=dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=days_held),
     )

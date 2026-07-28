@@ -289,6 +289,12 @@ sells into.
 
 **6. Market hours ignore holidays.** `is_market_hours()` checks weekday and clock only.
 
+**6a. There are no schema migrations.** `--setup` calls SQLAlchemy's `create_all()`,
+which creates missing *tables* but never adds columns to existing ones. If you pull a
+change that adds a column, `--setup` will report success and the column will silently
+not exist. Until this project adopts Alembic, adding a column means running the
+`ALTER TABLE` yourself.
+
 **7. Spread outcomes aren't tracked.** `spread_suggestions` records what was proposed but
 nothing records what it would have been worth at expiry, so the strategy layer can't be
 scored even once the directional layer can.

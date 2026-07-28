@@ -22,7 +22,7 @@ from collectors.x_collector import XCollector
 from collectors.youtube import YouTubeCollector
 from config import get_settings
 from db.repository import Repository
-from market.options_strategy import OptionsStrategy
+from market.options_strategy import OptionsStrategy, is_market_hours
 from market.paper import PaperTracker
 from market.schwab_client import SchwabClient
 from utils.logging import setup_logging
@@ -100,7 +100,21 @@ class Pipeline:
                 self.repo.save_score(item.id, score, self.s.ollama_model)
 
     def run_once(self) -> None:
+        # Collection runs on every cycle regardless of schedule mode: RSS feeds
+        # hold only 20-50 entries, so a quiet weekend rotates items off the feed
+        # permanently. Scoring and everything downstream can wait; collection
+        # cannot. This is the weekend catch-up.
         new_count = self.collect_new()
+
+        if getattr(self.s, "schedule_mode", "continuous") == "market_hours":
+            now = dt.datetime.now(dt.timezone.utc)
+            if not is_market_hours(now, getattr(self.s, "market_tz", "America/New_York")):
+                self.log.info(
+                    "Collected %d item(s); outside market hours, deferring scoring.",
+                    new_count,
+                )
+                return
+
         if new_count == 0:
             self.log.info("No new information; keeping prior prediction.")
             return
@@ -130,6 +144,7 @@ class Pipeline:
             # chain rather than next cycle's.
             self.paper.manage(chain)
             self.paper.maybe_open(scan, chain, spread_id=None)
+            self.paper.maybe_open_baseline(chain)
 
         push = scan["recommended"] or not getattr(self.s, "alert_only_on_trade", True)
         self.notifier.send(self._format(prediction, scan), external=push)

@@ -39,6 +39,11 @@ from utils.logging import setup_logging
 
 NEUTRAL_BAND = 0.05
 
+# A missed risk item means selling premium into a shock: a full loss. A false
+# alarm means skipping a trade: opportunity cost only. Weighting them equally
+# would rank a timid scorer above a useful one.
+RISK_MISS_COST = 8
+
 
 # ------------------------------------------------------------------ sample --
 def cmd_sample(args) -> None:
@@ -136,10 +141,11 @@ def cmd_grade(args) -> None:
             try:
                 direction = max(-1.0, min(1.0, float(out.get("direction"))))
                 magnitude = max(0.0, min(1.0, float(out.get("magnitude", 0))))
+                confidence = max(0.0, min(1.0, float(out.get("confidence", 0))))
             except (TypeError, ValueError):
                 preds.append(None)
                 continue
-            preds.append((direction, magnitude))
+            preds.append((direction, magnitude, confidence))
 
         _report(name, labelled, preds)
 
@@ -180,6 +186,33 @@ def _report(name: str, labelled: list[dict], preds: list) -> None:
           f"   ({bear / max(1, bull):.1f} : 1)   labelled {sum(1 for r,_ in pairs if r['label_direction'] == -1)}"
           f":{sum(1 for r,_ in pairs if r['label_direction'] == 1)}")
     print(f"  true negatives      {tn}  (correctly ignored noise)")
+
+    # --- calibration: the gate is a confidence threshold, so confidence that
+    # --- does not track accuracy makes the gate meaningless regardless of
+    # --- how accurate the scorer is on average.
+    print("\n  calibration (does stated confidence track being right?)")
+    buckets = ((0.0, 0.4), (0.4, 0.6), (0.6, 0.8), (0.8, 1.01))
+    any_bucket = False
+    for lo, hi in buckets:
+        sub = [(r, p) for r, p in pairs if lo <= p[2] < hi]
+        if not sub:
+            continue
+        any_bucket = True
+        hits = sum(1 for r, p in sub if _bucket(p[0]) == r["label_direction"])
+        print(f"    conf {lo:.1f}-{hi if hi <= 1 else 1.0:.1f}   {rate(hits, len(sub))}")
+    if not any_bucket:
+        print("    (no confidence values returned)")
+    print("    Accuracy should RISE with confidence. Flat means the gate is noise.")
+
+    # --- asymmetric cost: for a premium seller, selling into a shock you
+    # --- failed to flag is far worse than skipping a trade you flagged in error.
+    risk_missed = len(risky) - risk_caught
+    dir_wrong = sum(1 for r, p in relevant if _bucket(p[0]) != r["label_direction"])
+    cost = risk_missed * RISK_MISS_COST + fp * 1 + dir_wrong * 1
+    print(f"\n  weighted error      {cost:.0f}"
+          f"   ({risk_missed} missed risk x{RISK_MISS_COST}"
+          f" + {fp} false alarms + {dir_wrong} wrong direction)")
+    print("    Lower is better. Rank models on this, not on raw accuracy.")
 
 
 # ------------------------------------------------------------------- label --

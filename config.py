@@ -163,6 +163,20 @@ class Settings(BaseSettings):
                                       # $1.00 loss - risking 1x credit to make 1x
     paper_max_open: int = 5           # concurrent simulated positions
 
+    # Control arm: sells a spread every day ignoring sentiment entirely. Without
+    # it, P&L has nothing to be measured against -- the question is not "did the
+    # model make money" but "did it beat selling premium without the model".
+    paper_baseline_enabled: bool = True
+    paper_baseline_delta: float = 0.15   # short-leg delta the control arm targets
+    paper_baseline_side: str = "put"     # put credit spreads; embeds an upward-drift
+                                         # assumption, switch to "call" to test the other
+
+    # "continuous"   score and trade on every cycle, around the clock
+    # "market_hours" collect always (feeds rotate, so items would be lost), but
+    #                score/predict/trade only during RTH. Weekend news is picked
+    #                up as it publishes and scored on Monday's first cycle.
+    schedule_mode: str = "continuous"
+
     log_level: str = "INFO"
     log_file: str = "logs/spx_scanner.log"
 
