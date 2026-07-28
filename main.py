@@ -11,7 +11,7 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 
 from alerts.notifier import Notifier
 from analysis.aggregator import Aggregator
-from analysis.llm import OllamaClient
+from analysis.claude_client import build_llm
 from analysis.sentiment import SentimentAnalyzer
 from collectors.base import has_substance
 from collectors.econ_calendar import EconCalendarCollector
@@ -34,7 +34,7 @@ class Pipeline:
         self.log = logger
         self.dry_run = dry_run
         self.repo = Repository(settings.database_url)
-        self.llm = OllamaClient(settings.ollama_base_url, settings.ollama_model, logger)
+        self.llm = build_llm(settings, logger)
         self.analyzer = SentimentAnalyzer(self.llm, logger, settings)
         self.aggregator = Aggregator(settings, logger)
         self.schwab = SchwabClient(settings, logger)
@@ -54,7 +54,13 @@ class Pipeline:
         self.repo.init_db()
 
     def check(self) -> None:
-        self.log.info("Ollama available : %s", self.llm.available())
+        provider = getattr(self.s, "llm_provider", "ollama")
+        model = (
+            getattr(self.s, "anthropic_model", "?")
+            if provider == "anthropic"
+            else self.s.ollama_model
+        )
+        self.log.info("Scorer (%s/%s): %s", provider, model, self.llm.available())
         try:
             self.repo.init_db()
             self.log.info("Postgres         : OK")
@@ -92,7 +98,7 @@ class Pipeline:
 
     def score_new(self) -> None:
         if not self.llm.available():
-            self.log.warning("Ollama not available; skipping scoring.")
+            self.log.warning("Scorer not available; skipping scoring.")
             return
         for item in self.repo.fetch_unscored(limit=80):
             score = self.analyzer.score(item)

@@ -206,6 +206,17 @@ python -m tools.evalset sample --n 200        # writes eval/items.jsonl
 python -m tools.evalset grade --labels eval/items.jsonl
 ```
 
+Compare scoring backends on the same labels — this is the point of the harness:
+
+```bash
+python -m tools.evalset grade --labels eval/items.jsonl --provider ollama
+python -m tools.evalset grade --labels eval/items.jsonl --provider anthropic --model claude-haiku-4-5
+python -m tools.evalset grade --labels eval/items.jsonl --provider anthropic --model claude-sonnet-5
+```
+
+Then set `LLM_PROVIDER` / `ANTHROPIC_MODEL` to whichever actually won, rather than
+whichever sounds strongest.
+
 `grade` scores every prompt variant in `analysis/prompts.py` against your labels and
 reports relevance precision/recall, direction accuracy, and **risk recall** — how often
 it catches items that raise the chance of a large adverse move. For a credit-spread

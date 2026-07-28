@@ -155,6 +155,18 @@ class Settings(BaseSettings):
     # Which prompt variant analysis/prompts.py should score with.
     scoring_prompt: str = "current"
 
+    # --- Scoring backend ---
+    # "ollama"    local llama3.1:8b, no API cost, ~14 min/cycle
+    # "anthropic" hosted Claude, faster and far better at index-vs-tone, but billed
+    llm_provider: str = "ollama"
+    anthropic_api_key: str | None = None   # unset -> SDK reads ANTHROPIC_API_KEY
+    # claude-haiku-4-5 is the recommended starting point for per-item scoring:
+    # high volume, simple triage, cheapest per token. claude-sonnet-5 and
+    # claude-opus-5 are the step-ups -- grade them on your labelled eval set
+    # rather than assuming the expensive one wins.
+    anthropic_model: str = "claude-haiku-4-5"
+    anthropic_max_tokens: int = 512
+
     # --- Paper trading (measures whether the suggestions actually pay) ---
     paper_trading_enabled: bool = True
     paper_hold_days: float = 4.0      # close on time after this many days (3-5 typical)

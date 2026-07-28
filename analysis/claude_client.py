@@ -1,0 +1,112 @@
+"""Claude-backed scorer, interface-compatible with OllamaClient.
+
+Same `generate_json(prompt, system)` contract, so sentiment.py, the aggregator
+and the eval harness are unchanged -- which is what makes a provider swap
+measurable: run the eval set against each and compare on the same labels.
+
+Uses structured outputs rather than "please return JSON". The schema is
+enforced server-side, so the silent parse failures the Ollama path swallows
+should not occur here.
+"""
+from __future__ import annotations
+
+SCORE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        # Bounds are enforced by _clamp in sentiment.py: the structured-output
+        # schema does not support numeric minimum/maximum.
+        "direction": {"type": "number", "description": "-1 bearish .. +1 bullish for SPX"},
+        "magnitude": {"type": "number", "description": "0..1 expected size of the SPX move"},
+        "confidence": {"type": "number", "description": "0..1 confidence in this read"},
+        "macro_impact": {"type": "string", "enum": ["risk-on", "risk-off", "neutral"]},
+        "catalysts": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["direction", "magnitude", "confidence", "macro_impact", "catalysts"],
+    "additionalProperties": False,
+}
+
+
+class ClaudeClient:
+    def __init__(self, model: str, logger, api_key: str | None = None, max_tokens: int = 512):
+        self.model = model
+        self.log = logger
+        self.max_tokens = max_tokens
+        self._client = None
+        self._api_key = api_key
+        self._import_error: str | None = None
+        try:
+            import anthropic
+
+            # A bare constructor resolves ANTHROPIC_API_KEY from the environment,
+            # which is how .env-driven config reaches it.
+            self._client = (
+                anthropic.Anthropic(api_key=api_key) if api_key else anthropic.Anthropic()
+            )
+        except ImportError:
+            self._import_error = "anthropic package not installed (pip install anthropic)"
+        except Exception as exc:  # noqa: BLE001 - missing/!invalid key
+            self._import_error = str(exc)
+
+    def available(self) -> bool:
+        if self._client is None:
+            self.log.warning("Claude client unavailable: %s", self._import_error)
+            return False
+        return True
+
+    def generate_json(self, prompt: str, system: str | None = None) -> dict | None:
+        if self._client is None:
+            return None
+        import anthropic
+
+        try:
+            response = self._client.messages.create(
+                model=self.model,
+                max_tokens=self.max_tokens,
+                system=system or "",
+                messages=[{"role": "user", "content": prompt}],
+                output_config={"format": {"type": "json_schema", "schema": SCORE_SCHEMA}},
+            )
+        except anthropic.RateLimitError:
+            # The SDK already retried with backoff; a miss here is a dropped
+            # item, not a crashed cycle.
+            self.log.warning("Claude rate limited; skipping item.")
+            return None
+        except anthropic.APIStatusError as exc:
+            self.log.warning("Claude API error %s: %s", exc.status_code, exc.message)
+            return None
+        except anthropic.APIConnectionError as exc:
+            self.log.warning("Claude connection error: %s", exc)
+            return None
+
+        if response.stop_reason == "refusal":
+            self.log.warning("Claude declined to score an item.")
+            return None
+        if response.stop_reason == "max_tokens":
+            self.log.warning("Claude response truncated; raising max_tokens would help.")
+            return None
+
+        import json
+
+        text = next((b.text for b in response.content if b.type == "text"), None)
+        if not text:
+            return None
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError as exc:
+            self.log.warning("Claude returned unparseable JSON: %s", exc)
+            return None
+
+
+def build_llm(settings, logger):
+    """Pick a scorer from config. Falls back to Ollama on an unknown provider."""
+    from .llm import OllamaClient
+
+    provider = getattr(settings, "llm_provider", "ollama")
+    if provider == "anthropic":
+        return ClaudeClient(
+            model=getattr(settings, "anthropic_model", "claude-haiku-4-5"),
+            logger=logger,
+            api_key=getattr(settings, "anthropic_api_key", None),
+            max_tokens=getattr(settings, "anthropic_max_tokens", 512),
+        )
+    return OllamaClient(settings.ollama_base_url, settings.ollama_model, logger)

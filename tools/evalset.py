@@ -30,6 +30,7 @@ import random
 import sys
 from collections import Counter, defaultdict
 
+from analysis.claude_client import ClaudeClient
 from analysis.llm import OllamaClient
 from analysis.prompts import PROMPTS, get_prompt
 from config import get_settings
@@ -116,11 +117,20 @@ def cmd_grade(args) -> None:
 
     settings = get_settings()
     log = setup_logging("WARNING", None)
-    llm = OllamaClient(settings.ollama_base_url, settings.ollama_model, log)
-    names = args.prompt or list(PROMPTS)
 
+    if args.provider == "anthropic":
+        llm = ClaudeClient(args.model or settings.anthropic_model, log,
+                           api_key=settings.anthropic_api_key)
+        model_name = args.model or settings.anthropic_model
+    else:
+        llm = OllamaClient(settings.ollama_base_url, args.model or settings.ollama_model, log)
+        model_name = args.model or settings.ollama_model
+    if not llm.available():
+        sys.exit(f"Scorer unavailable ({args.provider}/{model_name}).")
+
+    names = args.prompt or list(PROMPTS)
     print(f"grading {len(labelled)} labelled items against: {', '.join(names)}")
-    print(f"model: {settings.ollama_model}\n")
+    print(f"scorer: {args.provider} / {model_name}\n")
 
     for name in names:
         system, template = get_prompt(name)
@@ -297,6 +307,9 @@ def main() -> None:
     g.add_argument("--labels", required=True)
     g.add_argument("--prompt", action="append",
                    help=f"repeatable; one of {list(PROMPTS)} (default: all)")
+    g.add_argument("--provider", choices=("ollama", "anthropic"), default="ollama",
+                   help="which scorer to grade (default: ollama)")
+    g.add_argument("--model", help="override the provider's configured model")
     g.set_defaults(func=cmd_grade)
 
     args = parser.parse_args()
