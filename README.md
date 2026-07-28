@@ -195,6 +195,27 @@ Scores past predictions against what the market actually did. It needs predictio
 older than the 6-day horizon *and* a working Schwab connection at the time they were
 made, so expect it to report nothing useful for the first week.
 
+### 10. Evaluating the scorer
+
+The directional call is only as good as the per-item scores feeding it, and you
+don't need market outcomes to measure those — you can label items directly.
+
+```bash
+python -m tools.evalset sample --n 200        # writes eval/items.jsonl
+# fill in label_relevant / label_direction / label_risk on each line
+python -m tools.evalset grade --labels eval/items.jsonl
+```
+
+`grade` scores every prompt variant in `analysis/prompts.py` against your labels and
+reports relevance precision/recall, direction accuracy, and **risk recall** — how often
+it catches items that raise the chance of a large adverse move. For a credit-spread
+book that last number is the one that costs money when it's wrong: the position
+survives drift and dies on shocks.
+
+This loop takes minutes. The backtest loop takes six days and yields ~52 independent
+observations a year, so it can calibrate a threshold but can never fit the model.
+Do prompt work here.
+
 ### Troubleshooting
 
 | Symptom | Cause |
@@ -237,7 +258,22 @@ exists — `tools/backtest.py` is a first pass at measuring it, but the sample i
 **2. Every weight is hand-chosen.** `SOURCE_WEIGHTS`, the 48-hour recency half-life, the
 `0.85/0.15` direction-vs-trend blend, the `0.60/0.20/0.20` confidence formula, `align_weight`,
 the `±0.12` label threshold, `min_edge_score` — all priors, none fitted to anything. They are
-plausible, not empirical.
+plausible, not empirical. Note they can't simply be *learned*: a 6-day horizon yields ~52
+independent observations a year against ~17 free parameters.
+
+**2a. The per-item scorer reads tone, not index impact.** On a 60-item paired sample the
+shipped prompt scored **83% of everything bearish** (5.6:1 bear:bull) — matching the 82%
+seen across the full corpus. Financial headlines use words like *plunge* and *crisis* for
+routine moves in single assets, and an 8B model treats that as bearish for the S&P 500.
+This is the likeliest reason every prediction so far has been DOWN. See
+`analysis/prompts.py` for variants and the measured failure of the obvious fix.
+
+**2b. Confidence barely varies.** Across 101 comparable predictions it spanned 0.550–0.657,
+with the interquartile range just 0.015 wide. Two of its four terms are constants in
+practice: `coverage` saturates at 1.0 on every cycle (it divides item count by 20 while the
+corpus runs to thousands), and `event_risk` has been true 100% of the time. So no threshold
+discriminates — moving the gate from 0.60 to 0.54 takes the trade rate from 7% to 100%
+with nothing selective in between.
 
 **3. Missing market data is silently treated as neutral.** When the Schwab token is stale,
 `trend_score` falls back to `0.0` and the blend still applies it at 15% weight, shrinking

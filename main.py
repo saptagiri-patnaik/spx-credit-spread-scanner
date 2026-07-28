@@ -13,6 +13,7 @@ from alerts.notifier import Notifier
 from analysis.aggregator import Aggregator
 from analysis.llm import OllamaClient
 from analysis.sentiment import SentimentAnalyzer
+from collectors.base import has_substance
 from collectors.econ_calendar import EconCalendarCollector
 from collectors.macro import MacroCollector
 from collectors.news import NewsCollector
@@ -61,14 +62,30 @@ class Pipeline:
 
     def collect_new(self) -> int:
         new_count = 0
+        thin_count = 0
+        min_words = getattr(self.s, "min_item_words", 0)
         for collector in self.collectors:
             try:
                 for item in collector.collect():
+                    # Bare cashtag spam ("$SPY $GOOG") scores like any other item
+                    # and votes in the aggregate; drop it before it costs an
+                    # inference call and dilutes the mean.
+                    if not has_substance(item, min_words):
+                        thin_count += 1
+                        continue
                     if self.repo.upsert_item(item.to_row()):
                         new_count += 1
             except Exception as exc:  # noqa: BLE001
                 self.log.warning("Collector %s failed: %s", type(collector).__name__, exc)
-        self.log.info("Collected %d new items.", new_count)
+        if thin_count:
+            self.log.info(
+                "Collected %d new items (%d skipped: under %d substantive words).",
+                new_count,
+                thin_count,
+                min_words,
+            )
+        else:
+            self.log.info("Collected %d new items.", new_count)
         return new_count
 
     def score_new(self) -> None:

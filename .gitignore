@@ -1,6 +1,8 @@
 .env
 logs/
 chat-history/
+# Generated eval samples: regenerable, and they embed scraped article text.
+eval/*.jsonl
 __pycache__/
 *.pyc
 .venv/

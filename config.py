@@ -147,6 +147,14 @@ class Settings(BaseSettings):
     llm_chunk_chars: int = 6000      # chars per LLM scoring chunk
     llm_max_chunks: int = 3          # max chunks scored per item
 
+    # Drop items with fewer than this many words once cashtags, @mentions and
+    # URLs are stripped. A post like "$SPY $GOOG" has nothing to score but
+    # still votes in the aggregate. 8 removes ~31% of the corpus, ~97% of it
+    # social; 0 disables the filter.
+    min_item_words: int = 8
+    # Which prompt variant analysis/prompts.py should score with.
+    scoring_prompt: str = "current"
+
     log_level: str = "INFO"
     log_file: str = "logs/spx_scanner.log"
 
