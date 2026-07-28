@@ -6,25 +6,11 @@ the numeric results are combined (confidence-weighted) into one item score.
 from __future__ import annotations
 
 from .llm import OllamaClient
+from .prompts import get_prompt
 
-SYSTEM = (
-    "You are a markets analyst. Assess how a piece of content is likely to affect the "
-    "S&P 500 (SPX) over the NEXT 5-7 trading days. Consider macro, fiscal/tax policy, and "
-    "geopolitical spillover, not just direct market mentions. Respond ONLY with strict JSON."
-)
-
-PROMPT_TEMPLATE = """Content source type: {stype}
-Category: {category}
-Title: {title}
-Text: {text}
-
-Return JSON with exactly these keys:
-  direction: number from -1 (strongly bearish for SPX) to +1 (strongly bullish)
-  magnitude: number 0..1 (how large the expected SPX move)
-  confidence: number 0..1 (your confidence in this read)
-  macro_impact: one of "risk-on", "risk-off", "neutral"
-  catalysts: array of up to 5 short strings naming the key drivers
-"""
+# Backwards-compatible aliases for the shipped prompt; variants live in prompts.py
+# and are selected per-run via the SCORING_PROMPT setting.
+SYSTEM, PROMPT_TEMPLATE = get_prompt("current")
 
 
 def _clamp(value, low: float, high: float, default: float = 0.0) -> float:
@@ -41,6 +27,7 @@ class SentimentAnalyzer:
         self.log = logger
         self.chunk_chars = getattr(settings, "llm_chunk_chars", 6000)
         self.max_chunks = getattr(settings, "llm_max_chunks", 3)
+        self.system, self.template = get_prompt(getattr(settings, "scoring_prompt", None))
 
     def score(self, item) -> dict | None:
         text = item.content or item.title or ""
@@ -61,13 +48,13 @@ class SentimentAnalyzer:
         return chunks[: self.max_chunks] or [text[:size]]
 
     def _score_chunk(self, item, text: str) -> dict | None:
-        prompt = PROMPT_TEMPLATE.format(
+        prompt = self.template.format(
             stype=item.source_type,
             category=item.category or "",
             title=item.title or "",
             text=text,
         )
-        out = self.llm.generate_json(prompt, system=SYSTEM)
+        out = self.llm.generate_json(prompt, system=self.system)
         if not out:
             return None
 

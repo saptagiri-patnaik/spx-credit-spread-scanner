@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import datetime as dt
 import hashlib
+import re
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
 from typing import Iterable, Sequence
@@ -65,6 +66,34 @@ def mentions_spx(text: str | None) -> bool:
         return False
     lowered = text.lower()
     return any(k in lowered for k in SPX_KEYWORDS)
+
+
+_TICKER = re.compile(r"[\$#][A-Za-z][A-Za-z.\-]*")
+_URL = re.compile(r"https?://\S+|www\.\S+")
+_MENTION = re.compile(r"@\w+")
+_WORD = re.compile(r"[A-Za-z][A-Za-z'\-]+")
+
+
+def substantive_word_count(text: str | None) -> int:
+    """Words left after stripping tickers, cashtags, @mentions and URLs.
+
+    A post like "$SPY $GOOG" carries no assessable content but still gets a
+    directional score and a vote in the aggregate. Counting only real words
+    separates commentary from bare ticker spam.
+    """
+    if not text:
+        return 0
+    cleaned = _URL.sub(" ", text)
+    cleaned = _TICKER.sub(" ", cleaned)
+    cleaned = _MENTION.sub(" ", cleaned)
+    return sum(1 for w in _WORD.findall(cleaned) if len(w) > 2)
+
+
+def has_substance(item: "CollectedItem", min_words: int) -> bool:
+    """False for items too thin for the LLM to say anything meaningful about."""
+    if min_words <= 0:
+        return True
+    return substantive_word_count(f"{item.title or ''} {item.content or ''}") >= min_words
 
 
 def within_lookback(published: dt.datetime | None, days: int) -> bool:
