@@ -9,7 +9,16 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session, sessionmaker
 
-from .models import ApiUsage, Base, CollectorState, Item, ItemScore, Prediction, SpreadSuggestion
+from .models import (
+    ApiUsage,
+    Base,
+    CollectorState,
+    Item,
+    ItemScore,
+    PaperPosition,
+    Prediction,
+    SpreadSuggestion,
+)
 
 
 class Repository:
@@ -90,6 +99,61 @@ class Repository:
             for sp in spreads:
                 s.add(SpreadSuggestion(prediction_id=p.id, **sp))
             return p.id
+
+    # --- paper positions ---------------------------------------------------
+    def open_paper_position(self, data: dict) -> int:
+        with self.session() as s:
+            pos = PaperPosition(**data)
+            s.add(pos)
+            s.flush()
+            return pos.id
+
+    def open_paper_positions(self) -> list[PaperPosition]:
+        with self.session() as s:
+            return list(
+                s.scalars(
+                    select(PaperPosition)
+                    .where(PaperPosition.status == "open")
+                    .order_by(PaperPosition.opened_at)
+                )
+            )
+
+    def mark_paper_position(self, position_id: int, mark: float) -> None:
+        with self.session() as s:
+            pos = s.get(PaperPosition, position_id)
+            if pos:
+                pos.last_mark = mark
+                pos.last_marked_at = dt.datetime.now(dt.timezone.utc)
+
+    def close_paper_position(
+        self,
+        position_id: int,
+        exit_mark: float,
+        exit_reason: str,
+        pnl: float,
+        underlying_at_close: float | None = None,
+    ) -> None:
+        with self.session() as s:
+            pos = s.get(PaperPosition, position_id)
+            if not pos:
+                return
+            pos.status = "closed"
+            pos.closed_at = dt.datetime.now(dt.timezone.utc)
+            pos.exit_mark = exit_mark
+            pos.exit_reason = exit_reason
+            pos.pnl = pnl
+            pos.underlying_at_close = underlying_at_close
+            pos.last_mark = exit_mark
+
+    def closed_paper_positions(self) -> list[PaperPosition]:
+        with self.session() as s:
+            return list(
+                s.scalars(
+                    select(PaperPosition)
+                    .where(PaperPosition.status == "closed")
+                    .order_by(PaperPosition.closed_at)
+                )
+            )
 
     # --- budget-guarded API usage + collector cursors ----------------------
     def daily_usage(self, provider: str, day: dt.date) -> int:

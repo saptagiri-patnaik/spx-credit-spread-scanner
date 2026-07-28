@@ -122,6 +122,51 @@ class SpreadSuggestion(Base):
     prediction = relationship("Prediction", back_populates="spreads")
 
 
+class PaperPosition(Base):
+    """A simulated credit spread, tracked from entry to exit.
+
+    Recording what a suggestion was *worth later* is the only way to measure
+    profitability: a credit spread can be directionally wrong and still pay
+    (the underlying drifts against you but never reaches the short strike), or
+    directionally right and lose. `spread_suggestions` captures the entry only.
+    """
+
+    __tablename__ = "paper_positions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    spread_id: Mapped[int | None] = mapped_column(
+        ForeignKey("spread_suggestions.id", ondelete="SET NULL"), index=True, nullable=True
+    )
+
+    # --- entry ---
+    opened_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    underlying: Mapped[str] = mapped_column(String(20))
+    strategy: Mapped[str] = mapped_column(String(40))
+    short_strike: Mapped[float] = mapped_column(Float)
+    long_strike: Mapped[float] = mapped_column(Float)
+    expiration: Mapped[str] = mapped_column(String(20))
+    dte_at_open: Mapped[int] = mapped_column(Integer)
+    width: Mapped[float] = mapped_column(Float)
+    credit: Mapped[float] = mapped_column(Float)      # received at entry
+    max_loss: Mapped[float] = mapped_column(Float)    # width - credit
+    stop_price: Mapped[float] = mapped_column(Float)  # close if mark reaches this
+    underlying_at_open: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # --- live ---
+    status: Mapped[str] = mapped_column(String(12), default="open", index=True)  # open/closed
+    last_mark: Mapped[float | None] = mapped_column(Float, nullable=True)
+    last_marked_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    # --- exit ---
+    closed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    exit_mark: Mapped[float | None] = mapped_column(Float, nullable=True)
+    exit_reason: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    pnl: Mapped[float | None] = mapped_column(Float, nullable=True)  # credit - exit_mark
+    underlying_at_close: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+
 class ApiUsage(Base):
     """Per-day paid-usage counter for budget-guarded APIs (e.g. X)."""
 

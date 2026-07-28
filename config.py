@@ -155,6 +155,14 @@ class Settings(BaseSettings):
     # Which prompt variant analysis/prompts.py should score with.
     scoring_prompt: str = "current"
 
+    # --- Paper trading (measures whether the suggestions actually pay) ---
+    paper_trading_enabled: bool = True
+    paper_hold_days: float = 4.0      # close on time after this many days (3-5 typical)
+    paper_stop_multiple: float = 2.0  # close if the mark reaches this x the credit;
+                                      # at 2.0 a $1.00 credit stops out at $2.00, a
+                                      # $1.00 loss - risking 1x credit to make 1x
+    paper_max_open: int = 5           # concurrent simulated positions
+
     log_level: str = "INFO"
     log_file: str = "logs/spx_scanner.log"
 

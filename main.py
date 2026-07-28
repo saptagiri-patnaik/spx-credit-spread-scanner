@@ -23,6 +23,7 @@ from collectors.youtube import YouTubeCollector
 from config import get_settings
 from db.repository import Repository
 from market.options_strategy import OptionsStrategy
+from market.paper import PaperTracker
 from market.schwab_client import SchwabClient
 from utils.logging import setup_logging
 
@@ -38,6 +39,7 @@ class Pipeline:
         self.aggregator = Aggregator(settings, logger)
         self.schwab = SchwabClient(settings, logger)
         self.strategy = OptionsStrategy(settings, logger)
+        self.paper = PaperTracker(settings, self.repo, logger)
         self.notifier = Notifier(settings, logger)
         self.collectors = [
             NewsCollector(settings, logger),
@@ -123,6 +125,11 @@ class Pipeline:
 
         if not self.dry_run:
             self.repo.save_prediction(prediction, spreads)
+            # Mark and exit existing positions before opening new ones, so a
+            # position that hits its stop this cycle is closed on this cycle's
+            # chain rather than next cycle's.
+            self.paper.manage(chain)
+            self.paper.maybe_open(scan, chain, spread_id=None)
 
         push = scan["recommended"] or not getattr(self.s, "alert_only_on_trade", True)
         self.notifier.send(self._format(prediction, scan), external=push)
