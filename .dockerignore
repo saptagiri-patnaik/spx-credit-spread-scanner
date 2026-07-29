@@ -1,0 +1,12 @@
+.env
+.venv/
+logs/
+eval/
+chat-history/
+docs/
+tests/
+tools/
+.git/
+.pytest_cache/
+__pycache__/
+*.pyc
