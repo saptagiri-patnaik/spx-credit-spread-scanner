@@ -126,11 +126,19 @@ class Pipeline:
         # cannot. This is the weekend catch-up.
         new_count = self.collect_new()
 
+        # Scoring runs on every cycle in every mode. Its cost is per ITEM, not
+        # per cycle, so deferring it saves nothing -- and at ~1200 items/day
+        # against a per-cycle cap of 80, restricting it to the ~9 RTH cycles
+        # leaves the backlog growing by thousands a week. The saving from
+        # market_hours comes entirely from the once-per-cycle synthesis call.
+        self.score_new()
+
         if getattr(self.s, "schedule_mode", "continuous") == "market_hours":
             now = dt.datetime.now(dt.timezone.utc)
             if not is_market_hours(now, getattr(self.s, "market_tz", "America/New_York")):
                 self.log.info(
-                    "Collected %d item(s); outside market hours, deferring scoring.",
+                    "Collected %d item(s) and scored the backlog; "
+                    "outside market hours, deferring prediction.",
                     new_count,
                 )
                 return
@@ -138,8 +146,6 @@ class Pipeline:
         if new_count == 0:
             self.log.info("No new information; keeping prior prediction.")
             return
-
-        self.score_new()
         now = dt.datetime.now(dt.timezone.utc)
         since = now - dt.timedelta(days=self.s.lookback_days)
         scored = self.repo.recent_scores(since)
