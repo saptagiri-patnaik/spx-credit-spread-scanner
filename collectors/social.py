@@ -14,7 +14,11 @@ from dateutil import parser as dateparser
 from .base import BaseCollector, CollectedItem, mentions_spx
 
 UA = {"User-Agent": "spx-scanner/1.0 (research; contact=local)"}
-STOCKTWITS_SYMBOLS = ("SPX", "SPY")
+# ES_F and VIX carry what SPX/SPY streams do not: overnight and pre-market futures
+# positioning, and volatility sentiment. The latter matters more than its volume
+# suggests -- the tail-risk gates decide which side may be sold at all, so a shift
+# in how traders are talking about vol bears directly on that call.
+STOCKTWITS_SYMBOLS = ("SPX", "SPY", "ES_F", "VIX")
 REDDIT_SUBS = ("thetagang", "options", "stocks", "StockMarket")
 
 
