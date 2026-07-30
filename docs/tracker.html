@@ -1,0 +1,543 @@
+<title>SPX Scanner — Open Investigations</title>
+<style>
+  :root {
+    color-scheme: light dark;
+
+    --ground:      #F7F6F3;
+    --panel:       #FFFFFF;
+    --panel-sunk:  #F0EEE9;
+    --rule:        #DFDBD2;
+    --rule-strong: #C6C0B4;
+    --ink:         #1A1F21;
+    --ink-soft:    #4E5658;
+    --ink-faint:   #7C8385;
+
+    --accent:      #1F7A72;
+    --accent-soft: #E3EFED;
+
+    --watch:       #A9761C;
+    --watch-soft:  #F6EBD6;
+    --risk:        #A5493A;
+    --risk-soft:   #F7E5E1;
+    --settled:     #46795A;
+    --settled-soft:#E4EFE7;
+
+    --shadow: 0 1px 2px rgba(26,31,33,.06), 0 8px 24px -16px rgba(26,31,33,.28);
+
+    --display: Georgia, "Iowan Old Style", "Times New Roman", serif;
+    --ui: system-ui, -apple-system, "Segoe UI", sans-serif;
+    --data: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground:#0F1417; --panel:#161C1F; --panel-sunk:#12181A;
+      --rule:#253033; --rule-strong:#354347;
+      --ink:#E8E9E6; --ink-soft:#A3AEAF; --ink-faint:#74807F;
+      --accent:#55BAAF; --accent-soft:#17302E;
+      --watch:#DBA548; --watch-soft:#302713;
+      --risk:#DE7C6A; --risk-soft:#331D19;
+      --settled:#74B58E; --settled-soft:#182B20;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 28px -18px rgba(0,0,0,.8);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground:#0F1417; --panel:#161C1F; --panel-sunk:#12181A;
+    --rule:#253033; --rule-strong:#354347;
+    --ink:#E8E9E6; --ink-soft:#A3AEAF; --ink-faint:#74807F;
+    --accent:#55BAAF; --accent-soft:#17302E;
+    --watch:#DBA548; --watch-soft:#302713;
+    --risk:#DE7C6A; --risk-soft:#331D19;
+    --settled:#74B58E; --settled-soft:#182B20;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 28px -18px rgba(0,0,0,.8);
+  }
+  :root[data-theme="light"] {
+    --ground:#F7F6F3; --panel:#FFFFFF; --panel-sunk:#F0EEE9;
+    --rule:#DFDBD2; --rule-strong:#C6C0B4;
+    --ink:#1A1F21; --ink-soft:#4E5658; --ink-faint:#7C8385;
+    --accent:#1F7A72; --accent-soft:#E3EFED;
+    --watch:#A9761C; --watch-soft:#F6EBD6;
+    --risk:#A5493A; --risk-soft:#F7E5E1;
+    --settled:#46795A; --settled-soft:#E4EFE7;
+    --shadow: 0 1px 2px rgba(26,31,33,.06), 0 8px 24px -16px rgba(26,31,33,.28);
+  }
+
+  body {
+    background: var(--ground); color: var(--ink);
+    font-family: var(--ui); font-size: 16px; line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 68rem; margin: 0 auto;
+    padding: clamp(1.5rem, 4vw, 3.5rem) clamp(1rem, 4vw, 2.5rem) 5rem;
+    display: flex; flex-direction: column; gap: 3rem;
+  }
+
+  .masthead { display: flex; flex-direction: column; gap: .75rem; }
+  .eyebrow {
+    font-size: .72rem; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--accent); font-weight: 600;
+  }
+  h1 {
+    font-family: var(--display); font-size: clamp(1.9rem, 4.5vw, 2.9rem);
+    line-height: 1.1; font-weight: 400; text-wrap: balance; letter-spacing: -.01em;
+  }
+  .standfirst { color: var(--ink-soft); max-width: 62ch; font-size: 1.02rem; }
+
+  .strip {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+    gap: 1px; background: var(--rule); border: 1px solid var(--rule);
+    border-radius: 3px; overflow: hidden;
+  }
+  .cell { background: var(--panel); padding: .85rem 1rem; display: flex; flex-direction: column; gap: .25rem; }
+  .cell dt { font-size: .68rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-faint); font-weight: 600; }
+  .cell dd { font-family: var(--data); font-size: .95rem; font-variant-numeric: tabular-nums; }
+  .cell dd.ok { color: var(--settled); }
+  .cell dd.warn { color: var(--watch); }
+
+  section { display: flex; flex-direction: column; gap: 1.25rem; }
+  .sec-head { display: flex; align-items: baseline; gap: .85rem; border-bottom: 1px solid var(--rule-strong); padding-bottom: .5rem; flex-wrap: wrap; }
+  h2 { font-family: var(--display); font-weight: 400; font-size: 1.5rem; letter-spacing: -.005em; }
+  .sec-note { color: var(--ink-faint); font-size: .85rem; margin-left: auto; }
+
+  .lead {
+    background: var(--panel); border: 1px solid var(--rule);
+    border-left: 3px solid var(--risk); border-radius: 3px;
+    padding: 1.4rem 1.5rem; box-shadow: var(--shadow);
+    display: flex; flex-direction: column; gap: .9rem;
+  }
+  .lead h3 { font-family: var(--display); font-size: 1.3rem; font-weight: 400; }
+  .lead p { color: var(--ink-soft); max-width: 70ch; }
+  .lead .figures { display: flex; gap: 2rem; flex-wrap: wrap; padding-top: .3rem; }
+  .fig { display: flex; flex-direction: column; gap: .15rem; }
+  .fig b { font-family: var(--data); font-size: 1.45rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .fig span { font-size: .72rem; text-transform: uppercase; letter-spacing: .09em; color: var(--ink-faint); }
+
+  .bars { display: flex; flex-direction: column; gap: .3rem; margin-top: .2rem; }
+  .bar-row { display: grid; grid-template-columns: 8.5rem 1fr 3rem; align-items: center; gap: .6rem; font-family: var(--data); font-size: .78rem; font-variant-numeric: tabular-nums; }
+  .bar-track { position: relative; height: 9px; background: var(--panel-sunk); border-radius: 2px; overflow: hidden; }
+  .bar-fill { position: absolute; inset: 0 auto 0 0; background: var(--accent); opacity: .8; }
+  .bar-gate { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--risk); }
+  .bar-row span:last-child { color: var(--ink-soft); text-align: right; }
+
+  .items { display: flex; flex-direction: column; gap: .75rem; }
+  .item {
+    background: var(--panel); border: 1px solid var(--rule); border-radius: 3px;
+    padding: 1rem 1.15rem; display: flex; flex-direction: column; gap: .6rem;
+    box-shadow: var(--shadow); border-left: 3px solid var(--rule-strong);
+  }
+  .item.sev-watch { border-left-color: var(--watch); }
+  .item.sev-risk { border-left-color: var(--risk); }
+  .item.sev-run { border-left-color: var(--accent); }
+  .item.sev-new { border-left-color: var(--accent); }
+
+  .item-top { display: flex; align-items: baseline; gap: .7rem; flex-wrap: wrap; }
+  .item-top h3 { font-size: 1rem; font-weight: 600; letter-spacing: -.003em; }
+  .pill { font-size: .66rem; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; padding: .2rem .5rem; border-radius: 2px; white-space: nowrap; }
+  .p-watch { background: var(--watch-soft); color: var(--watch); }
+  .p-risk { background: var(--risk-soft); color: var(--risk); }
+  .p-run { background: var(--accent-soft); color: var(--accent); }
+  .p-new { background: var(--accent-soft); color: var(--accent); }
+  .when { margin-left: auto; font-family: var(--data); font-size: .76rem; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+
+  .item p { color: var(--ink-soft); font-size: .92rem; max-width: 80ch; }
+  .trigger { font-size: .84rem; background: var(--panel-sunk); border-radius: 2px; padding: .55rem .7rem; display: flex; gap: .55rem; align-items: baseline; }
+  .trigger b { font-size: .64rem; letter-spacing: .09em; text-transform: uppercase; color: var(--ink-faint); flex: none; padding-top: .12rem; }
+  code { font-family: var(--data); font-size: .86em; background: var(--panel-sunk); padding: .08em .32em; border-radius: 2px; }
+  .trigger code { background: transparent; padding: 0; }
+
+  .table-scroll { overflow-x: auto; border: 1px solid var(--rule); border-radius: 3px; }
+  table { border-collapse: collapse; width: 100%; font-size: .88rem; min-width: 38rem; background: var(--panel); }
+  th, td { text-align: left; padding: .6rem .8rem; border-bottom: 1px solid var(--rule); }
+  th { font-size: .67rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-faint); font-weight: 600; background: var(--panel-sunk); }
+  tbody tr:last-child td { border-bottom: none; }
+  td.num { font-family: var(--data); font-variant-numeric: tabular-nums; }
+  td.was { color: var(--ink-faint); text-decoration: line-through; }
+  td.now { color: var(--settled); font-weight: 600; }
+
+  .settled-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: .5rem; }
+  .settled-item { display: flex; gap: .55rem; align-items: baseline; font-size: .87rem; color: var(--ink-soft); padding: .45rem .6rem; background: var(--panel); border: 1px solid var(--rule); border-radius: 3px; }
+  .settled-item::before { content: "✓"; color: var(--settled); font-weight: 700; flex: none; }
+  .settled-item.today { border-color: var(--settled); }
+
+  footer { color: var(--ink-faint); font-size: .8rem; border-top: 1px solid var(--rule); padding-top: 1rem; display: flex; gap: 1rem; flex-wrap: wrap; }
+  footer code { background: transparent; }
+
+  @media (max-width: 34rem) {
+    .bar-row { grid-template-columns: 6.5rem 1fr 2.6rem; font-size: .72rem; }
+    .when { margin-left: 0; width: 100%; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <div class="eyebrow">SPX Scanner &middot; operational tracker</div>
+    <h1>Open investigations, running experiments, and what to watch next</h1>
+    <p class="standfirst">
+      Everything currently unresolved in the pipeline, each with the condition that would make you
+      act on it. Regenerated 30 July 2026, 10:07 PT from the live database, CloudWatch and the
+      deployed configuration. Twelve items closed since the 09:03 edition, including the account's
+      root access key.
+    </p>
+  </header>
+
+  <dl class="strip">
+    <div class="cell"><dt>Build</dt><dd>783ca7b</dd></div>
+    <div class="cell"><dt>AWS identity</dt><dd class="ok">spx-deployer</dd></div>
+    <div class="cell"><dt>Root keys</dt><dd class="ok">none</dd></div>
+    <div class="cell"><dt>Alarms</dt><dd class="ok">both OK</dd></div>
+    <div class="cell"><dt>X spend today</dt><dd>162 / 260</dd></div>
+    <div class="cell"><dt>Open paper</dt><dd class="warn">2 baseline, 0 signal</dd></div>
+  </dl>
+
+  <!-- ============ LEAD ============ -->
+  <section>
+    <div class="sec-head">
+      <h2>The question everything else is subordinate to</h2>
+      <span class="sec-note">sharpened today — one explanation eliminated</span>
+    </div>
+
+    <div class="lead">
+      <h3>The signal arm has still never opened a position</h3>
+      <p>
+        Every prediction on record sits between 30% and 40% confidence against a 65% gate, so
+        <code>scan()</code> returns zero candidates before constructing a single vertical, while the
+        control arm sells a spread a day regardless. That has not changed. What changed today is
+        <em>why</em> it might be happening.
+      </p>
+      <div class="bars">
+        <div class="bar-row"><span>30 Jul 09:58</span><span class="bar-track"><span class="bar-fill" style="width:34%"></span><span class="bar-gate" style="left:65%"></span></span><span>34%</span></div>
+        <div class="bar-row"><span>30 Jul 09:15</span><span class="bar-track"><span class="bar-fill" style="width:35%"></span><span class="bar-gate" style="left:65%"></span></span><span>35%</span></div>
+        <div class="bar-row"><span>30 Jul 08:29</span><span class="bar-track"><span class="bar-fill" style="width:34%"></span><span class="bar-gate" style="left:65%"></span></span><span>34%</span></div>
+        <div class="bar-row"><span>30 Jul 07:43</span><span class="bar-track"><span class="bar-fill" style="width:33%"></span><span class="bar-gate" style="left:65%"></span></span><span>33%</span></div>
+        <div class="bar-row"><span>30 Jul 06:57</span><span class="bar-track"><span class="bar-fill" style="width:40%"></span><span class="bar-gate" style="left:65%"></span></span><span>40%</span></div>
+      </div>
+      <div class="figures">
+        <div class="fig"><b>0</b><span>signal trades, all time</span></div>
+        <div class="fig"><b>25 pts</b><span>closest approach to gate</span></div>
+        <div class="fig"><b>65%</b><span>gate &middot; confidence_gate</span></div>
+        <div class="fig"><b>0.6</b><span>confidence_dir_scale</span></div>
+      </div>
+      <p>
+        The 09:03 edition listed three candidate explanations. <strong>One is now eliminated.</strong>
+        &ldquo;The corpus was too thin to support conviction&rdquo; no longer holds: the 09:55 cycle ran on a
+        properly diversified prompt — 24 macro, 15 news, 1 YouTube — and returned 34%, statistically
+        indistinguishable from the lopsided cycles before it.
+      </p>
+      <p>
+        Two remain. Either the tape has genuinely been unattractive throughout the measurement window,
+        or <code>confidence_dir_scale</code> compresses conviction so that 65% is unreachable in
+        practice. The 09:55 rationale argues for the first: it calls the setup a
+        <em>&ldquo;two-sided gap window rather than a clean premium-selling setup&rdquo;</em> and says
+        <em>&ldquo;size down or stand aside&rdquo;</em>. That is a model declining to have a view, with reasons,
+        rather than one failing to form one.
+      </p>
+      <div class="trigger"><b>Next</b><span>let tomorrow's session run untouched. If confidence still sits in the low 30s across varied tape, calibration becomes the suspect — and the labelled eval set is how you would prove it, not by moving the gate to meet the number.</span></div>
+    </div>
+  </section>
+
+  <!-- ============ WATCH ============ -->
+  <section>
+    <div class="sec-head">
+      <h2>Watch list</h2>
+      <span class="sec-note">shipped today, one observation each at most</span>
+    </div>
+
+    <div class="items">
+
+      <article class="item sev-new">
+        <div class="item-top">
+          <h3>Does the story diversity cap hold across cycles?</h3>
+          <span class="pill p-new">1 of N</span>
+          <span class="when">next: every cycle</span>
+        </div>
+        <p>
+          The cap shipped at 09:40 after macro took 39 of 40 slots. Exactly one cycle has run under
+          it, and it landed precisely on target. One observation is not a trend, and the mix will
+          shift as the wire reclassification phases in over the coming week.
+        </p>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Cycle</th><th>macro</th><th>news</th><th>youtube</th><th>wire</th></tr></thead>
+            <tbody>
+              <tr><td class="num">09:15 &middot; before</td><td class="num was">39</td><td class="num was">1</td><td class="num">0</td><td class="num">0</td></tr>
+              <tr><td class="num">09:58 &middot; after</td><td class="num now">24</td><td class="num now">15</td><td class="num">1</td><td class="num">0</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="trigger"><b>Act if</b><span>macro returns above 24, or news collapses back toward single digits. Either means the primary-type attribution is mis-assigning stories that touch several source types.</span></div>
+      </article>
+
+      <article class="item sev-watch">
+        <div class="item-top">
+          <h3>When do the X accounts start appearing as stories?</h3>
+          <span class="pill p-watch">phasing in</span>
+          <span class="when">through 6 Aug</span>
+        </div>
+        <p>
+          X became <code>source_type: wire</code> at weight 1.0 with generated headlines, but the mix
+          still reads <code>wire=0</code>. That is expected: items stored before the change keep their
+          old shape until they age out of the 7-day lookback, and only 13 wire-shaped stories exist so
+          far. The effect builds rather than switching on.
+        </p>
+        <div class="trigger"><b>Act if</b><span><code>wire=</code> is still 0 by 2 Aug → the headline generator is producing titles that fail <code>story_key()</code>. If it exceeds ~16 → the accounts are crowding the wires and the weight should drop to 0.8.</span></div>
+      </article>
+
+      <article class="item sev-watch">
+        <div class="item-top">
+          <h3>Does the X budget get fully spent, in the right hours?</h3>
+          <span class="pill p-watch">watch</span>
+          <span class="when">tonight, then 31 Jul</span>
+        </div>
+        <p>
+          162 of 260 spent by 10:07, against an old ceiling of 130 that used to be exhausted before
+          the first actionable cycle. The window runs 07:00–22:00 ET with 20 grid slots at 15 posts,
+          so the budget should bind rather than the slots.
+        </p>
+        <div class="trigger"><b>Act if</b><span>the day ends well short of 260 → raise per-fetch above 15. If session cycles log <code>budget reached</code> before 13:00 PT → the evening slots are taking too much of the UTC-day allowance.</span></div>
+      </article>
+
+      <article class="item sev-watch">
+        <div class="item-top">
+          <h3>Is the off-window X gate actually firing?</h3>
+          <span class="pill p-watch">unobserved</span>
+          <span class="when">tonight, after 19:00 PT</span>
+        </div>
+        <p>
+          Cycles outside the window should skip the paid fetch before touching the budget or the
+          database. Deployed but never yet observed in production, because every cycle since it
+          shipped has been inside the window.
+        </p>
+        <div class="trigger"><b>Confirm</b><span><code>X: outside the paid-collection window</code> appears after 19:00 PT and before 04:00 PT.</span></div>
+      </article>
+
+      <article class="item sev-watch">
+        <div class="item-top">
+          <h3>Does the corpus rebalance after the feed repairs?</h3>
+          <span class="pill p-watch">watch</span>
+          <span class="when">6 Aug &middot; one week</span>
+        </div>
+        <p>
+          Four dead feeds — three Reuters endpoints and AP — were replaced with six publisher-direct
+          sources. YouTube gained a US region restriction and NewsAPI now matches titles rather than
+          article bodies. The composition below is the before-picture.
+        </p>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Source type</th><th>Items, 6 days</th><th>Share</th><th>Expectation</th></tr></thead>
+            <tbody>
+              <tr><td>social</td><td class="num">4,990</td><td class="num">68.7%</td><td>should fall</td></tr>
+              <tr><td>youtube</td><td class="num">1,104</td><td class="num">15.2%</td><td>should fall sharply</td></tr>
+              <tr><td>macro</td><td class="num">660</td><td class="num">9.1%</td><td>should rise</td></tr>
+              <tr><td>news</td><td class="num">507</td><td class="num">7.0%</td><td>should rise</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="trigger"><b>Act if</b><span><code>news + macro</code> has not passed ~15% combined by 6 Aug, or Zerodha / MoneyControl / PRNewswire still appear → the API filters are not doing what they document.</span></div>
+      </article>
+
+      <article class="item sev-watch">
+        <div class="item-top">
+          <h3>Cycle duration is varying by a factor of two</h3>
+          <span class="pill p-watch">watch</span>
+          <span class="when">continuous</span>
+        </div>
+        <p>
+          Recent cycles: 130s, 246s, 309s, 155s, against a 600s timeout. The variation tracks how many
+          new items each cycle scores rather than anything structural — scoring is per-item and capped
+          at 80 — so the 309s peak was a backlog burst from the doubled X budget, not a leak. Peak
+          memory sits at 394 MB of 1024 MB.
+        </p>
+        <div class="trigger"><b>Act if</b><span>any cycle exceeds ~450s, or two consecutive cycles trend upward with flat item counts. Headroom is real but no longer generous.</span></div>
+      </article>
+
+      <article class="item sev-watch">
+        <div class="item-top">
+          <h3>Does any feed go dark again, and does it say so?</h3>
+          <span class="pill p-watch">standing</span>
+          <span class="when">continuous</span>
+        </div>
+        <p>
+          The dead feeds were invisible because <code>feedparser</code> never raises — a dead host
+          returns an ordinary empty result. <code>parse_feed()</code> now warns on zero entries with
+          the underlying cause.
+        </p>
+        <div class="trigger"><b>Alerts on</b><span><code>Feed X returned no entries</code> in CloudWatch. Two consecutive cycles means the endpoint has lapsed.</span></div>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- ============ EXPERIMENTS ============ -->
+  <section>
+    <div class="sec-head">
+      <h2>Experiments running</h2>
+      <span class="sec-note">measuring, not yet answering</span>
+    </div>
+
+    <div class="items">
+
+      <article class="item sev-run">
+        <div class="item-top">
+          <h3>Model versus mechanical premium selling</h3>
+          <span class="pill p-run">running</span>
+          <span class="when">first close: ~1 Aug</span>
+        </div>
+        <p>
+          The baseline arm sells a ~0.15-delta put spread daily and ignores the model entirely; the
+          signal arm trades only when confidence clears 65% and edge beats 0.05. The comparison is the
+          point of the system, and it still has only one arm in it.
+        </p>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>#</th><th>Arm</th><th>Spread</th><th>Expiry</th><th>Credit</th><th>Stop</th><th>Opened</th></tr></thead>
+            <tbody>
+              <tr><td class="num">2</td><td>baseline</td><td class="num">7045 / 7040 put</td><td class="num">21 Aug</td><td class="num">$0.45</td><td class="num">$0.90</td><td class="num">30 Jul 13:57</td></tr>
+              <tr><td class="num">1</td><td>baseline</td><td class="num">7060 / 7055 put</td><td class="num">21 Aug</td><td class="num">$0.45</td><td class="num">$0.90</td><td class="num">28 Jul 22:58</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="trigger"><b>Reads out</b><span>positions close on a 4-day hold or a 2× credit stop, so #1 resolves around 1 Aug and #2 around 3 Aug.</span></div>
+      </article>
+
+      <article class="item sev-run">
+        <div class="item-top">
+          <h3>Synthesis aggregation versus the weighted mean</h3>
+          <span class="pill p-run">running</span>
+          <span class="when">no end date</span>
+        </div>
+        <p>
+          Synthesis collapses the corpus to distinct stories and spends one Opus call per cycle on the
+          top 40. Only it produces the per-side tail estimates the spread gates depend on, so reverting
+          to <code>mean</code> would disable the tail-risk logic entirely.
+        </p>
+        <div class="trigger"><b>Available free</b><span>the mean aggregator still runs every cycle — it supplies the <code>sentiment</code> and <code>macro</code> sub-scores in every alert. A comparison exists in the data already; nothing records it.</span></div>
+      </article>
+
+      <article class="item sev-run">
+        <div class="item-top">
+          <h3>Per-item scoring model, Haiku against the alternatives</h3>
+          <span class="pill p-run">blocked</span>
+          <span class="when">not started</span>
+        </div>
+        <p>
+          Scoring runs on <code>claude-haiku-4-5</code> at ~1,200 items a day; synthesis on
+          <code>claude-opus-5</code> once a cycle. <code>tools/evalset.py</code> and
+          <code>tools/calibration.py</code> exist, and every score records which model produced it.
+        </p>
+        <div class="trigger"><b>Blocked on</b><span>a labelled eval set — and it is now on the critical path. Retuning the confidence gate without knowing whether the scorer is noisy just fits the gate to the noise.</span></div>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- ============ RISKS ============ -->
+  <section>
+    <div class="sec-head">
+      <h2>Open risks and debt</h2>
+      <span class="sec-note">one closed today, three remain</span>
+    </div>
+
+    <div class="items">
+
+      <article class="item sev-risk">
+        <div class="item-top">
+          <h3>Secrets sit in Lambda environment variables</h3>
+          <span class="pill p-risk">security</span>
+          <span class="when">unscheduled</span>
+        </div>
+        <p>
+          All 76 variables — database password, Anthropic key, X bearer token, Discord webhooks — are
+          readable by anyone holding <code>lambda:GetFunctionConfiguration</code>. Now the largest
+          remaining exposure, since the root key is gone. Secrets Manager is the destination for at
+          least the API key and the database password.
+        </p>
+      </article>
+
+      <article class="item sev-risk">
+        <div class="item-top">
+          <h3>The .env file exists in exactly one place</h3>
+          <span class="pill p-risk">continuity</span>
+          <span class="when">unscheduled</span>
+        </div>
+        <p>
+          Correctly git-ignored, therefore never pushed, therefore living only on this laptop. Code
+          defaults would survive a fresh clone; 76 credentials and tuned settings would not.
+        </p>
+      </article>
+
+      <article class="item sev-risk">
+        <div class="item-top">
+          <h3>Branch protection on master is bypassed, not enforced</h3>
+          <span class="pill p-risk">process</span>
+          <span class="when">decide</span>
+        </div>
+        <p>
+          The push of eleven commits reported <code>Bypassed rule violations: changes must be made
+          through a pull request</code>. The rule exists but your account overrides it, so it protects
+          nothing. Either remove it or start branching — a rule that is always bypassed trains you to
+          ignore the warning.
+        </p>
+      </article>
+
+      <article class="item sev-risk">
+        <div class="item-top">
+          <h3>Cold start re-runs initialisation on every cycle</h3>
+          <span class="pill p-risk">minor</span>
+          <span class="when">optional</span>
+        </div>
+        <p>
+          Top-level imports exceed Lambda's 10-second init budget, so initialisation is abandoned and
+          redone inside the invocation. At a 45-minute cadence every invocation is cold anyway. Costs
+          ~10s against a 600s timeout; fixable with lazy imports if it ever matters.
+        </p>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- ============ SETTLED ============ -->
+  <section>
+    <div class="sec-head">
+      <h2>Closed out</h2>
+      <span class="sec-note">28–30 July &middot; outlined items closed today</span>
+    </div>
+    <div class="settled-grid">
+      <div class="settled-item today">Root access key deleted — no root keys on the account</div>
+      <div class="settled-item today">Deploys run as scoped <code>spx-deployer</code></div>
+      <div class="settled-item today">Macro no longer owns the prompt (39/40 → 24/40)</div>
+      <div class="settled-item today">X reclassified as wire, weight 0.5 → 1.0</div>
+      <div class="settled-item today">X budget 130 → 260, window 07:00–22:00 ET</div>
+      <div class="settled-item today">Three dead Reuters feeds and AP replaced</div>
+      <div class="settled-item today">Silent feed failure now warns</div>
+      <div class="settled-item today">NickTimiraos, LiveSquawk, Reuters added to X</div>
+      <div class="settled-item today">$ES_F and $VIX chatter polled</div>
+      <div class="settled-item today">YouTube restricted to the US result set</div>
+      <div class="settled-item today">NewsAPI matches titles, not article bodies</div>
+      <div class="settled-item today">Console UTF-8 decoding, both halves</div>
+      <div class="settled-item">Migrated off the laptop to Lambda</div>
+      <div class="settled-item">45-min cron grid anchored to 06:10 PT</div>
+      <div class="settled-item">DST handled by AWS, no re-anchoring</div>
+      <div class="settled-item">OCI attestation manifest rejected by Lambda</div>
+      <div class="settled-item">Concurrency quota 10 → 1000, pinned to 1</div>
+      <div class="settled-item">Scheduler retry policy 185 → 1</div>
+      <div class="settled-item">Version stamped on every log line and alert</div>
+      <div class="settled-item">Logs and alerts render in Pacific</div>
+      <div class="settled-item">BuildKit push retries the 157 MB layer</div>
+      <div class="settled-item">Docker no longer required by AWS-only scripts</div>
+      <div class="settled-item">Alarms on failure and on silence, email confirmed</div>
+      <div class="settled-item">Replacement character was a console artifact</div>
+    </div>
+  </section>
+
+  <footer>
+    <span>Regenerated 30 July 2026, 10:07 PT</span>
+    <span>Build <code>783ca7b</code></span>
+    <span>Source: <code>docs/tracker.html</code></span>
+    <span>Data: Lightsail Postgres, CloudWatch, deployed Lambda configuration</span>
+  </footer>
+
+</div>
