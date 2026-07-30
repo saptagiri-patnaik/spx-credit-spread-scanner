@@ -216,6 +216,12 @@ class Settings(BaseSettings):
 
     log_level: str = "INFO"
     log_file: str = "logs/spx_scanner.log"
+    # Timezone log timestamps and alert headers are *rendered* in. Display only:
+    # every stored timestamp and every scheduling decision stays UTC-based, and the
+    # process TZ is deliberately left alone because `date.today()` decides the option
+    # chain's DTE window (main.py) and the econ-calendar window -- shifting the
+    # process clock would quietly move both.
+    display_tz: str = "America/Los_Angeles"
 
 
 @lru_cache

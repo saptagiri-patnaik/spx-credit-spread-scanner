@@ -25,7 +25,7 @@ from db.repository import Repository
 from market.options_strategy import OptionsStrategy, is_market_hours
 from market.paper import PaperTracker
 from market.schwab_client import SchwabClient
-from utils.logging import setup_logging
+from utils.logging import resolve_tz, setup_logging
 from utils.version import get_version
 
 
@@ -217,12 +217,18 @@ class Pipeline:
         return True
 
     def _format(self, prediction: dict, scan: dict) -> str:
+        # Rendered in the display zone with its abbreviation. The alert is read on a
+        # phone against a local clock, so a UTC header costs a mental subtraction
+        # every time; the abbreviation keeps it unambiguous across the DST change.
         now = dt.datetime.now(dt.timezone.utc)
+        display_zone = resolve_tz(getattr(self.s, "display_tz", None))
+        if display_zone is not None:
+            now = now.astimezone(display_zone)
         best = scan["best"]
         header = "TRADE SIGNAL" if scan["recommended"] else "SPX OUTLOOK"
         lines = [
             "=" * 56,
-            f"{header}  |  {now:%Y-%m-%d %H:%M UTC}",
+            f"{header}  |  {now:%Y-%m-%d %H:%M %Z}",
             "=" * 56,
             f"Direction : {prediction['label']}  (score {prediction['direction']:+.2f})",
             f"Confidence: {prediction['confidence'] * 100:.0f}%",
@@ -303,7 +309,9 @@ def main() -> None:
     args = parser.parse_args()
 
     settings = get_settings()
-    logger = setup_logging(settings.log_level, settings.log_file)
+    logger = setup_logging(
+        settings.log_level, settings.log_file, getattr(settings, "display_tz", None)
+    )
     pipeline = Pipeline(settings, logger, dry_run=args.dry_run)
 
     if args.setup:

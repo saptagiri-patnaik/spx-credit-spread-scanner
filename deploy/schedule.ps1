@@ -1,22 +1,41 @@
 <#
-Create, update, pause or resume the EventBridge schedule that fires the function
-every 45 minutes. Kept separate from provision.ps1 so nothing runs unattended
-until you have seen a manual invocation succeed.
+Create, update, pause or resume the schedules that fire the function on a
+45-minute grid aligned to a local clock time.
 
-    ./schedule.ps1            create or update, enabled
-    ./schedule.ps1 -Disable   stop firing, keep the schedule
-    ./schedule.ps1 -Enable    resume
-    ./schedule.ps1 -Status    show current state without changing anything
+    ./schedule.ps1                    create or update, enabled
+    ./schedule.ps1 -Disable           stop firing, keep the schedules
+    ./schedule.ps1 -Enable            resume
+    ./schedule.ps1 -Status            show current state
+    ./schedule.ps1 -AnchorTime 07:00  align the grid to a different local time
+
+WHY CRON AND NOT rate(45 minutes)
+A rate-based schedule fires at StartDate + n*interval, and StartDate is stored in
+UTC -- so the local clock time it lands on moves by an hour at every DST
+transition, and someone has to remember to re-anchor it twice a year. Cron
+schedules take a timezone and AWS applies the transition itself, so 06:10 Pacific
+stays 06:10 Pacific forever.
+
+WHY THREE SCHEDULES
+A cron expression is a cross product of its minute and hour lists, and a
+45-minute grid is not one: from 06:10 the minutes cycle 10, 55, 40, 25 against
+different hours. Minutes 10 and 55 share an hour set and combine; the other two
+each need their own expression. Three schedules, derived below rather than
+hand-written, so changing -AnchorTime cannot leave a stale expression behind.
+
+Around a DST transition the repeated or skipped local hour may gain or lose a
+single grid slot. Harmless: collection is idempotent and concurrency is pinned
+to 1.
 #>
 param(
     [switch]$Disable,
     [switch]$Enable,
     [switch]$Status,
-    # Local clock time the 45-minute grid is aligned to. 06:10 Pacific puts a cycle
-    # at 06:55, 07:40, ... 12:55 -- nine inside the 06:30-13:00 PT session, which is
-    # one more than a badly-phased grid manages.
+    # 06:10 Pacific puts cycles at 06:55, 07:40, 08:25, 09:10, 09:55, 10:40, 11:25,
+    # 12:10 and 12:55 -- nine inside the 06:30-13:00 session, where some phases get
+    # only eight.
     [string]$AnchorTime = '06:10',
-    [string]$AnchorWindowsTz = 'Pacific Standard Time'
+    [string]$Timezone = 'America/Los_Angeles',
+    [int]$IntervalMinutes = 45
 )
 
 . (Join-Path $PSScriptRoot 'common.ps1')
@@ -26,64 +45,111 @@ $account = Get-AwsAccount
 $funcArn = "arn:aws:lambda:$Region`:$account`:function:$FuncName"
 $schedRoleArn = "arn:aws:iam::$account`:role/$SchedRoleName"
 
-if ($Status) {
-    aws scheduler get-schedule --name $SchedName --region $Region `
-        --query '{State:State,Expression:ScheduleExpression,Start:StartDate,Retries:Target.RetryPolicy}' `
-        --output json
-    if ($LASTEXITCODE -ne 0) { Write-Note 'no schedule exists yet' }
-    return
-}
-
 <#
-Next point on the 45-minute grid anchored at $AnchorTime local, expressed in UTC.
-
-A rate-based schedule fires at StartDate + n*interval, so StartDate sets the phase
-for good. Anchoring to the *next grid point* rather than to tomorrow morning keeps
-the alignment without pausing collection until then: 45 minutes divides 24 hours
-exactly (32 slots), so the grid runs right through the night and lands on
-$AnchorTime in the morning regardless of when this is run.
-
-Collection cannot simply be skipped overnight -- RSS feeds hold only 20-50 entries,
-so items that rotate off while nothing is polling are gone for good.
+Turns an anchor time and interval into the fewest cron expressions that reproduce
+the grid exactly, plus the grid itself for reporting.
 #>
-function Get-NextGridStartUtc {
-    param([string]$LocalTime, [string]$WindowsTz, [int]$IntervalMinutes = 45)
+function Get-Grid {
+    param([string]$LocalTime, [int]$IntervalMinutes)
 
-    $tz = [System.TimeZoneInfo]::FindSystemTimeZoneById($WindowsTz)
-    $nowUtc = (Get-Date).ToUniversalTime()
-    $nowLocal = [System.TimeZoneInfo]::ConvertTimeFromUtc($nowUtc, $tz)
-
+    if ((1440 % $IntervalMinutes) -ne 0) {
+        throw "Interval $IntervalMinutes does not divide 24h evenly, so the grid would drift daily."
+    }
     $parts = $LocalTime -split ':'
     if ($parts.Count -ne 2) { throw "AnchorTime must look like HH:mm, got '$LocalTime'." }
-    $anchor = [datetime]::new($nowLocal.Year, $nowLocal.Month, $nowLocal.Day,
-                              [int]$parts[0], [int]$parts[1], 0)
+    $startMinute = ([int]$parts[0]) * 60 + [int]$parts[1]
 
-    # Step forward (or back, before the anchor hour) to the first grid point that is
-    # still in the future. StartDate must not be in the past or the first firing is
-    # ambiguous.
-    $elapsed = ($nowLocal - $anchor).TotalMinutes
-    $steps = [int][Math]::Ceiling($elapsed / $IntervalMinutes)
-    $startLocal = $anchor.AddMinutes($steps * $IntervalMinutes)
-    while ($startLocal -le $nowLocal) { $startLocal = $startLocal.AddMinutes($IntervalMinutes) }
-
-    # Unspecified kind: ConvertTimeToUtc refuses to reinterpret a Local-kind value.
-    $unspecified = [datetime]::SpecifyKind($startLocal, 'Unspecified')
-    return @{
-        Utc   = [System.TimeZoneInfo]::ConvertTimeToUtc($unspecified, $tz)
-        Local = $startLocal
-        Abbr  = if ($tz.IsDaylightSavingTime($unspecified)) { 'PDT' } else { 'PST' }
+    $slots = for ($i = 0; $i -lt (1440 / $IntervalMinutes); $i++) {
+        $m = ($startMinute + $i * $IntervalMinutes) % 1440
+        [pscustomobject]@{ Hour = [int][Math]::Floor($m / 60); Minute = $m % 60; Total = $m }
     }
+
+    # Hours each minute-value occurs on, then merge minute-values sharing an hour set.
+    $hoursByMinute = @{}
+    foreach ($slot in $slots) {
+        if (-not $hoursByMinute.ContainsKey($slot.Minute)) { $hoursByMinute[$slot.Minute] = @() }
+        $hoursByMinute[$slot.Minute] += $slot.Hour
+    }
+    $minutesByHourSet = @{}
+    foreach ($minute in $hoursByMinute.Keys) {
+        $key = (($hoursByMinute[$minute] | Sort-Object -Unique) -join ',')
+        if (-not $minutesByHourSet.ContainsKey($key)) { $minutesByHourSet[$key] = @() }
+        $minutesByHourSet[$key] += $minute
+    }
+
+    $crons = foreach ($hourSet in ($minutesByHourSet.Keys | Sort-Object { [int]($_ -split ',')[0] })) {
+        $minutes = (($minutesByHourSet[$hourSet] | Sort-Object -Unique) -join ',')
+        "cron($minutes $hourSet * * ? *)"
+    }
+    return [pscustomobject]@{
+        Crons = @($crons)
+        Times = @($slots | Sort-Object Total | ForEach-Object { '{0:00}:{1:00}' -f $_.Hour, $_.Minute })
+    }
+}
+
+function Get-GridScheduleNames {
+    $names = aws scheduler list-schedules --region $Region --name-prefix $SchedPrefix `
+        --query 'Schedules[].Name' --output text 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $names) { return @() }
+    return @($names -split '\s+' | Where-Object { $_ })
+}
+
+if ($Status) {
+    $names = Get-GridScheduleNames
+    if (-not $names) { Write-Note 'no grid schedules exist yet' }
+    foreach ($name in $names) {
+        aws scheduler get-schedule --name $name --region $Region `
+            --query '{Name:Name,State:State,Expression:ScheduleExpression,Tz:ScheduleExpressionTimezone,Retries:Target.RetryPolicy.MaximumRetryAttempts}' `
+            --output json
+    }
+    aws scheduler get-schedule --name $SchedName --region $Region --query 'Name' --output text 2>$null | Out-Null
+    if ($LASTEXITCODE -eq 0) { Write-Note "legacy rate schedule '$SchedName' still exists" }
+    return
 }
 
 if (-not (Test-LambdaExists)) { throw "Function '$FuncName' does not exist. Run provision.ps1 first." }
 
+if ($Disable -or $Enable) {
+    $names = Get-GridScheduleNames
+    if (-not $names) { throw 'No grid schedules to change. Run ./schedule.ps1 with no arguments first.' }
+    $state = if ($Disable) { 'DISABLED' } else { 'ENABLED' }
+    foreach ($name in $names) {
+        # update-schedule replaces the definition, so the existing one has to be read
+        # back and re-sent with only State altered.
+        $current = aws scheduler get-schedule --name $name --region $Region --output json | ConvertFrom-Json
+        $body = @{
+            Name                       = $name
+            ScheduleExpression         = $current.ScheduleExpression
+            ScheduleExpressionTimezone = $current.ScheduleExpressionTimezone
+            State                      = $state
+            FlexibleTimeWindow         = @{ Mode = 'OFF' }
+            Target                     = @{
+                Arn         = $current.Target.Arn
+                RoleArn     = $current.Target.RoleArn
+                RetryPolicy = @{
+                    MaximumRetryAttempts     = $current.Target.RetryPolicy.MaximumRetryAttempts
+                    MaximumEventAgeInSeconds = $current.Target.RetryPolicy.MaximumEventAgeInSeconds
+                }
+            }
+        } | ConvertTo-Json -Depth 6
+        $file = Join-Path ([System.IO.Path]::GetTempPath()) "sched-$([guid]::NewGuid()).json"
+        try {
+            Set-Content -Path $file -Value $body -Encoding utf8NoBOM
+            aws scheduler update-schedule --region $Region --cli-input-json "file://$file" | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "could not set $name to $state." }
+        } finally {
+            Remove-Item $file -ErrorAction SilentlyContinue
+        }
+        Write-Ok "$name -> $state"
+    }
+    return
+}
+
 Write-Step 'Scheduler role'
-# A different role from the function's: this one is assumed by the scheduler
-# service rather than by Lambda, so the trust policy names a different principal.
+# A different role from the function's: assumed by the scheduler service rather
+# than by Lambda, so the trust policy names a different principal.
 aws iam get-role --role-name $SchedRoleName *> $null
 if ($LASTEXITCODE -ne 0) {
-    if ($Disable -or $Enable) { throw "No schedule to change. Run ./schedule.ps1 with no arguments first." }
-
     $trust = @{
         Version   = '2012-10-17'
         Statement = @(@{
@@ -95,11 +161,7 @@ if ($LASTEXITCODE -ne 0) {
 
     $policy = @{
         Version   = '2012-10-17'
-        Statement = @(@{
-            Effect   = 'Allow'
-            Action   = 'lambda:InvokeFunction'
-            Resource = $funcArn
-        })
+        Statement = @(@{ Effect = 'Allow'; Action = 'lambda:InvokeFunction'; Resource = $funcArn })
     } | ConvertTo-Json -Depth 6 -Compress
 
     $trustFile  = Join-Path ([System.IO.Path]::GetTempPath()) "trust-sched-$([guid]::NewGuid()).json"
@@ -122,58 +184,61 @@ if ($LASTEXITCODE -ne 0) {
     Write-Ok "$SchedRoleName already exists"
 }
 
-Write-Step 'Schedule'
-aws scheduler get-schedule --name $SchedName --region $Region *> $null
-$exists = $LASTEXITCODE -eq 0
-if (($Disable -or $Enable) -and -not $exists) {
-    throw 'No schedule to change. Run ./schedule.ps1 with no arguments first.'
-}
-$verb = if ($exists) { 'update-schedule' } else { 'create-schedule' }
-$state = if ($Disable) { 'DISABLED' } else { 'ENABLED' }
+$grid = Get-Grid -LocalTime $AnchorTime -IntervalMinutes $IntervalMinutes
+Write-Step "Grid: every $IntervalMinutes min anchored to $AnchorTime $Timezone"
+Write-Note "$($grid.Times.Count) firings/day: $($grid.Times -join ' ')"
+Write-Note "$($grid.Crons.Count) cron expressions"
 
-# Passed as a file rather than inline arguments: this payload is nested JSON, and
-# PowerShell's native-argument quoting mangles embedded quotes in ways that vary
-# by version. A file is unambiguous.
-#
-# update-schedule replaces the whole definition rather than patching it, so the
-# full spec has to be sent even when only State changes.
-$grid = Get-NextGridStartUtc -LocalTime $AnchorTime -WindowsTz $AnchorWindowsTz
-Write-Note "grid anchored to $AnchorTime $($grid.Abbr); first firing $($grid.Local.ToString('yyyy-MM-dd HH:mm')) $($grid.Abbr)"
+$index = 0
+foreach ($cron in $grid.Crons) {
+    $index++
+    $name = "$SchedPrefix-$index"
+    aws scheduler get-schedule --name $name --region $Region *> $null
+    $verb = if ($LASTEXITCODE -eq 0) { 'update-schedule' } else { 'create-schedule' }
 
-$request = @{
-    Name               = $SchedName
-    ScheduleExpression = 'rate(45 minutes)'
-    State              = $state
-    # Sets the phase of the cadence, not just when it becomes eligible: firings are
-    # StartDate + n*45min. Stored in UTC, so a DST change shifts the local clock time
-    # by an hour -- re-run this script in November and March to re-anchor.
-    StartDate          = $grid.Utc.ToString('yyyy-MM-ddTHH:mm:ssZ')
-    # OFF keeps firing times exact. With a flexible window, AWS may shift an
-    # invocation by minutes and the 45-minute cadence drifts.
-    FlexibleTimeWindow = @{ Mode = 'OFF' }
-    Target             = @{
-        Arn     = $funcArn
-        RoleArn = $schedRoleArn
-        # EventBridge Scheduler defaults to 185 retry attempts. A cycle that fails
-        # mid-scoring would be re-invoked up to 185 times, each one spending
-        # Anthropic and X budget on work that just failed. One retry covers a
-        # transient network blip; anything past that is a real fault worth seeing
-        # in CloudWatch rather than papering over at cost.
-        RetryPolicy = @{ MaximumRetryAttempts = 1; MaximumEventAgeInSeconds = 300 }
+    $request = @{
+        Name                       = $name
+        ScheduleExpression         = $cron
+        # AWS applies DST for this zone, which is the entire point of using cron here.
+        ScheduleExpressionTimezone = $Timezone
+        State                      = 'ENABLED'
+        Description                = "SPX scanner, ${IntervalMinutes}min grid anchored $AnchorTime"
+        FlexibleTimeWindow         = @{ Mode = 'OFF' }
+        Target                     = @{
+            Arn     = $funcArn
+            RoleArn = $schedRoleArn
+            # Scheduler defaults to 185 attempts: a cycle failing mid-scoring would be
+            # re-invoked 185 times, each spending Anthropic and X budget on work that
+            # just failed.
+            RetryPolicy = @{ MaximumRetryAttempts = 1; MaximumEventAgeInSeconds = 300 }
+        }
+    } | ConvertTo-Json -Depth 6
+
+    $file = Join-Path ([System.IO.Path]::GetTempPath()) "sched-$([guid]::NewGuid()).json"
+    try {
+        Set-Content -Path $file -Value $request -Encoding utf8NoBOM
+        aws scheduler $verb --region $Region --cli-input-json "file://$file" | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "$verb failed for $name." }
+    } finally {
+        Remove-Item $file -ErrorAction SilentlyContinue
     }
-} | ConvertTo-Json -Depth 6
-
-$reqFile = Join-Path ([System.IO.Path]::GetTempPath()) "sched-$([guid]::NewGuid()).json"
-try {
-    Set-Content -Path $reqFile -Value $request -Encoding utf8NoBOM
-    aws scheduler $verb --region $Region --cli-input-json "file://$reqFile" | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "$verb failed." }
-} finally {
-    Remove-Item $reqFile -ErrorAction SilentlyContinue
+    Write-Ok "$name  $cron"
 }
-Write-Ok "$verb done -- state $state, every 45 minutes, 1 retry"
 
-if ($state -eq 'ENABLED') {
-    Write-Host "`nFirst firing: $($grid.Local.ToString('yyyy-MM-dd HH:mm')) $($grid.Abbr)." -ForegroundColor Cyan
-    Write-Host "Session cycles then land at 06:55, 07:40, 08:25, 09:10, 09:55, 10:40, 11:25, 12:10, 12:55 PT." -ForegroundColor Cyan
+# Any leftover schedules from a previous, denser grid would keep firing on their own.
+$stale = Get-GridScheduleNames | Where-Object { $_ -notin (1..$index | ForEach-Object { "$SchedPrefix-$_" }) }
+foreach ($name in $stale) {
+    aws scheduler delete-schedule --name $name --region $Region | Out-Null
+    Write-Note "deleted stale schedule $name"
 }
+
+# The rate-based schedule this replaces. Left in place it would double every cycle.
+aws scheduler get-schedule --name $SchedName --region $Region *> $null
+if ($LASTEXITCODE -eq 0) {
+    aws scheduler delete-schedule --name $SchedName --region $Region | Out-Null
+    if ($LASTEXITCODE -eq 0) { Write-Ok "removed legacy rate schedule $SchedName" }
+    else { Write-Note "could not remove $SchedName -- delete it by hand or cycles will double" }
+}
+
+Write-Host "`nSession cycles: $(($grid.Times | Where-Object { $_ -ge '06:30' -and $_ -lt '13:00' }) -join ' ') $Timezone" -ForegroundColor Cyan
+Write-Host "DST is handled by AWS -- no re-anchoring needed in November or March." -ForegroundColor Green

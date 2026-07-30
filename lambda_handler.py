@@ -28,7 +28,9 @@ def _pipeline() -> Pipeline:
         settings = get_settings()
         # Lambda's filesystem is read-only outside /tmp; console output goes to
         # CloudWatch, which is where you would read it anyway.
-        logger = setup_logging(settings.log_level, None)
+        logger = setup_logging(
+            settings.log_level, None, getattr(settings, "display_tz", None)
+        )
         # DRY_RUN exists for running this image locally against the real database:
         # it suppresses prediction and paper-trade writes so a debugging session
         # cannot pollute the record the strategy is measured on. It does NOT make a

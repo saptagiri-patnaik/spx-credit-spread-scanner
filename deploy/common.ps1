@@ -15,7 +15,8 @@ $Region  = if ($env:SPX_REGION) { $env:SPX_REGION } else { 'us-west-2' }
 $RepoName = 'spx-scanner'
 $FuncName = 'spx-scanner'
 $RoleName = 'spx-scanner-role'
-$SchedName = 'spx-scanner-45min'
+$SchedName = 'spx-scanner-45min'      # legacy rate-based schedule, replaced by the grid
+$SchedPrefix = 'spx-scanner-grid'     # cron schedules: $SchedPrefix-1, -2, -3
 $SchedRoleName = 'spx-scheduler-role'
 $LogGroup = "/aws/lambda/$FuncName"
 
