@@ -15,6 +15,7 @@ import os
 from config import get_settings
 from main import Pipeline
 from utils.logging import setup_logging
+from utils.version import get_version
 
 # Built once per container, reused across warm invocations: the DB engine and
 # HTTP clients are expensive to construct and safe to hold.
@@ -50,7 +51,8 @@ def handler(event, context):
 
     remaining = getattr(context, "get_remaining_time_in_millis", lambda: None)()
     pipeline.log.info(
-        "Lambda cycle start (request %s, %.0fs budget)",
+        "Lambda cycle start (version %s, request %s, %.0fs budget)",
+        get_version(),
         getattr(context, "aws_request_id", "?"),
         (remaining or 0) / 1000.0,
     )

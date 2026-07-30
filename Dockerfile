@@ -17,4 +17,11 @@ COPY config.py main.py lambda_handler.py ${LAMBDA_TASK_ROOT}/
 # file is gitignored and must never be baked into an image.
 ENV LOG_FILE=""
 
+# Declared last on purpose: an ARG invalidates every layer after it, so putting
+# the version here keeps the pip install cached across builds. .git is excluded
+# from the build context, so the value has to be computed by deploy.ps1 and passed
+# in rather than read from the tree.
+ARG APP_VERSION=unknown
+ENV APP_VERSION=$APP_VERSION
+
 CMD ["lambda_handler.handler"]

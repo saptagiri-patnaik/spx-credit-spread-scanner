@@ -11,7 +11,12 @@ until you have seen a manual invocation succeed.
 param(
     [switch]$Disable,
     [switch]$Enable,
-    [switch]$Status
+    [switch]$Status,
+    # Local clock time the 45-minute grid is aligned to. 06:10 Pacific puts a cycle
+    # at 06:55, 07:40, ... 12:55 -- nine inside the 06:30-13:00 PT session, which is
+    # one more than a badly-phased grid manages.
+    [string]$AnchorTime = '06:10',
+    [string]$AnchorWindowsTz = 'Pacific Standard Time'
 )
 
 . (Join-Path $PSScriptRoot 'common.ps1')
@@ -23,9 +28,51 @@ $schedRoleArn = "arn:aws:iam::$account`:role/$SchedRoleName"
 
 if ($Status) {
     aws scheduler get-schedule --name $SchedName --region $Region `
-        --query '{State:State,Expression:ScheduleExpression,Retries:Target.RetryPolicy}' --output json
+        --query '{State:State,Expression:ScheduleExpression,Start:StartDate,Retries:Target.RetryPolicy}' `
+        --output json
     if ($LASTEXITCODE -ne 0) { Write-Note 'no schedule exists yet' }
     return
+}
+
+<#
+Next point on the 45-minute grid anchored at $AnchorTime local, expressed in UTC.
+
+A rate-based schedule fires at StartDate + n*interval, so StartDate sets the phase
+for good. Anchoring to the *next grid point* rather than to tomorrow morning keeps
+the alignment without pausing collection until then: 45 minutes divides 24 hours
+exactly (32 slots), so the grid runs right through the night and lands on
+$AnchorTime in the morning regardless of when this is run.
+
+Collection cannot simply be skipped overnight -- RSS feeds hold only 20-50 entries,
+so items that rotate off while nothing is polling are gone for good.
+#>
+function Get-NextGridStartUtc {
+    param([string]$LocalTime, [string]$WindowsTz, [int]$IntervalMinutes = 45)
+
+    $tz = [System.TimeZoneInfo]::FindSystemTimeZoneById($WindowsTz)
+    $nowUtc = (Get-Date).ToUniversalTime()
+    $nowLocal = [System.TimeZoneInfo]::ConvertTimeFromUtc($nowUtc, $tz)
+
+    $parts = $LocalTime -split ':'
+    if ($parts.Count -ne 2) { throw "AnchorTime must look like HH:mm, got '$LocalTime'." }
+    $anchor = [datetime]::new($nowLocal.Year, $nowLocal.Month, $nowLocal.Day,
+                              [int]$parts[0], [int]$parts[1], 0)
+
+    # Step forward (or back, before the anchor hour) to the first grid point that is
+    # still in the future. StartDate must not be in the past or the first firing is
+    # ambiguous.
+    $elapsed = ($nowLocal - $anchor).TotalMinutes
+    $steps = [int][Math]::Ceiling($elapsed / $IntervalMinutes)
+    $startLocal = $anchor.AddMinutes($steps * $IntervalMinutes)
+    while ($startLocal -le $nowLocal) { $startLocal = $startLocal.AddMinutes($IntervalMinutes) }
+
+    # Unspecified kind: ConvertTimeToUtc refuses to reinterpret a Local-kind value.
+    $unspecified = [datetime]::SpecifyKind($startLocal, 'Unspecified')
+    return @{
+        Utc   = [System.TimeZoneInfo]::ConvertTimeToUtc($unspecified, $tz)
+        Local = $startLocal
+        Abbr  = if ($tz.IsDaylightSavingTime($unspecified)) { 'PDT' } else { 'PST' }
+    }
 }
 
 if (-not (Test-LambdaExists)) { throw "Function '$FuncName' does not exist. Run provision.ps1 first." }
@@ -90,10 +137,17 @@ $state = if ($Disable) { 'DISABLED' } else { 'ENABLED' }
 #
 # update-schedule replaces the whole definition rather than patching it, so the
 # full spec has to be sent even when only State changes.
+$grid = Get-NextGridStartUtc -LocalTime $AnchorTime -WindowsTz $AnchorWindowsTz
+Write-Note "grid anchored to $AnchorTime $($grid.Abbr); first firing $($grid.Local.ToString('yyyy-MM-dd HH:mm')) $($grid.Abbr)"
+
 $request = @{
     Name               = $SchedName
     ScheduleExpression = 'rate(45 minutes)'
     State              = $state
+    # Sets the phase of the cadence, not just when it becomes eligible: firings are
+    # StartDate + n*45min. Stored in UTC, so a DST change shifts the local clock time
+    # by an hour -- re-run this script in November and March to re-anchor.
+    StartDate          = $grid.Utc.ToString('yyyy-MM-ddTHH:mm:ssZ')
     # OFF keeps firing times exact. With a flexible window, AWS may shift an
     # invocation by minutes and the 45-minute cadence drifts.
     FlexibleTimeWindow = @{ Mode = 'OFF' }
@@ -120,6 +174,6 @@ try {
 Write-Ok "$verb done -- state $state, every 45 minutes, 1 retry"
 
 if ($state -eq 'ENABLED') {
-    Write-Host "`nThe first run fires ~45 minutes from now, not immediately." -ForegroundColor Cyan
-    Write-Host "Stop the laptop scanner so the two do not compete for the X budget." -ForegroundColor Yellow
+    Write-Host "`nFirst firing: $($grid.Local.ToString('yyyy-MM-dd HH:mm')) $($grid.Abbr)." -ForegroundColor Cyan
+    Write-Host "Session cycles then land at 06:55, 07:40, 08:25, 09:10, 09:55, 10:40, 11:25, 12:10, 12:55 PT." -ForegroundColor Cyan
 }

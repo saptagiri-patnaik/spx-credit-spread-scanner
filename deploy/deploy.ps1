@@ -36,7 +36,24 @@ $password | docker login --username AWS --password-stdin $registry
 if ($LASTEXITCODE -ne 0) { throw 'docker login failed.' }
 
 if (-not $NoBuild) {
-    Write-Step 'Building the image (3-10 min the first time, cached after)'
+    # Computed here because .git is excluded from the build context, so the image
+    # cannot work this out for itself. Same format utils/version.py derives on the
+    # laptop, so a log line means the same thing in both deployments.
+    $revision = (git -C $ProjectRoot rev-parse --short=7 HEAD 2>$null)
+    $commits  = (git -C $ProjectRoot rev-list --count HEAD 2>$null)
+    $dirty    = (git -C $ProjectRoot status --porcelain 2>$null)
+    $appVersion = if ($revision) {
+        $v = if ($commits) { "r$commits-g$revision" } else { "g$revision" }
+        if ($dirty) { "$v-dirty" } else { $v }
+    } else { 'unknown' }
+
+    if ($dirty) {
+        # Not blocked: deploying a work-in-progress to test it is legitimate. But
+        # '-dirty' in a log line has to mean something, so say it out loud.
+        Write-Note "working tree has uncommitted changes -- deploying as $appVersion"
+    }
+
+    Write-Step "Building the image ($appVersion)"
     # --platform linux/amd64 is mandatory. Lambda runs x86; an ARM image built on
     # an ARM host fails at runtime with "exec format error", which reads like a
     # code bug rather than an architecture mismatch.
@@ -49,9 +66,10 @@ if (-not $NoBuild) {
     # manifest, config or layer media type ... is not supported" -- an error that
     # names nothing you control and sounds like a broken base image.
     docker build --platform linux/amd64 --provenance=false --sbom=false `
+        --build-arg "APP_VERSION=$appVersion" `
         -t "$($RepoName):latest" $ProjectRoot
     if ($LASTEXITCODE -ne 0) { throw 'docker build failed.' }
-    Write-Ok 'built'
+    Write-Ok "built $appVersion"
 }
 
 Write-Step 'Pushing to ECR'

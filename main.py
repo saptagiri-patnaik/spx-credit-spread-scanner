@@ -26,6 +26,7 @@ from market.options_strategy import OptionsStrategy, is_market_hours
 from market.paper import PaperTracker
 from market.schwab_client import SchwabClient
 from utils.logging import setup_logging
+from utils.version import get_version
 
 
 class Pipeline:
@@ -221,7 +222,9 @@ class Pipeline:
         header = "TRADE SIGNAL" if scan["recommended"] else "SPX OUTLOOK"
         lines = [
             "=" * 56,
-            f"{header}  |  {now:%Y-%m-%d %H:%M UTC}",
+            # The version rides along on every alert: when a Discord message looks
+            # wrong, the first question is which build produced it.
+            f"{header}  |  {now:%Y-%m-%d %H:%M UTC}  |  {get_version()}",
             "=" * 56,
             f"Direction : {prediction['label']}  (score {prediction['direction']:+.2f})",
             f"Confidence: {prediction['confidence'] * 100:.0f}%",
@@ -321,7 +324,8 @@ def main() -> None:
         next_run_time=dt.datetime.now(dt.timezone.utc),  # tz-aware to match UTC scheduler
     )
     logger.info(
-        "Scheduler started: running every %d minutes. Press Ctrl+C to stop.",
+        "Scheduler started (%s): running every %d minutes. Press Ctrl+C to stop.",
+        get_version(),
         settings.interval_minutes,
     )
     try:
