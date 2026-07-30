@@ -28,7 +28,15 @@ def _pipeline() -> Pipeline:
         # Lambda's filesystem is read-only outside /tmp; console output goes to
         # CloudWatch, which is where you would read it anyway.
         logger = setup_logging(settings.log_level, None)
-        _PIPELINE = Pipeline(settings, logger)
+        # DRY_RUN exists for running this image locally against the real database:
+        # it suppresses prediction and paper-trade writes so a debugging session
+        # cannot pollute the record the strategy is measured on. It does NOT make a
+        # run free or read-only -- collection still upserts items, and the X and
+        # Anthropic calls still cost money.
+        dry_run = os.environ.get("DRY_RUN", "").strip().lower() in {"1", "true", "yes", "on"}
+        if dry_run:
+            logger.warning("DRY_RUN set: predictions and paper trades will not be saved.")
+        _PIPELINE = Pipeline(settings, logger, dry_run=dry_run)
     return _PIPELINE
 
 

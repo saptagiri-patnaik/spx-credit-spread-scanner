@@ -1,0 +1,159 @@
+{
+  // Run any of these with: Ctrl+Shift+P -> "Tasks: Run Task".
+  // "Lambda: Deploy" is the default build task, so Ctrl+Shift+B deploys.
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Lambda: Deploy (build, push, update)",
+      "detail": "Repeatable. Run after every code change.",
+      "type": "process",
+      "command": "pwsh",
+      "args": ["-NoProfile", "-File", "${workspaceFolder}/deploy/deploy.ps1"],
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "Lambda: Provision (one-time)",
+      "detail": "Creates the IAM role, function, concurrency limit and config. Idempotent.",
+      "type": "process",
+      "command": "pwsh",
+      "args": ["-NoProfile", "-File", "${workspaceFolder}/deploy/provision.ps1"],
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "Lambda: Sync env from .env",
+      "detail": "Push changed settings. Not needed for code-only deploys.",
+      "type": "process",
+      "command": "pwsh",
+      "args": ["-NoProfile", "-File", "${workspaceFolder}/deploy/sync-env.ps1"],
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "Lambda: Smoke test (DB connectivity)",
+      "detail": "Runs the idempotent table setup only. Costs nothing, writes no new data.",
+      "type": "process",
+      "command": "pwsh",
+      "args": ["-NoProfile", "-File", "${workspaceFolder}/deploy/invoke.ps1", "-Setup"],
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "Lambda: Invoke now",
+      "detail": "Runs one cycle immediately and prints the resulting log lines.",
+      "type": "process",
+      "command": "pwsh",
+      "args": ["-NoProfile", "-File", "${workspaceFolder}/deploy/invoke.ps1"],
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "Lambda: Create/update 45-min schedule",
+      "detail": "Starts unattended runs. Do this last.",
+      "type": "process",
+      "command": "pwsh",
+      "args": ["-NoProfile", "-File", "${workspaceFolder}/deploy/schedule.ps1"],
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "Lambda: Pause schedule",
+      "detail": "Stop firing without deleting anything.",
+      "type": "process",
+      "command": "pwsh",
+      "args": ["-NoProfile", "-File", "${workspaceFolder}/deploy/schedule.ps1", "-Disable"],
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "Lambda: Resume schedule",
+      "type": "process",
+      "command": "pwsh",
+      "args": ["-NoProfile", "-File", "${workspaceFolder}/deploy/schedule.ps1", "-Enable"],
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "Lambda: Tail logs (live)",
+      "detail": "The CloudWatch equivalent of watching logs/spx_scanner.log.",
+      "type": "process",
+      "command": "pwsh",
+      "args": [
+        "-NoProfile",
+        "-Command",
+        "$env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User'); aws logs tail /aws/lambda/spx-scanner --region us-west-2 --follow"
+      ],
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated" }
+    },
+    {
+      "label": "Lambda: Recent errors",
+      "type": "process",
+      "command": "pwsh",
+      "args": [
+        "-NoProfile",
+        "-Command",
+        "$env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User'); aws logs tail /aws/lambda/spx-scanner --region us-west-2 --since 24h --filter-pattern '?ERROR ?WARNING ?Traceback'"
+      ],
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "Debug: Run the Lambda image locally (dry run)",
+      "detail": "Real handler, real container, DRY_RUN on, alerts muted.",
+      "type": "process",
+      "command": "pwsh",
+      "args": ["-NoProfile", "-File", "${workspaceFolder}/deploy/local-lambda.ps1"],
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "Debug: Local image smoke test",
+      "detail": "Container + DB connectivity only. Cheapest check that the image works.",
+      "type": "process",
+      "command": "pwsh",
+      "args": ["-NoProfile", "-File", "${workspaceFolder}/deploy/local-lambda.ps1", "-Setup"],
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "Local: Stop laptop scanner",
+      "detail": "Hand the 45-min cycle over to Lambda. Both running would double X spend.",
+      "type": "process",
+      "command": "pwsh",
+      "args": ["-NoProfile", "-File", "${workspaceFolder}/stop_scanner.ps1"],
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "Local: Start laptop scanner",
+      "detail": "Fallback if you need to run locally again.",
+      "type": "process",
+      "command": "pwsh",
+      "args": ["-NoProfile", "-File", "${workspaceFolder}/start_scanner.ps1"],
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "Local: Run tests",
+      "type": "process",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "args": ["-m", "pytest", "-q"],
+      "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "Local: One dry-run cycle",
+      "detail": "No prediction or paper-trade writes. Still collects and still spends API budget.",
+      "type": "process",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "args": ["main.py", "--once", "--dry-run"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    }
+  ]
+}
