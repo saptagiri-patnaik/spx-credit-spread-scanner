@@ -96,14 +96,33 @@ class Settings(BaseSettings):
     # feeds, analysts, Fed/macro officials), filtered to market-relevant posts. Retail
     # $SPX/$SPY cashtag chatter (spammy) is covered for free by StockTwits + Reddit.
     # Override via X_QUERY in .env. Edit the account list to taste.
+    # NickTimiraos is the WSJ reporter the market treats as the Fed's messaging
+    # channel -- his posts move rates pricing directly, and no free feed carries
+    # them with the same latency. LiveSquawk is a headline wire with no RSS
+    # equivalent. Reuters overlaps the (now repaired) free RSS feeds, so it is here
+    # for latency rather than coverage; if it starts dominating the daily budget it
+    # is the first account to drop.
+    #
+    # Bias note: zerohedge is persistently bearish and applies a small standing
+    # downward pull on the sentiment average. Kept deliberately -- it surfaces tail
+    # risks earlier than the wires do -- but it is a known thumb on the scale.
+    # X caps `query` at 512 characters and rejects the whole request with a 400
+    # above it, so this is a budget, not a wish list. Fifteen accounts cost 303 of
+    # it, leaving ~196 for terms; `lang:en` was dropped to buy two more terms,
+    # which is free here because every account in the list publishes in English.
+    # Terms are ordered by signal for a 20-25 DTE index credit spread, so anything
+    # that no longer fits is the least valuable rather than the last one typed.
+    # Currently omitted for space: Nasdaq, stocks, trade, economy -- each largely
+    # covered by "market", "tariff" or "SPX".
     x_query: str = (
         "(from:realDonaldTrump OR from:WhiteHouse OR from:federalreserve OR "
         "from:USTreasury OR from:DeItaone OR from:firstsquawk OR from:zerohedge OR "
         "from:KobeissiLetter OR from:unusual_whales OR from:Barchart OR "
-        "from:charliebilello OR from:biancoresearch) "
-        '(SPX OR "S&P 500" OR stocks OR market OR Fed OR rate OR tariff OR trade OR '
-        "China OR inflation OR recession OR war OR oil OR Iran OR VIX OR Nasdaq OR "
-        "economy OR jobs OR yields) lang:en -is:retweet"
+        "from:charliebilello OR from:biancoresearch OR from:NickTimiraos OR "
+        "from:LiveSquawk OR from:Reuters) "
+        '(SPX OR "S&P 500" OR market OR Fed OR rate OR inflation OR CPI OR FOMC OR '
+        "Powell OR tariff OR war OR oil OR VIX OR yields OR recession OR China OR "
+        "Iran OR earnings OR OPEC OR Hormuz OR payrolls) -is:retweet"
     )
 
     # --- Alerts ---
