@@ -32,8 +32,18 @@ def expected_move(price: float, iv: float, dte: int) -> float:
     return price * iv * math.sqrt(dte / 365.0)
 
 
-def is_market_hours(now_utc: dt.datetime, tz_name: str = "America/New_York") -> bool:
-    """True during regular US index RTH (Mon-Fri 09:30-16:00 ET). Ignores holidays."""
+def is_market_window(
+    now_utc: dt.datetime,
+    tz_name: str = "America/New_York",
+    lead_minutes: int = 0,
+    trail_minutes: int = 0,
+) -> bool:
+    """True inside the RTH session widened by `lead`/`trail` minutes. Ignores holidays.
+
+    The widened form exists for work that should track the session without being
+    confined to it -- collecting the pre-open headline flow, for instance, where the
+    08:30 ET macro prints land an hour before the bell.
+    """
     try:
         tz = ZoneInfo(tz_name)
     except Exception:  # noqa: BLE001 - bad tz string -> don't block
@@ -41,9 +51,18 @@ def is_market_hours(now_utc: dt.datetime, tz_name: str = "America/New_York") -> 
     local = now_utc.astimezone(tz)
     if local.weekday() >= 5:  # Sat/Sun
         return False
-    open_t = local.replace(hour=9, minute=30, second=0, microsecond=0)
-    close_t = local.replace(hour=16, minute=0, second=0, microsecond=0)
+    open_t = local.replace(hour=9, minute=30, second=0, microsecond=0) - dt.timedelta(
+        minutes=lead_minutes
+    )
+    close_t = local.replace(hour=16, minute=0, second=0, microsecond=0) + dt.timedelta(
+        minutes=trail_minutes
+    )
     return open_t <= local <= close_t
+
+
+def is_market_hours(now_utc: dt.datetime, tz_name: str = "America/New_York") -> bool:
+    """True during regular US index RTH (Mon-Fri 09:30-16:00 ET). Ignores holidays."""
+    return is_market_window(now_utc, tz_name)
 
 
 class OptionsStrategy:

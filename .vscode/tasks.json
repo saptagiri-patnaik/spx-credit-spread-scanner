@@ -100,7 +100,7 @@
       "args": [
         "-NoProfile",
         "-Command",
-        "$env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User'); aws logs tail /aws/lambda/spx-scanner --region us-west-2 --follow"
+        "$env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User'); $env:PYTHONIOENCODING='utf-8'; $env:PYTHONUTF8='1'; aws logs tail /aws/lambda/spx-scanner --region us-west-2 --follow"
       ],
       "problemMatcher": [],
       "presentation": { "reveal": "always", "panel": "dedicated" }
@@ -112,7 +112,7 @@
       "args": [
         "-NoProfile",
         "-Command",
-        "$env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User'); aws logs tail /aws/lambda/spx-scanner --region us-west-2 --since 24h --filter-pattern '?ERROR ?WARNING ?Traceback'"
+        "$env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User'); $env:PYTHONIOENCODING='utf-8'; $env:PYTHONUTF8='1'; aws logs tail /aws/lambda/spx-scanner --region us-west-2 --since 24h --filter-pattern '?ERROR ?WARNING ?Traceback'"
       ],
       "problemMatcher": [],
       "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }

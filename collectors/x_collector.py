@@ -16,6 +16,8 @@ from typing import List
 import requests
 from dateutil import parser as dateparser
 
+from market.options_strategy import is_market_window
+
 from .base import BaseCollector, CollectedItem
 
 SEARCH_URL = "https://api.x.com/2/tweets/search/recent"
@@ -48,6 +50,21 @@ class XCollector(BaseCollector):
                 "tokens -> Bearer Token. Skipping X collector."
             )
             return []
+
+        # Checked before the budget lookup so an off-window cycle costs neither a
+        # paid request nor a database round trip.
+        if getattr(self.settings, "x_market_hours_only", True):
+            lead = getattr(self.settings, "x_premarket_minutes", 150)
+            tz_name = getattr(self.settings, "market_tz", "America/New_York")
+            if not is_market_window(
+                dt.datetime.now(dt.timezone.utc), tz_name, lead_minutes=lead
+            ):
+                self.log.info(
+                    "X: outside the paid-collection window (opens %d min before the bell); "
+                    "skipping to reserve budget for the session.",
+                    lead,
+                )
+                return []
 
         today = dt.datetime.now(dt.timezone.utc).date()
         used = self.repo.daily_usage(self.provider, today)

@@ -77,6 +77,15 @@ class Settings(BaseSettings):
     x_daily_post_budget: int = 130          # ~$20/month at $0.005/post read
     x_post_unit_cost: float = 0.005         # USD per post returned
     x_max_results_per_run: int = 10         # recent search allows 10-100
+    # Confine the paid fetch to the session (plus a pre-open lead). The budget is
+    # per-DAY and the scanner runs around the clock, so without this the overnight
+    # cycles -- which defer prediction and cannot act on what they read -- consume
+    # the whole allowance before the opening bell, leaving the cycles that actually
+    # decide trades with nothing left to buy. Free collectors still run 24/7, so
+    # overnight news is still captured, just not from X.
+    x_market_hours_only: bool = True
+    # 150 minutes puts the window at 07:00 ET, ahead of the 08:30 ET macro prints.
+    x_premarket_minutes: int = 150
     # Spend the paid X budget on high-signal accounts (market-movers, fast headline
     # feeds, analysts, Fed/macro officials), filtered to market-relevant posts. Retail
     # $SPX/$SPY cashtag chatter (spammy) is covered for free by StockTwits + Reddit.

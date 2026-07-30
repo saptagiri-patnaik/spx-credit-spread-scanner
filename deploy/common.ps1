@@ -9,6 +9,13 @@ $ErrorActionPreference = 'Stop'
 $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' +
             [Environment]::GetEnvironmentVariable('Path', 'User')
 
+# The AWS CLI is a Python program, and Python on Windows encodes redirected stdout
+# using the ANSI code page. Synthesis rationales come back full of em-dashes, which
+# then arrive as CP1252 byte 0x97 and render as a replacement character -- text that
+# is perfectly intact in CloudWatch looks corrupted on the way out.
+$env:PYTHONIOENCODING = 'utf-8'
+$env:PYTHONUTF8 = '1'
+
 # us-west-2 is not arbitrary: the Lightsail Postgres lives there, and every cycle
 # makes many round trips to it. Cross-region would add latency and transfer cost.
 $Region  = if ($env:SPX_REGION) { $env:SPX_REGION } else { 'us-west-2' }
