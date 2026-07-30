@@ -19,14 +19,19 @@ SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
 # YouTube search costs 100 quota units per call (10,000/day free). To widen topic
 # coverage without exceeding quota, keep a larger pool but only run QUERIES_PER_RUN
 # per cycle, rotating the window each cycle so the whole pool is covered over time.
+# Queries name the index explicitly. Bare "stock market ..." phrasings matched any
+# market on earth and pulled in channels covering Nifty and IBEX. "stock market
+# crash warning" is gone for a different reason: it is a doom-content magnet, and a
+# query that selects for bearish thumbnails feeds a measurable bias into a
+# sentiment average that is supposed to be reading the tape, not the algorithm.
 QUERY_POOL = (
     "SPX prediction this week",
     "S&P 500 forecast",
-    "stock market outlook today",
+    "S&P 500 outlook this week",
     "S&P 500 technical analysis",
     "SPX options trading this week",
     "Fed interest rate decision market impact",
-    "stock market crash warning",
+    "S&P 500 market selloff analysis",
     "Nasdaq S&P 500 market analysis today",
 )
 QUERIES_PER_RUN = 3
@@ -60,7 +65,14 @@ class YouTubeCollector(BaseCollector):
                         "order": "date",
                         "publishedAfter": published_after,
                         "maxResults": 15,
+                        # relevanceLanguage only *ranks* English higher; it does not
+                        # exclude anything. Generic queries like "stock market
+                        # outlook today" were returning mostly Indian and Spanish
+                        # retail channels -- Zerodha, MoneyControl Hindi, Zee
+                        # Business, Negocios TV -- discussing a different index
+                        # entirely. regionCode restricts to the US result set.
                         "relevanceLanguage": "en",
+                        "regionCode": "US",
                         "key": self.settings.youtube_api_key,
                     },
                     timeout=20,

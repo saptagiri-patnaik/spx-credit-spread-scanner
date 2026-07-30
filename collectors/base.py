@@ -8,6 +8,8 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
 from typing import Iterable, Sequence
 
+import feedparser
+
 from utils.extract import fetch_fulltext
 
 SPX_KEYWORDS = (
@@ -59,6 +61,33 @@ class CollectedItem:
         row = asdict(self)
         row["content_hash"] = self.content_hash
         return row
+
+
+def parse_feed(url: str, name: str, log) -> list:
+    """Parse an RSS feed and say so out loud when it yields nothing.
+
+    feedparser never raises: a dead host, a 403 or a redirect to an HTML error page
+    all come back as a normal result object with `entries == []` and `bozo` set. A
+    `try/except` around it therefore catches nothing, and a feed that has been down
+    for months is indistinguishable from a feed that simply has no news -- which is
+    how three dead Reuters endpoints kept their place in the config while
+    contributing zero items.
+    """
+    try:
+        feed = feedparser.parse(url)
+    except Exception as exc:  # noqa: BLE001 - defensive; feedparser rarely raises
+        log.warning("Feed %s raised: %s", name, exc)
+        return []
+
+    entries = list(getattr(feed, "entries", []) or [])
+    if entries:
+        return entries
+
+    # bozo_exception carries the real cause (DNS failure, refused connection,
+    # malformed XML); status carries an HTTP error where there was a response.
+    reason = getattr(feed, "bozo_exception", None) or f"HTTP {getattr(feed, 'status', '?')}"
+    log.warning("Feed %s returned no entries (%s) -- check whether the URL still works.", name, reason)
+    return []
 
 
 def mentions_spx(text: str | None) -> bool:

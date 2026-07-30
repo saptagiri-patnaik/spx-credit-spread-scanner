@@ -9,10 +9,9 @@ from __future__ import annotations
 import datetime as dt
 from typing import Iterable
 
-import feedparser
 from dateutil import parser as dateparser
 
-from .base import BaseCollector, CollectedItem, within_lookback
+from .base import BaseCollector, CollectedItem, parse_feed, within_lookback
 
 # category -> {display name: RSS url}
 MACRO_FEEDS = {
@@ -20,14 +19,18 @@ MACRO_FEEDS = {
         "Fed Press": "https://www.federalreserve.gov/feeds/press_all.xml",
         "ECB Press": "https://www.ecb.europa.eu/rss/press.html",
     },
+    # Reuters World/Politics (dead host) and AP via rsshub (403) were the entire
+    # fiscal_policy category and half of geopolitics, so geopolitics was resting on
+    # BBC and Al Jazeera alone while a Hormuz-driven regime was the dominant story.
     "geopolitics": {
-        "Reuters World": "https://feeds.reuters.com/Reuters/worldNews",
-        "AP Top News": "https://rsshub.app/apnews/topics/apf-topnews",
         "BBC World": "https://feeds.bbci.co.uk/news/world/rss.xml",
         "Al Jazeera": "https://www.aljazeera.com/xml/rss/all.xml",
+        "Guardian World": "https://www.theguardian.com/world/rss",
+        "NPR World": "https://feeds.npr.org/1004/rss.xml",
     },
     "fiscal_policy": {
-        "Reuters Politics": "https://feeds.reuters.com/Reuters/PoliticsNews",
+        "NPR Business": "https://feeds.npr.org/1006/rss.xml",
+        "CNBC Politics": "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=10000113",
     },
     "commodities": {
         "OilPrice": "https://oilprice.com/rss/main",
@@ -64,12 +67,7 @@ class MacroCollector(BaseCollector):
         items: list[CollectedItem] = []
         for category, feeds in MACRO_FEEDS.items():
             for name, url in feeds.items():
-                try:
-                    feed = feedparser.parse(url)
-                except Exception as exc:  # noqa: BLE001
-                    self.log.warning("Macro RSS fail %s: %s", name, exc)
-                    continue
-                for entry in feed.entries[:40]:
+                for entry in parse_feed(url, name, self.log)[:40]:
                     title = getattr(entry, "title", "") or ""
                     summary = getattr(entry, "summary", "") or ""
                     if not is_macro_relevant(f"{title} {summary}"):
