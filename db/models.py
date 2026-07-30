@@ -33,7 +33,8 @@ class Item(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     source: Mapped[str] = mapped_column(String(160))
-    source_type: Mapped[str] = mapped_column(String(30), index=True)  # news/youtube/social/macro/econ
+    # news/youtube/social/macro/econ/wire ("wire" = curated X accounts)
+    source_type: Mapped[str] = mapped_column(String(30), index=True)
     external_id: Mapped[str] = mapped_column(String(512))
     content_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     url: Mapped[str | None] = mapped_column(Text, nullable=True)

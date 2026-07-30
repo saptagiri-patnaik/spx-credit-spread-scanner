@@ -9,6 +9,11 @@ import math
 SOURCE_WEIGHTS = {
     "macro": 1.2,
     "econ": 1.1,
+    # Curated wire and policy accounts (X). Weighted with news rather than above
+    # it: the list carries genuine firsts -- a Fed repricing lands here before any
+    # RSS feed has it -- but it also carries commentary accounts with a standing
+    # directional lean, so it earns parity with the wires, not precedence.
+    "wire": 1.0,
     "news": 1.0,
     "youtube": 0.7,
     "social": 0.5,

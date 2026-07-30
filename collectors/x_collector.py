@@ -11,6 +11,7 @@ Spending Limit in the X Developer Console as a backstop.
 from __future__ import annotations
 
 import datetime as dt
+import re
 from typing import List
 
 import requests
@@ -20,12 +21,47 @@ from market.options_strategy import is_market_window
 
 from .base import BaseCollector, CollectedItem
 
+_URL_RE = re.compile(r"https?://\S+")
+_WHITESPACE_RE = re.compile(r"\s+")
+_SENTENCE_ENDS = (". ", "! ", "? ")
+
+
+def headline(text: str | None, limit: int = 140) -> str | None:
+    """Condense a post into a title so it can cluster as a story.
+
+    The synthesis pools untitled items into one chatter aggregate, so a post with
+    no title never reaches the model as a distinct event no matter who wrote it.
+
+    Kept short on purpose: story_key() builds its signature from six words of the
+    title, so a tight headline lets two wires reporting the same event collide
+    into a single story with count=2 -- which is what ranks it above one-off
+    commentary. Passing the whole post body would dilute that signature until
+    every post became its own story, which is the failure this pooling was built
+    to avoid in the first place.
+    """
+    if not text:
+        return None
+    cleaned = _WHITESPACE_RE.sub(" ", _URL_RE.sub("", text)).strip()
+    if not cleaned:
+        return None
+
+    cuts = [cleaned.find(sep) for sep in _SENTENCE_ENDS]
+    cuts = [i for i in cuts if 0 < i <= limit]
+    if cuts:
+        return cleaned[: min(cuts) + 1].strip()
+    return cleaned[:limit].strip()
+
 SEARCH_URL = "https://api.x.com/2/tweets/search/recent"
 STATE_KEY = "x_since_id"
 
 
 class XCollector(BaseCollector):
-    source_type = "social"  # feeds the sentiment channel alongside StockTwits/Reddit
+    # "wire", not "social". These are fifteen curated wire and policy accounts, and
+    # pooling them with $SPY retail chatter cost twice over: they were weighted 0.5
+    # like retail, and -- because the synthesis routes untitled items into a single
+    # chatter aggregate -- a Fed-repricing post never reached the model as an event
+    # at all. It contributed to one averaged tone number and nothing more.
+    source_type = "wire"
     provider = "x"
 
     def __init__(self, settings, logger, repo):
@@ -160,6 +196,7 @@ class XCollector(BaseCollector):
                     source="X/search",
                     source_type=self.source_type,
                     external_id=post_id,
+                    title=headline(post.get("text")),
                     content=post.get("text"),
                     url=f"https://x.com/i/status/{post_id}",
                     category="x",
