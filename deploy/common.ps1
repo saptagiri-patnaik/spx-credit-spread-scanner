@@ -29,16 +29,29 @@ $LogGroup = "/aws/lambda/$FuncName"
 
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 
+<#
+Checks the tools a script actually uses.
+
+Docker is opt-in: only deploy.ps1 and local-lambda.ps1 build or run images. Making
+every script demand it meant closing Docker Desktop broke syncing an environment
+variable, pausing a schedule and reading an alarm -- none of which involve a
+container.
+#>
 function Assert-Tooling {
-    foreach ($exe in 'docker', 'aws') {
+    param([switch]$RequireDocker)
+
+    $needed = if ($RequireDocker) { @('aws', 'docker') } else { @('aws') }
+    foreach ($exe in $needed) {
         if (-not (Get-Command $exe -ErrorAction SilentlyContinue)) {
             throw "$exe not found on PATH. Install it, then open a new terminal."
         }
     }
-    # `docker ps` is the only honest check: the CLI exists whether or not the
-    # Docker Desktop daemon is actually running, and a build fails confusingly.
-    docker ps *> $null
-    if ($LASTEXITCODE -ne 0) { throw 'Docker daemon not responding. Start Docker Desktop.' }
+    if ($RequireDocker) {
+        # `docker ps` is the only honest check: the CLI exists whether or not the
+        # Docker Desktop daemon is actually running, and a build fails confusingly.
+        docker ps *> $null
+        if ($LASTEXITCODE -ne 0) { throw 'Docker daemon not responding. Start Docker Desktop.' }
+    }
 }
 
 function Get-AwsAccount {

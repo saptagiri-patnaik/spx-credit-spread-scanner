@@ -11,7 +11,7 @@ param(
 
 . (Join-Path $PSScriptRoot 'common.ps1')
 
-Assert-Tooling
+Assert-Tooling -RequireDocker
 $account = Get-AwsAccount
 $image = Get-ImageUri $account
 $registry = Get-Registry $account

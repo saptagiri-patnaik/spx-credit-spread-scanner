@@ -26,7 +26,7 @@ param(
 
 . (Join-Path $PSScriptRoot 'common.ps1')
 
-Assert-Tooling
+Assert-Tooling -RequireDocker
 
 $imageExists = docker image inspect "$($RepoName):latest" 2>$null
 if (-not $imageExists) { throw "No local image '$RepoName`:latest'. Run deploy/deploy.ps1 first." }
