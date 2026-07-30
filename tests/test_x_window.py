@@ -13,9 +13,10 @@ class _Settings:
     x_bearer_token = "AAAAtoken"
     x_market_hours_only = True
     x_premarket_minutes = 150
+    x_postmarket_minutes = 360
     market_tz = "America/New_York"
-    x_daily_post_budget = 130
-    x_max_results_per_run = 10
+    x_daily_post_budget = 260
+    x_max_results_per_run = 15
     x_query = "test"
     x_post_unit_cost = 0.005
 
@@ -136,3 +137,31 @@ def test_close_is_unchanged_by_a_lead():
     tz = "America/New_York"
     after_close = dt.datetime(2026, 7, 30, 20, 30, tzinfo=dt.timezone.utc)  # 16:30 ET
     assert not is_market_window(after_close, tz, lead_minutes=150)
+
+
+def test_trail_extends_past_the_close():
+    tz = "America/New_York"
+    # 21:00 ET, inside a 360-minute trail (which reaches 22:00 ET).
+    nine_pm_et = dt.datetime(2026, 7, 31, 1, 0, tzinfo=dt.timezone.utc)
+    assert is_market_window(nine_pm_et, tz, lead_minutes=150, trail_minutes=360)
+    assert not is_market_window(nine_pm_et, tz, lead_minutes=150, trail_minutes=0)
+    # 22:30 ET is past even the extended window.
+    assert not is_market_window(
+        nine_pm_et + dt.timedelta(minutes=90), tz, lead_minutes=150, trail_minutes=360
+    )
+
+
+def test_evening_slot_is_collected_with_the_trail(collector, monkeypatch):
+    """The Asia-open burst is the whole reason the trail exists."""
+    c, _, made_request = collector
+    _at(monkeypatch, dt.datetime(2026, 7, 31, 1, 0, tzinfo=dt.timezone.utc))  # 21:00 ET
+    assert c.collect() == []
+    assert made_request["called"]
+
+
+def test_deep_overnight_still_skips(collector, monkeypatch):
+    """23:00 ET Thursday: past the trail, before the next lead."""
+    c, _, made_request = collector
+    _at(monkeypatch, dt.datetime(2026, 7, 31, 3, 0, tzinfo=dt.timezone.utc))
+    assert c.collect() == []
+    assert not made_request["called"]

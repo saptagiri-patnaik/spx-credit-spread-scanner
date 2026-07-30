@@ -86,6 +86,12 @@ class Settings(BaseSettings):
     x_market_hours_only: bool = True
     # 150 minutes puts the window at 07:00 ET, ahead of the 08:30 ET macro prints.
     x_premarket_minutes: int = 150
+    # ...and 360 past the close reaches 22:00 ET, covering the Asia-open headline
+    # burst. Note the budget resets on the UTC day, which starts at 17:00 ET: the
+    # evening slots therefore draw on the *next* session's allowance. That is
+    # affordable only because the window has capacity to spare over the budget --
+    # the evening takes its ~45 posts first and the morning session still clears.
+    x_postmarket_minutes: int = 360
     # Spend the paid X budget on high-signal accounts (market-movers, fast headline
     # feeds, analysts, Fed/macro officials), filtered to market-relevant posts. Retail
     # $SPX/$SPY cashtag chatter (spammy) is covered for free by StockTwits + Reddit.

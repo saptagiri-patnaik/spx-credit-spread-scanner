@@ -55,14 +55,19 @@ class XCollector(BaseCollector):
         # paid request nor a database round trip.
         if getattr(self.settings, "x_market_hours_only", True):
             lead = getattr(self.settings, "x_premarket_minutes", 150)
+            trail = getattr(self.settings, "x_postmarket_minutes", 0)
             tz_name = getattr(self.settings, "market_tz", "America/New_York")
             if not is_market_window(
-                dt.datetime.now(dt.timezone.utc), tz_name, lead_minutes=lead
+                dt.datetime.now(dt.timezone.utc),
+                tz_name,
+                lead_minutes=lead,
+                trail_minutes=trail,
             ):
                 self.log.info(
-                    "X: outside the paid-collection window (opens %d min before the bell); "
-                    "skipping to reserve budget for the session.",
+                    "X: outside the paid-collection window (%d min before the bell to "
+                    "%d min after the close); skipping to reserve budget.",
                     lead,
+                    trail,
                 )
                 return []
 
