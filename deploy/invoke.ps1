@@ -25,10 +25,26 @@ try {
     #
     # raw-in-base64-out: without it the CLI v2 expects a base64 payload and the
     # function receives garbage.
-    $meta = aws lambda invoke --function-name $FuncName --region $Region `
+    # stderr goes to its own file rather than being merged into the pipeline: '2>&1'
+    # on a native command turns stderr lines into PowerShell error records, and those
+    # reach ConvertFrom-Json as objects it cannot parse -- so a clean invocation
+    # fails on the parse instead of on anything real.
+    $errFile = Join-Path ([System.IO.Path]::GetTempPath()) "spx-invoke-err-$([guid]::NewGuid()).txt"
+    $stdout = & aws lambda invoke --function-name $FuncName --region $Region `
         --cli-binary-format raw-in-base64-out --payload $payload `
-        --log-type Tail $outFile 2>&1 | ConvertFrom-Json
+        --log-type Tail $outFile 2>$errFile
     $invokeExit = $LASTEXITCODE
+
+    $meta = $null
+    if ($stdout) {
+        try { $meta = ($stdout -join "`n") | ConvertFrom-Json } catch { }
+    }
+    if (-not $meta) {
+        Write-Note 'could not parse the invoke response; raw output follows'
+        $stdout | Write-Host
+        Get-Content $errFile -ErrorAction SilentlyContinue | Write-Host
+    }
+    Remove-Item $errFile -ErrorAction SilentlyContinue
 
     Write-Step 'Log lines from this invocation'
     if ($meta.LogResult) {

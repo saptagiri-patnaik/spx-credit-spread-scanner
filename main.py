@@ -222,9 +222,7 @@ class Pipeline:
         header = "TRADE SIGNAL" if scan["recommended"] else "SPX OUTLOOK"
         lines = [
             "=" * 56,
-            # The version rides along on every alert: when a Discord message looks
-            # wrong, the first question is which build produced it.
-            f"{header}  |  {now:%Y-%m-%d %H:%M UTC}  |  {get_version()}",
+            f"{header}  |  {now:%Y-%m-%d %H:%M UTC}",
             "=" * 56,
             f"Direction : {prediction['label']}  (score {prediction['direction']:+.2f})",
             f"Confidence: {prediction['confidence'] * 100:.0f}%",
@@ -287,6 +285,11 @@ class Pipeline:
         else:
             lines.append("BEST SPREAD: none.")
         lines.append(f"Timing    : {scan['reason']}")
+        # Rides along on every alert: when a message looks wrong, the first question
+        # is which build produced it. In the label column rather than the header
+        # because the header would then overflow the 56-char rules, and the whole
+        # reason Discord alerts are fenced is to keep the columns aligned.
+        lines.append(f"Build     : {get_version()}")
         lines.append("Educational research only - not financial advice.")
         return "\n".join(lines)
 
