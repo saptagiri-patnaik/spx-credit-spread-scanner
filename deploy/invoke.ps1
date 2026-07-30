@@ -30,8 +30,15 @@ try {
     # reach ConvertFrom-Json as objects it cannot parse -- so a clean invocation
     # fails on the parse instead of on anything real.
     $errFile = Join-Path ([System.IO.Path]::GetTempPath()) "spx-invoke-err-$([guid]::NewGuid()).txt"
+    # --cli-read-timeout 0 disables the CLI's 60-second read timeout. Left at the
+    # default, any cycle longer than a minute -- which every market-hours cycle is,
+    # once synthesis and the option chain are involved -- makes the CLI give up and
+    # retry, and with reserved concurrency pinned to 1 that retry is rejected by the
+    # invocation it started itself. The work completes; the client reports
+    # ReservedFunctionConcurrentInvocationLimitExceeded and hides it.
     $stdout = & aws lambda invoke --function-name $FuncName --region $Region `
         --cli-binary-format raw-in-base64-out --payload $payload `
+        --cli-read-timeout 0 --cli-connect-timeout 0 `
         --log-type Tail $outFile 2>$errFile
     $invokeExit = $LASTEXITCODE
 
