@@ -16,6 +16,14 @@ $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' +
 $env:PYTHONIOENCODING = 'utf-8'
 $env:PYTHONUTF8 = '1'
 
+# Half the fix is telling the CLI to emit UTF-8; the other half is telling
+# PowerShell to decode it as UTF-8. Without this, the console still reads those
+# bytes through the OEM code page and an em-dash arrives as a replacement
+# character -- text that is perfectly intact in CloudWatch, mangled on the way to
+# the screen, which reads exactly like data corruption and is not.
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+
 # us-west-2 is not arbitrary: the Lightsail Postgres lives there, and every cycle
 # makes many round trips to it. Cross-region would add latency and transfer cost.
 $Region  = if ($env:SPX_REGION) { $env:SPX_REGION } else { 'us-west-2' }
