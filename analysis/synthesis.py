@@ -94,6 +94,57 @@ class SynthesisAggregator:
     def _cfg(self, name, default):
         return getattr(self.s, name, default)
 
+    # ------------------------------------------------------------- selection --
+    @staticmethod
+    def _primary_type(bucket: dict) -> str:
+        """The source type a story counts against for the diversity quota."""
+        if bucket["macro"]:
+            return "macro"
+        sources = bucket["sources"]
+        return max(sources, key=lambda s: SOURCE_WEIGHTS.get(s, 0.6)) if sources else "other"
+
+    def select(self, stories: list[dict], max_stories: int) -> list[dict]:
+        """Take the highest-ranked stories, but stop any one source type owning the prompt.
+
+        Rank alone is not a fair contest between source types. Macro carries weight
+        1.2 and a 1.3 nudge, and its feeds cover the same world events so its
+        stories cluster across several outlets, while SPX-filtered news headlines
+        stay singletons at weight 1.0. In production that compounded to 39 of 40
+        slots -- the model reasoning about geopolitics with one market story in
+        front of it, despite 505 distinct news stories being available.
+
+        The cap is a floor for diversity, not a fixed allocation: if no other
+        stories exist, the leftovers backfill and the prompt is unchanged.
+        """
+        share = self._cfg("synthesis_max_share_per_source", 0.6)
+        if share >= 1.0 or not stories:
+            return stories[:max_stories]
+
+        cap = max(1, int(max_stories * share))
+        selected: list[dict] = []
+        deferred: list[dict] = []
+        counts: Counter = Counter()
+
+        for story in stories:  # already rank-sorted
+            if len(selected) >= max_stories:
+                break
+            kind = self._primary_type(story)
+            if counts[kind] < cap:
+                selected.append(story)
+                counts[kind] += 1
+            else:
+                deferred.append(story)
+
+        # Backfill rather than return a short prompt: a thin day should still send
+        # the model everything there is.
+        for story in deferred:
+            if len(selected) >= max_stories:
+                break
+            selected.append(story)
+
+        selected.sort(key=lambda b: b["rank"], reverse=True)
+        return selected
+
     # ------------------------------------------------------------ clustering --
     def cluster(self, scored_items) -> tuple[list[dict], dict]:
         """Group titled items into stories; pool untitled chatter separately.
@@ -187,7 +238,7 @@ class SynthesisAggregator:
         if not stories:
             return baseline
         max_stories = self._cfg("synthesis_max_stories", 40)
-        selected = stories[:max_stories]
+        selected = self.select(stories, max_stories)
 
         event_risk, event_notes = self.fallback._event_risk(
             upcoming_events, dt.datetime.now(dt.timezone.utc)

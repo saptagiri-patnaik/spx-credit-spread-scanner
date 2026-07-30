@@ -224,6 +224,13 @@ class Settings(BaseSettings):
     aggregator_mode: str = "mean"
     synthesis_model: str = "claude-opus-5"
     synthesis_max_stories: int = 40
+    # Ceiling on how much of the story prompt any one source type may occupy.
+    # Macro carries weight 1.2 and a 1.3 ranking nudge, and its feeds cover the
+    # same world events so its stories cluster across outlets while SPX-filtered
+    # news headlines stay singletons -- roughly a 2x rank advantage, enough to take
+    # 39 of 40 slots and leave the model reasoning about geopolitics with almost no
+    # market coverage in front of it. 1.0 disables the cap.
+    synthesis_max_share_per_source: float = 0.6
     synthesis_max_tokens: int = 2048
 
     # --- Paper trading (measures whether the suggestions actually pay) ---
