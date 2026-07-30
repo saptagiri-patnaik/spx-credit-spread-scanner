@@ -70,13 +70,22 @@ if (-not $NoBuild) {
         -t "$($RepoName):latest" $ProjectRoot
     if ($LASTEXITCODE -ne 0) { throw 'docker build failed.' }
     Write-Ok "built $appVersion"
-}
 
-Write-Step 'Pushing to ECR'
-docker tag "$($RepoName):latest" "$($image):latest"
-docker push "$($image):latest"
-if ($LASTEXITCODE -ne 0) { throw 'docker push failed. If it says "denied", re-run this script (ECR login expires).' }
-Write-Ok 'pushed'
+    Write-Step 'Pushing to ECR (BuildKit)'
+    # Pushed by BuildKit rather than `docker push` because BuildKit retries a failed
+    # blob upload and the classic push does not. The 157 MB pip layer goes through
+    # Docker Desktop's internal proxy, which drops large uploads with "broken pipe"
+    # often enough to fail every attempt -- BuildKit's retry turns that into a
+    # 30-second delay instead of a dead deploy. This build is fully cached by the
+    # one above, so it costs seconds.
+    docker build --platform linux/amd64 --provenance=false --sbom=false `
+        --build-arg "APP_VERSION=$appVersion" `
+        --push -t "$($image):latest" $ProjectRoot
+    if ($LASTEXITCODE -ne 0) {
+        throw 'push failed. If it says "denied", re-run this script (ECR login expires).'
+    }
+    Write-Ok 'pushed'
+}
 
 Write-Step 'Verifying the manifest is Lambda-compatible'
 # Checked here rather than left to create-function, because Lambda's rejection
