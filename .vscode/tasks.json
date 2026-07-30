@@ -76,6 +76,23 @@
       "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
     },
     {
+      "label": "Lambda: Alarms (create/update)",
+      "detail": "Email alerts for errors and for the schedule going silent.",
+      "type": "process",
+      "command": "pwsh",
+      "args": ["-NoProfile", "-File", "${workspaceFolder}/deploy/alarms.ps1"],
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "Lambda: Alarm status",
+      "type": "process",
+      "command": "pwsh",
+      "args": ["-NoProfile", "-File", "${workspaceFolder}/deploy/alarms.ps1", "-Status"],
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
       "label": "Lambda: Tail logs (live)",
       "detail": "The CloudWatch equivalent of watching logs/spx_scanner.log.",
       "type": "process",
