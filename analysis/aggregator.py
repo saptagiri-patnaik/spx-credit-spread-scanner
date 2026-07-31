@@ -19,7 +19,34 @@ SOURCE_WEIGHTS = {
     "social": 0.5,
 }
 MACRO_TYPES = {"macro", "econ"}
-_RECENCY_HALF_LIFE_HOURS = 48.0
+
+# This channel decayed items as exp(-age/48), which is a 48-hour *time constant*
+# named as if it were a half-life -- it actually reaches 1/e at 48h, and half at
+# 33.3h. The formula below is a true half-life, so the constant is expressed as
+# 48*ln2 to leave the shipped curve untouched: the mean aggregator is the A/B
+# comparator for synthesis, and moving it would invalidate the comparison.
+_RECENCY_HALF_LIFE_HOURS = 48.0 * math.log(2)
+
+
+def recency_weight(published, now, half_life_hours: float) -> float:
+    """Exponential decay on an item's age. 1.0 when brand new, 0.5 at one half-life.
+
+    Shared with the synthesis path, which needs a different half-life: this
+    channel reads instantaneous sentiment, that one judges a multi-day regime.
+
+    A half-life of 0 or less disables decay entirely, which is how the two paths
+    can be A/B'd without a second code path.
+    """
+    if half_life_hours <= 0:
+        return 1.0
+    if not published:
+        # No timestamp is not evidence of freshness. Discount rather than drop:
+        # some feeds omit the date on items that are otherwise perfectly good.
+        return 0.5
+    if published.tzinfo is None:
+        published = published.replace(tzinfo=dt.timezone.utc)
+    age_hours = max(0.0, (now - published).total_seconds() / 3600.0)
+    return 2.0 ** (-age_hours / half_life_hours)
 
 
 class Aggregator:
@@ -99,12 +126,7 @@ class Aggregator:
         }
 
     def _recency_weight(self, published, now) -> float:
-        if not published:
-            return 0.5
-        if published.tzinfo is None:
-            published = published.replace(tzinfo=dt.timezone.utc)
-        age_hours = max(0.0, (now - published).total_seconds() / 3600.0)
-        return math.exp(-age_hours / _RECENCY_HALF_LIFE_HOURS)
+        return recency_weight(published, now, _RECENCY_HALF_LIFE_HOURS)
 
     def _event_risk(self, events, now):
         window_end = now + dt.timedelta(days=self.settings.dte_max)

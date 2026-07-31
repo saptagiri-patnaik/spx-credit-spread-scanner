@@ -19,7 +19,7 @@ import datetime as dt
 import re
 from collections import Counter
 
-from .aggregator import MACRO_TYPES, SOURCE_WEIGHTS, Aggregator
+from .aggregator import MACRO_TYPES, SOURCE_WEIGHTS, Aggregator, recency_weight
 
 PREDICTION_SCHEMA = {
     "type": "object",
@@ -154,13 +154,25 @@ class SynthesisAggregator:
         item and defeats de-duplication entirely (6185 items -> 5265 stories in
         practice). Those posts carry sentiment, not events, so they are summarised
         as a single aggregate rather than competing for story slots.
+
+        Every contribution decays with the item's age. Without it a story was
+        worth as much on day 7 of the lookback as in its first hour, so the top 40
+        barely moved between cycles: five consecutive predictions came back with an
+        identical source mix and confidence within 0.01. Decaying per *item* rather
+        than per story is what makes that work -- a story still being covered keeps
+        earning fresh full-weight items, so "still live" falls out of the data
+        instead of needing a rule.
         """
         clusters: dict[frozenset, dict] = {}
         chatter = {"count": 0, "weight": 0.0, "direction": 0.0}
+        now = dt.datetime.now(dt.timezone.utc)
+        half_life = self._cfg("synthesis_recency_half_life_hours", 72.0)
 
         for item, score in scored_items:
-            weight_hint = SOURCE_WEIGHTS.get(item.source_type, 0.6) * (
-                0.5 + 0.5 * score.confidence
+            weight_hint = (
+                SOURCE_WEIGHTS.get(item.source_type, 0.6)
+                * (0.5 + 0.5 * score.confidence)
+                * recency_weight(item.published_at, now, half_life)
             )
             if not item.title:
                 chatter["count"] += 1
@@ -173,7 +185,7 @@ class SynthesisAggregator:
             bucket = clusters.setdefault(key, {
                 "title": item.title,
                 "count": 0, "weight": 0.0, "direction": 0.0,
-                "sources": set(), "macro": False,
+                "sources": set(), "macro": False, "latest": None,
             })
             weight = weight_hint
             bucket["count"] += 1
@@ -182,6 +194,12 @@ class SynthesisAggregator:
             bucket["sources"].add(item.source_type)
             if item.source_type in MACRO_TYPES:
                 bucket["macro"] = True
+            published = item.published_at
+            if published is not None:
+                if published.tzinfo is None:
+                    published = published.replace(tzinfo=dt.timezone.utc)
+                if bucket["latest"] is None or published > bucket["latest"]:
+                    bucket["latest"] = published
 
         stories = []
         for bucket in clusters.values():
@@ -240,9 +258,8 @@ class SynthesisAggregator:
         max_stories = self._cfg("synthesis_max_stories", 40)
         selected = self.select(stories, max_stories)
 
-        event_risk, event_notes = self.fallback._event_risk(
-            upcoming_events, dt.datetime.now(dt.timezone.utc)
-        )
+        now = dt.datetime.now(dt.timezone.utc)
+        event_risk, event_notes = self.fallback._event_risk(upcoming_events, now)
         prompt = self.build_prompt(selected, market_context, event_notes, chatter)
         out = self.llm.generate_json(prompt, system=SYSTEM, schema=PREDICTION_SCHEMA)
 
@@ -293,13 +310,20 @@ class SynthesisAggregator:
         mix = Counter(stype for story in selected for stype in story["sources"])
         mix_str = " ".join(f"{k}={v}" for k, v in mix.most_common()) or "(none)"
 
+        # Median age of what actually reached the model. The mix alone cannot tell
+        # you whether recency decay is working: a prompt can stay diverse by source
+        # and still be a week stale.
+        ages = sorted((now - s["latest"]).total_seconds() / 3600.0
+                      for s in selected if s.get("latest"))
+        age_str = f"{ages[len(ages) // 2]:.0f}h median" if ages else "age unknown"
+
         self.log.info(
             "SYNTHESIS (%s) direction %+.3f | confidence %.2f | "
-            "downside %.0f%% | upside %.0f%% | %d of %d stories [%s], %d chatter posts\n"
-            "  rationale: %s\n  drivers  : %s",
+            "downside %.0f%% | upside %.0f%% | %d of %d stories [%s, %s], "
+            "%d chatter posts\n  rationale: %s\n  drivers  : %s",
             getattr(self.llm, "model", "?"), direction, confidence,
             downside_risk * 100, upside_risk * 100,
-            len(selected), len(stories), mix_str, chatter.get("count", 0),
+            len(selected), len(stories), mix_str, age_str, chatter.get("count", 0),
             rationale or "(none)",
             "; ".join(str(d) for d in drivers) or "(none)",
         )

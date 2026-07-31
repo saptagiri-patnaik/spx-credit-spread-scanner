@@ -41,6 +41,11 @@ def _settings(**overrides):
         x_post_unit_cost=0.005,
         x_max_results_per_run=10,
         x_query="($SPX OR SPX)",
+        # Off, or every test here passes or fails depending on the wall clock:
+        # the collector defaults the gate on, so running these after the close
+        # made the collector return [] before it ever reached the budget or the
+        # API. The gate itself is covered by test_x_window.py.
+        x_market_hours_only=False,
     )
     base.update(overrides)
     return SimpleNamespace(**base)

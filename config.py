@@ -231,6 +231,13 @@ class Settings(BaseSettings):
     # 39 of 40 slots and leave the model reasoning about geopolitics with almost no
     # market coverage in front of it. 1.0 disables the cap.
     synthesis_max_share_per_source: float = 0.6
+    # Half-life on story weight, in hours. Nothing aged before this existed, so a
+    # 7-day-old story outranked a fresh one indefinitely and the top 40 barely
+    # changed between cycles. Longer than the mean aggregator's 48h on purpose:
+    # that channel reads today's tone, this one judges a multi-day regime, and the
+    # things that kill a credit spread build over a week. At 72h an item keeps 79%
+    # of its weight after a day and 20% after seven. 0 disables decay.
+    synthesis_recency_half_life_hours: float = 72.0
     synthesis_max_tokens: int = 2048
 
     # --- Paper trading (measures whether the suggestions actually pay) ---
