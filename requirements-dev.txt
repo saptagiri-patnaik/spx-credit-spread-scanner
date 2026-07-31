@@ -1,0 +1,5 @@
+# Everything needed to run the test suite on a laptop.
+# The Lambda image installs requirements.txt only -- see the Dockerfile.
+-r requirements.txt
+
+pytest>=8.0

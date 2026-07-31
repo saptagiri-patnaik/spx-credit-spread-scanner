@@ -96,7 +96,7 @@ cd spx-credit-spread-scanner
 
 python -m venv .venv
 source .venv/bin/activate        # Windows: .\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+pip install -r requirements-dev.txt   # runtime deps + pytest
 ```
 
 ### 3. Get a Postgres database

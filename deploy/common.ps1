@@ -21,8 +21,15 @@ $env:PYTHONUTF8 = '1'
 # bytes through the OEM code page and an em-dash arrives as a replacement
 # character -- text that is perfectly intact in CloudWatch, mangled on the way to
 # the screen, which reads exactly like data corruption and is not.
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$OutputEncoding = [System.Text.Encoding]::UTF8
+#
+# Must be BOM-less: [System.Text.Encoding]::UTF8 carries an EF BB BF preamble,
+# and $OutputEncoding governs what PowerShell writes to a native command's stdin,
+# so those three bytes get prepended to every pipe. That is invisible until
+# something parses stdin strictly -- `docker login --password-stdin` rejected the
+# ECR token outright, and printed nothing to say why.
+$utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+[Console]::OutputEncoding = $utf8NoBom
+$OutputEncoding = $utf8NoBom
 
 # us-west-2 is not arbitrary: the Lightsail Postgres lives there, and every cycle
 # makes many round trips to it. Cross-region would add latency and transfer cost.
