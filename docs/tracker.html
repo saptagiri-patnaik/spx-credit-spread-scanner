@@ -178,7 +178,7 @@
     <h1>Open investigations, running experiments, and what to watch next</h1>
     <p class="standfirst">
       Everything currently unresolved in the pipeline, each with the condition that would make you
-      act on it. Regenerated 30 July 2026, 10:07 PT from the live database, CloudWatch and the
+      act on it. Regenerated 30 July 2026, 20:40 PT from the live database, CloudWatch and the
       deployed configuration. Twelve items closed since the 09:03 edition, including the account's
       root access key.
     </p>
@@ -251,24 +251,62 @@
       <article class="item sev-new">
         <div class="item-top">
           <h3>Does the story diversity cap hold across cycles?</h3>
-          <span class="pill p-new">1 of N</span>
+          <span class="pill p-watch">holding, 5 of 5</span>
           <span class="when">next: every cycle</span>
         </div>
         <p>
-          The cap shipped at 09:40 after macro took 39 of 40 slots. Exactly one cycle has run under
-          it, and it landed precisely on target. One observation is not a trend, and the mix will
-          shift as the wire reclassification phases in over the coming week.
+          The cap shipped at 09:40 after macro took 39 of 40 slots. Five consecutive cycles have now
+          run under it and every one landed on exactly the same allocation — which is what raised the
+          <em>next</em> question, below: an identical mix five times running turned out to be a symptom,
+          not a success.
         </p>
         <div class="table-scroll">
           <table>
-            <thead><tr><th>Cycle</th><th>macro</th><th>news</th><th>youtube</th><th>wire</th></tr></thead>
+            <thead><tr><th>Cycle</th><th>macro</th><th>news</th><th>youtube</th><th>wire</th><th>conf</th></tr></thead>
             <tbody>
-              <tr><td class="num">09:15 &middot; before</td><td class="num was">39</td><td class="num was">1</td><td class="num">0</td><td class="num">0</td></tr>
-              <tr><td class="num">09:58 &middot; after</td><td class="num now">24</td><td class="num now">15</td><td class="num">1</td><td class="num">0</td></tr>
+              <tr><td class="num">09:15 &middot; before</td><td class="num was">39</td><td class="num was">1</td><td class="num">0</td><td class="num">0</td><td class="num">0.35</td></tr>
+              <tr><td class="num">09:58</td><td class="num now">24</td><td class="num now">15</td><td class="num">1</td><td class="num">0</td><td class="num">0.34</td></tr>
+              <tr><td class="num">10:43</td><td class="num now">24</td><td class="num now">15</td><td class="num">1</td><td class="num">0</td><td class="num">0.34</td></tr>
+              <tr><td class="num">11:27</td><td class="num now">24</td><td class="num now">15</td><td class="num">1</td><td class="num">0</td><td class="num">0.40</td></tr>
+              <tr><td class="num">12:12</td><td class="num now">24</td><td class="num now">15</td><td class="num">1</td><td class="num">0</td><td class="num">0.34</td></tr>
+              <tr><td class="num">12:57</td><td class="num now">24</td><td class="num now">15</td><td class="num">1</td><td class="num">0</td><td class="num">0.34</td></tr>
             </tbody>
           </table>
         </div>
         <div class="trigger"><b>Act if</b><span>macro returns above 24, or news collapses back toward single digits. Either means the primary-type attribution is mis-assigning stories that touch several source types.</span></div>
+      </article>
+
+      <article class="item sev-new">
+        <div class="item-top">
+          <h3>Does letting stories age move the prediction at all?</h3>
+          <span class="pill p-new">shipped 20:24</span>
+          <span class="when">first reading: 06:55 PT, 31 Jul</span>
+        </div>
+        <p>
+          The synthesis path weighted an item the same on day 7 of the lookback as in its first hour,
+          while the mean aggregator had decayed items all along. That is why the five cycles above are
+          identical: the model was handed a near-identical prompt every 45 minutes and, reasonably,
+          returned a near-identical answer. Those are not five pieces of evidence that the tape is
+          unattractive — they are one, sampled five times. Story weight now halves every 72 hours,
+          per item rather than per story, so a story still being covered keeps earning fresh weight.
+        </p>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Against the live 8,374-item corpus</th><th>before</th><th>after</th></tr></thead>
+            <tbody>
+              <tr><td>Median age of the 40 stories sent</td><td class="num was">72h</td><td class="num now">30h</td></tr>
+              <tr><td>Oldest story in the prompt</td><td class="num was">159h</td><td class="num now">98h</td></tr>
+              <tr><td>Stories replaced</td><td class="num">&mdash;</td><td class="num now">16 of 40</td></tr>
+              <tr><td><code>wire</code> slots</td><td class="num was">1</td><td class="num now">8</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          The clearest single example of the harm: a 98-hour-old <em>&ldquo;U.S. and Iran halt attacks&rdquo;</em>
+          was outranking a 23-hour-old <em>&ldquo;attacks resume&rdquo;</em> on the same conflict. Both are macro,
+          so the diversity cap could never have caught it.
+        </p>
+        <div class="trigger"><b>Act if</b><span>consecutive cycles still return confidence within ~0.01 of each other with median age under 40h → the plateau is the scorer or the tape, not the corpus, and <code>confidence_dir_scale</code> becomes the next suspect. If median age drops below ~12h → 72h is too aggressive for a 5–7 day horizon and the regime signal is being truncated.</span></div>
       </article>
 
       <article class="item sev-watch">
@@ -278,40 +316,28 @@
           <span class="when">through 6 Aug</span>
         </div>
         <p>
-          X became <code>source_type: wire</code> at weight 1.0 with generated headlines, but the mix
-          still reads <code>wire=0</code>. That is expected: items stored before the change keep their
-          old shape until they age out of the 7-day lookback, and only 13 wire-shaped stories exist so
-          far. The effect builds rather than switching on.
+          X became <code>source_type: wire</code> at weight 1.0 with generated headlines, but the live
+          mix still reads <code>wire=0</code>. Two causes, and the second was hidden until today: items
+          stored before the change keep their old shape until they age out of the lookback, <em>and</em>
+          X posts are fresh by construction, so with nothing ageing they were permanently buried under
+          week-old macro. The decay above lifts them from 1 slot to 8 in a dry run — that may be the
+          whole of the remaining gap.
         </p>
-        <div class="trigger"><b>Act if</b><span><code>wire=</code> is still 0 by 2 Aug → the headline generator is producing titles that fail <code>story_key()</code>. If it exceeds ~16 → the accounts are crowding the wires and the weight should drop to 0.8.</span></div>
+        <div class="trigger"><b>Act if</b><span><code>wire=</code> is still 0 by 2 Aug → the headline generator is producing titles that fail <code>story_key()</code>, which decay would not fix. If it exceeds ~16 → the accounts are crowding the wires and the weight should drop to 0.8.</span></div>
       </article>
 
       <article class="item sev-watch">
         <div class="item-top">
           <h3>Does the X budget get fully spent, in the right hours?</h3>
-          <span class="pill p-watch">watch</span>
-          <span class="when">tonight, then 31 Jul</span>
+          <span class="pill p-watch">88% spent</span>
+          <span class="when">next: 31 Jul close</span>
         </div>
         <p>
-          162 of 260 spent by 10:07, against an old ceiling of 130 that used to be exhausted before
-          the first actionable cycle. The window runs 07:00–22:00 ET with 20 grid slots at 15 posts,
-          so the budget should bind rather than the slots.
+          The UTC day ended at 229 of 260 — against an old ceiling of 130 that used to be exhausted
+          before the first actionable cycle — then reset to 4/260 at 17:26 PT, which is the 17:00 PT
+          UTC-day rollover behaving as predicted. Spend now tracks the session instead of the dawn.
         </p>
-        <div class="trigger"><b>Act if</b><span>the day ends well short of 260 → raise per-fetch above 15. If session cycles log <code>budget reached</code> before 13:00 PT → the evening slots are taking too much of the UTC-day allowance.</span></div>
-      </article>
-
-      <article class="item sev-watch">
-        <div class="item-top">
-          <h3>Is the off-window X gate actually firing?</h3>
-          <span class="pill p-watch">unobserved</span>
-          <span class="when">tonight, after 19:00 PT</span>
-        </div>
-        <p>
-          Cycles outside the window should skip the paid fetch before touching the budget or the
-          database. Deployed but never yet observed in production, because every cycle since it
-          shipped has been inside the window.
-        </p>
-        <div class="trigger"><b>Confirm</b><span><code>X: outside the paid-collection window</code> appears after 19:00 PT and before 04:00 PT.</span></div>
+        <div class="trigger"><b>Act if</b><span>a day ends below ~200 → raise per-fetch above 15. If session cycles log <code>budget reached</code> before 13:00 PT → the evening slots are taking too much of the UTC-day allowance.</span></div>
       </article>
 
       <article class="item sev-watch">
@@ -342,16 +368,15 @@
       <article class="item sev-watch">
         <div class="item-top">
           <h3>Cycle duration is varying by a factor of two</h3>
-          <span class="pill p-watch">watch</span>
+          <span class="pill p-watch">settled</span>
           <span class="when">continuous</span>
         </div>
         <p>
-          Recent cycles: 130s, 246s, 309s, 155s, against a 600s timeout. The variation tracks how many
-          new items each cycle scores rather than anything structural — scoring is per-item and capped
-          at 80 — so the 309s peak was a backlog burst from the doubled X budget, not a leak. Peak
-          memory sits at 394 MB of 1024 MB.
+          A full day of cycles came in at 117, 145, 162, 110, 74, 96, 93, 70, 101 and 79 seconds
+          against a 600s timeout, with peak memory 321–394 MB of 1024 MB. The 309s spike was the
+          backlog burst from the doubled X budget, not a leak or a trend. Headroom is comfortable.
         </p>
-        <div class="trigger"><b>Act if</b><span>any cycle exceeds ~450s, or two consecutive cycles trend upward with flat item counts. Headroom is real but no longer generous.</span></div>
+        <div class="trigger"><b>Act if</b><span>any cycle exceeds ~450s, or two consecutive cycles trend upward with flat item counts.</span></div>
       </article>
 
       <article class="item sev-watch">
@@ -506,6 +531,14 @@
       <span class="sec-note">28–30 July &middot; outlined items closed today</span>
     </div>
     <div class="settled-grid">
+      <div class="settled-item today">Off-window X gate confirmed firing — 19:41 PT</div>
+      <div class="settled-item today">Zero warnings or errors across a full day of cycles</div>
+      <div class="settled-item today">Story weight now decays; 72h half-life</div>
+      <div class="settled-item today">48h &ldquo;half-life&rdquo; was a time constant — renamed, curve unchanged</div>
+      <div class="settled-item today">pip split across 3 layers; Docker proxy drops big blobs</div>
+      <div class="settled-item today">pytest out of the production image</div>
+      <div class="settled-item today"><code>$OutputEncoding</code> BOM was corrupting <code>docker login</code></div>
+      <div class="settled-item today"><code>test_x_collector</code> no longer depends on the wall clock</div>
       <div class="settled-item today">Root access key deleted — no root keys on the account</div>
       <div class="settled-item today">Deploys run as scoped <code>spx-deployer</code></div>
       <div class="settled-item today">Macro no longer owns the prompt (39/40 → 24/40)</div>
@@ -534,10 +567,11 @@
   </section>
 
   <footer>
-    <span>Regenerated 30 July 2026, 10:07 PT</span>
+    <span>Regenerated 30 July 2026, 20:40 PT</span>
     <span>Build <code>783ca7b</code></span>
     <span>Source: <code>docs/tracker.html</code></span>
     <span>Data: Lightsail Postgres, CloudWatch, deployed Lambda configuration</span>
   </footer>
 
 </div>
+
