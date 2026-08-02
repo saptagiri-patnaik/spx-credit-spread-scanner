@@ -7,7 +7,9 @@ Email alerting for the Lambda deployment: one alarm for failures, one for silenc
 
 Two alarms, because they catch opposite failures:
 
-  spx-scanner-errors          the function ran and threw. Loud, immediate.
+  spx-scanner-errors          a cycle threw AND its automatic retry threw too. Async
+                              invocation means a lone failure is retried and usually
+                              recovers, so one error is not worth waking up for.
   spx-scanner-no-invocations  the function did not run at all. This is the one that
                               matters more: a deleted schedule, a disabled rule or a
                               deleted role produces no errors, no logs and no signal
@@ -69,17 +71,34 @@ if ($existing -and $existing.Trim()) {
 }
 
 Write-Step 'Alarm: function errors'
+# Two errors in fifteen minutes, not one in five. EventBridge invokes this function
+# asynchronously, so Lambda retries a failed cycle by itself -- and a native heap
+# abort in the collectors ("double free or corruption", ~5% of invocations) has so
+# far recovered on the retry every time. At threshold 1 that pages twice per crash,
+# ALARM then OK, for a cycle that was never lost. The alarm should mean "a cycle
+# actually died", which is the retry failing too.
+#
+# The window is 900s rather than 300s because of how close together the attempts
+# are: on 30 Jul the two failures were 64 seconds apart. A 5-minute bucket usually
+# holds both, but a period boundary landing between them would split the pair into
+# two Sum=1 datapoints and neither would trip a threshold of 2 -- the alarm would go
+# quiet in exactly the case it exists for. 15 minutes makes that split unlikely, and
+# costs nothing in practice: the schedule is 45 minutes wide, so detection latency
+# well under one cycle changes nothing about the response.
+#
+# Silence is still covered by $silenceAlarm below, which is the one that matters
+# when the pipeline stops rather than throws.
 aws cloudwatch put-metric-alarm --region $Region `
     --alarm-name $errorAlarm `
-    --alarm-description 'SPX scanner Lambda raised an error in the last 5 minutes.' `
+    --alarm-description 'SPX scanner Lambda failed a cycle AND its automatic retry within 15 minutes.' `
     --namespace AWS/Lambda --metric-name Errors `
     --dimensions "Name=FunctionName,Value=$FuncName" `
-    --statistic Sum --period 300 --evaluation-periods 1 `
-    --threshold 1 --comparison-operator GreaterThanOrEqualToThreshold `
+    --statistic Sum --period 900 --evaluation-periods 1 `
+    --threshold 2 --comparison-operator GreaterThanOrEqualToThreshold `
     --treat-missing-data notBreaching `
     --alarm-actions $topicArn --ok-actions $topicArn | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "could not create $errorAlarm." }
-Write-Ok "$errorAlarm (>=1 error in 5 min)"
+Write-Ok "$errorAlarm (>=2 errors in 15 min)"
 
 Write-Step 'Alarm: no invocations'
 # A 2-hour window against a 45-minute grid expects ~2.6 invocations, so one is a
