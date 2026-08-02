@@ -194,6 +194,39 @@
     border-top: 1px solid var(--hair); padding-top: 1.1rem; color: var(--muted);
     font-family: var(--mono); font-size: .72rem; display: flex; gap: 1.2rem; flex-wrap: wrap;
   }
+  /* go-live headline + gate progress */
+  .headline {
+    background: var(--surface); border: 1px solid var(--hair); border-radius: 4px;
+    border-left: 4px solid var(--block); padding: 1.2rem 1.4rem; box-shadow: var(--shadow);
+    display: flex; flex-direction: column; gap: .75rem;
+  }
+  .headline .top { display: flex; align-items: baseline; gap: 1rem; flex-wrap: wrap; }
+  .headline .date {
+    font-family: var(--mono); font-size: 1.6rem; font-weight: 700; letter-spacing: -.02em;
+    color: var(--block); font-variant-numeric: tabular-nums;
+  }
+  .headline .cap {
+    font-family: var(--mono); font-size: .66rem; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--muted); font-weight: 600;
+  }
+  .headline p { margin: 0; color: var(--ink-2); font-size: .9rem; max-width: 46rem; }
+
+  .prog { display: grid; gap: 1px; background: var(--hair); border: 1px solid var(--hair);
+          border-radius: 3px; overflow: hidden; grid-template-columns: repeat(auto-fit, minmax(7.5rem,1fr)); }
+  .prog div { background: var(--surface); padding: .7rem .85rem; }
+  .prog dt { font-family: var(--mono); font-size: .6rem; letter-spacing: .11em;
+             text-transform: uppercase; color: var(--muted); font-weight: 600; }
+  .prog dd { margin: .2rem 0 0; font-family: var(--mono); font-size: 1.05rem; font-weight: 600;
+             font-variant-numeric: tabular-nums; }
+  .prog dd.no { color: var(--block); } .prog dd.part { color: var(--active); } .prog dd.ok { color: var(--done); }
+
+  td.owner { font-family: var(--mono); font-size: .74rem; white-space: nowrap; color: var(--muted); }
+  .chip { font-family: var(--mono); font-size: .6rem; font-weight: 700; letter-spacing: .08em;
+          text-transform: uppercase; padding: .12rem .38rem; border-radius: 2px; white-space: nowrap; }
+  .c-no { background: var(--block-bg); color: var(--block); border: 1px solid var(--block); }
+  .c-part { background: var(--active-bg); color: var(--active); border: 1px solid var(--active); }
+  .c-ok { background: var(--done-bg); color: var(--done); border: 1px solid var(--done); }
+
   @media (max-width: 40rem) {
     .step { grid-template-columns: 1fr; }
     .step .tag { justify-self: start; }
@@ -213,6 +246,29 @@
       each step. Dates are earliest-possible and assume nothing slips.
     </p>
   </header>
+
+  <div class="headline">
+    <div class="top">
+      <span class="date">late Sept 2026</span>
+      <span class="cap">earliest combined go-live &middot; assessed 2 Aug</span>
+    </div>
+    <p>
+      Unchanged from Sopana&rsquo;s own estimate, and that is the point: <strong>joining the two
+      systems need not move the date at all</strong>, provided the integration lands before
+      Gate&nbsp;1&rsquo;s clean-day clock starts. Everything the scanner adds can run inside the window
+      Sopana already has to spend accumulating trades &mdash; but only in that order. Land the veto
+      after the clock starts and you reset it.
+    </p>
+  </div>
+
+  <dl class="prog">
+    <div><dt>Gates passed</dt><dd class="no">0 / 10</dd></div>
+    <div><dt>Blocking</dt><dd class="no">7</dd></div>
+    <div><dt>Closed trades</dt><dd class="no">3 / 20</dd></div>
+    <div><dt>Clean days</dt><dd class="no">0 / 10</dd></div>
+    <div><dt>Orders sent</dt><dd class="no">0, ever</dd></div>
+    <div><dt>Scanner trades</dt><dd class="no">0, ever</dd></div>
+  </dl>
 
   <!-- =============================================== reconciliation ==== -->
   <section>
@@ -493,10 +549,114 @@
     </div>
   </section>
 
+  <!-- ============================================= combined gates ==== -->
+  <section>
+    <div class="sec-head">
+      <h2><span class="n">04</span> Combined go-live checklist</h2>
+    </div>
+    <p class="lede">
+      Sopana&rsquo;s seven, unchanged &mdash; it owns execution and its gates are the right ones.
+      Joining a second system adds three more, because a veto source that fails badly is worse than
+      no veto at all. All ten must pass. No partial credit.
+    </p>
+
+    <div class="scroll"><table>
+      <thead><tr><th>#</th><th>Gate</th><th>Closes when</th><th>Owner</th><th>Now</th></tr></thead>
+      <tbody>
+        <tr><td class="num">1</td><td>Code stability</td><td>10 consecutive trading days, no behavioural bug, no bug-fix version bump &mdash; and none open at the start</td><td class="owner">sopana</td><td><span class="chip c-no">0 / 10</span></td></tr>
+        <tr><td class="num">2</td><td>Sample size</td><td>&ge;20 closed trades on one stable version, spanning VIX &lt;15 and &gt;22</td><td class="owner">sopana</td><td><span class="chip c-no">3 / 20</span></td></tr>
+        <tr><td class="num">3</td><td>Performance</td><td>Win rate &ge;70%, expectancy &gt;$100, profit factor &gt;1.3, stop fired &ge;2&times;</td><td class="owner">sopana</td><td><span class="chip c-no">n too small</span></td></tr>
+        <tr><td class="num">4</td><td>Order path</td><td>One real 1-contract round trip, slippage measured, rejection + partial fill handled</td><td class="owner">sopana</td><td><span class="chip c-no">0 orders</span></td></tr>
+        <tr><td class="num">5</td><td>Signal maturity</td><td>Skew vote active with &ge;20 days history</td><td class="owner">sopana</td><td><span class="chip c-part">auto ~18 Aug</span></td></tr>
+        <tr><td class="num">6</td><td>Operational resilience</td><td>Lambda burn-in, token staleness alert seen firing, overnight gap survived</td><td class="owner">sopana</td><td><span class="chip c-part">from 3 Aug</span></td></tr>
+        <tr><td class="num">7</td><td>Capital &amp; risk sizing</td><td>BP fits the real account; worst-case simultaneous loss modelled</td><td class="owner">sopana</td><td><span class="chip c-no">BP &gt; account</span></td></tr>
+        <tr><td class="num">8</td><td><strong>Scanner reliability</strong></td><td>Native heap abort diagnosed and fixed; scanner completes 10 consecutive trading days without a lost cycle</td><td class="owner">integration</td><td><span class="chip c-no">~5.6% abort</span></td></tr>
+        <tr><td class="num">9</td><td><strong>Veto calibration</strong></td><td>2 weeks logged non-binding; every veto counted, and what the vetoed trade went on to do is known</td><td class="owner">integration</td><td><span class="chip c-no">not started</span></td></tr>
+        <tr><td class="num">10</td><td><strong>Veto failure mode</strong></td><td>Scanner down or stale &rArr; no veto, never block-all, never crash. Staleness bound set and tested</td><td class="owner">integration</td><td><span class="chip c-no">not designed</span></td></tr>
+      </tbody>
+    </table></div>
+
+    <div class="note stop">
+      <p>
+        <strong>Gate 8 exists because the scanner is not yet reliable enough to be trusted with a
+        veto.</strong> It aborts on roughly one invocation in eighteen &mdash; a native heap abort
+        that kills the interpreter with no traceback. As a standalone research tool that is a
+        nuisance the retry absorbs. As the thing deciding whether Sopana may sell puts, a source that
+        dies silently and leaves a three-hour-old hazard flag behind is actively dangerous. The
+        <code>faulthandler</code> diagnostic deployed 2 Aug; the next abort should name the library.
+      </p>
+    </div>
+
+    <div class="note warn">
+      <p>
+        <strong>Gate 10 decides what happens on the bad day, so decide it before the bad day.</strong>
+        Fail-open is the right default &mdash; a missing scanner means Sopana trades exactly as it
+        does today, which is a known quantity. Fail-closed would let an unrelated outage silently
+        halt the book. Pair it with a staleness bound: a hazard flag older than one Sopana cycle is
+        not a signal, it is a stale row, and should be ignored rather than obeyed.
+      </p>
+    </div>
+  </section>
+
+  <!-- ================================================ the date ======== -->
+  <section>
+    <div class="sec-head">
+      <h2><span class="n">05</span> What actually moves the date</h2>
+    </div>
+    <p class="lede">
+      Three of the ten gates are pure waiting. Nothing in the integration shortens them, and nothing
+      in them shortens the integration.
+    </p>
+
+    <div class="scroll"><table>
+      <thead><tr><th>Constraint</th><th>Earliest</th><th>Can it be compressed?</th></tr></thead>
+      <tbody>
+        <tr><td>Gate&nbsp;2 &mdash; 20 closed trades</td><td class="num">~mid Sept</td><td>No. ~1 entry/day, 3&ndash;5 day holds. This is the binding constraint on everything.</td></tr>
+        <tr><td>Gate&nbsp;1 &mdash; 10 clean days</td><td class="num">~10 td after start</td><td>No, but <strong>when it starts is a choice</strong> &mdash; see below.</td></tr>
+        <tr><td>Gate&nbsp;5 &mdash; skew vote</td><td class="num">~18 Aug</td><td>No. Fixed by history depth.</td></tr>
+        <tr><td>Gate&nbsp;8 &mdash; scanner reliability</td><td class="num">days</td><td>Yes &mdash; needs one abort to land with the diagnostic deployed.</td></tr>
+        <tr><td>Gate&nbsp;4 &mdash; order path</td><td class="num">any time</td><td><strong>Yes, entirely.</strong> Depends on nothing. Do it this week.</td></tr>
+        <tr><td>Gates&nbsp;9, 10 &mdash; veto</td><td class="num">~2 weeks</td><td>Yes &mdash; runs in parallel with Gate&nbsp;2 accumulation.</td></tr>
+      </tbody>
+    </table></div>
+
+    <div class="note">
+      <p>
+        <strong>The one sequencing decision that matters.</strong> Wiring the veto into Sopana is a
+        code change to Sopana. Gate&nbsp;1 forbids bug-fix version bumps inside its window, and any
+        defect found in fresh integration code is exactly that. So there are two orders, and only one
+        of them is free:
+      </p>
+      <p>
+        <strong>Integrate, then start the clock</strong> &mdash; the veto lands while the clock is
+        stopped anyway (it cannot start until bug&nbsp;#10 is fixed), and the ten clean days then
+        certify the combined system. Cost to the go-live date: <strong>zero</strong>.
+      </p>
+      <p>
+        <strong>Start the clock, then integrate</strong> &mdash; the first defect in the veto code
+        resets the counter, and ten days are spent twice. Cost: <strong>two weeks or more</strong>.
+      </p>
+    </div>
+
+    <div class="note warn">
+      <p>
+        <strong>The alternative, if late Sept is too far away.</strong> Ship Sopana alone and add the
+        scanner veto afterwards. That reaches a first live trade sooner, since gates&nbsp;8&ndash;10
+        drop out. The cost is two go-live events instead of one, and the second lands new code on a
+        system already trading real money &mdash; which is when a mistake stops being free.
+      </p>
+      <p>
+        Worth taking only if the first live fill matters more than the second one being safe. On the
+        current numbers &mdash; three closed trades, all on defective code, net &minus;$330 &mdash;
+        it probably does not.
+      </p>
+    </div>
+  </section>
+
   <!-- ================================================== principles ==== -->
   <section>
     <div class="sec-head">
-      <h2><span class="n">04</span> Rules this sequence obeys</h2>
+      <h2><span class="n">06</span> Rules this sequence obeys</h2>
     </div>
 
     <div class="note warn">
