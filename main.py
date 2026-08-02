@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import json
 
 from apscheduler.schedulers.blocking import BlockingScheduler
 
@@ -27,6 +28,11 @@ from market.paper import PaperTracker
 from market.schwab_client import SchwabClient
 from utils.logging import resolve_tz, setup_logging
 from utils.version import get_version
+
+# collector_state key holding the trailing ATM-IV series that IV rank is computed
+# against. Kept in the existing key/value store rather than a new table: it is one
+# short JSON list, written once a day.
+IV_HISTORY_KEY = "atm_iv_history"
 
 
 class Pipeline:
@@ -151,15 +157,22 @@ class Pipeline:
         since = now - dt.timedelta(days=self.s.lookback_days)
         scored = self.repo.recent_scores(since)
         events = self.repo.fetch_events(now, now + dt.timedelta(days=self.s.dte_max))
-        market_context = self.schwab.market_context(self.s.underlying)
 
-        prediction = self.aggregator.aggregate(scored, market_context, events)
-
+        # The chain is fetched before the context, not after: at-the-money implied
+        # vol comes out of it, and fetching it twice would spend a request on data
+        # already in hand.
         chain = self.schwab.option_chain(
             self.schwab.symbol(self.s.underlying),
             dt.date.today() + dt.timedelta(days=self.s.dte_min),
             dt.date.today() + dt.timedelta(days=self.s.dte_max),
         )
+        market_context = self.schwab.market_context(self.s.underlying, chain)
+        rank = self._iv_rank(market_context.get("atm_iv"))
+        if rank is not None:
+            market_context["iv_rank"] = rank
+        self._log_regime(market_context)
+
+        prediction = self.aggregator.aggregate(scored, market_context, events)
         scan = self.strategy.scan(chain, prediction)
         best = scan["best"]
         spreads = [best] if best else []
@@ -180,6 +193,61 @@ class Pipeline:
         trade_alert = bool(scan["recommended"]) and self._claim_trade_alert(best)
         push = trade_alert or not getattr(self.s, "alert_only_on_trade", True)
         self.notifier.send(self._format(prediction, scan), external=push, trade=trade_alert)
+
+    def _iv_rank(self, atm_iv: float | None) -> float | None:
+        """Where today's ATM implied vol sits in its own trailing history, 0..1.
+
+        The absolute level says little on its own -- 15% vol is rich in one regime
+        and cheap in another -- so the useful question is where today sits against
+        this index's own recent range. Nothing else records it, so the history is
+        accumulated here, one reading per calendar day.
+
+        Returns None until enough days have banked to make a percentile mean
+        anything, which is why this is worth switching on well before it is read.
+        """
+        if atm_iv is None:
+            return None
+        today = dt.date.today().isoformat()
+        raw = self.repo.get_state(IV_HISTORY_KEY)
+        try:
+            history = json.loads(raw) if raw else []
+            if not isinstance(history, list):
+                history = []
+        except ValueError:
+            self.log.warning("ATM IV history was unreadable; starting a fresh series.")
+            history = []
+
+        # One reading per day, last write wins: a 45-minute cadence would
+        # otherwise stack ~30 near-identical samples a day and the percentile
+        # would describe today's chop rather than the trailing range.
+        history = [h for h in history if isinstance(h, dict) and h.get("d") != today]
+        history.append({"d": today, "iv": round(float(atm_iv), 5)})
+        history.sort(key=lambda h: h["d"])
+        history = history[-int(getattr(self.s, "iv_rank_window_days", 252)):]
+        if not self.dry_run:
+            self.repo.set_state(IV_HISTORY_KEY, json.dumps(history))
+
+        values = [h["iv"] for h in history if isinstance(h.get("iv"), (int, float))]
+        if len(values) < int(getattr(self.s, "iv_rank_min_days", 20)):
+            return None
+        below = sum(1 for v in values if v < atm_iv)
+        return round(below / (len(values) - 1), 3)
+
+    def _log_regime(self, ctx: dict) -> None:
+        """One line per cycle, so the regime is auditable without a DB query."""
+        parts = []
+        if ctx.get("iv_rv_ratio") is not None:
+            parts.append(
+                f"IV/RV {ctx['iv_rv_ratio']:.2f} "
+                f"(IV {ctx.get('atm_iv', 0) * 100:.1f}% vs RV {ctx.get('realized_vol', 0) * 100:.1f}%)"
+            )
+        if ctx.get("vix_term_structure") is not None:
+            shape = "BACKWARDATION" if ctx["vix_term_structure"] > 1.0 else "contango"
+            parts.append(f"VIX/VIX3M {ctx['vix_term_structure']:.3f} {shape}")
+        if ctx.get("iv_rank") is not None:
+            parts.append(f"IV rank {ctx['iv_rank']:.0%}")
+        parts.append(f"trend {ctx.get('trend_score', 0.0):+.2f}")
+        self.log.info("Regime: %s", " | ".join(parts))
 
     def _claim_trade_alert(self, best: dict | None) -> bool:
         """True the first time a given spread is announced; False while it repeats.

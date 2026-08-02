@@ -183,6 +183,24 @@ class Settings(BaseSettings):
     allow_iron_condor: bool = True       # sell both wings when both tails are quiet
     min_edge_score: float = 0.05         # only recommend a trade above this edge
     align_weight: float = 0.15           # weight of directional agreement in edge
+
+    # --- Price/vol regime -------------------------------------------------
+    # These answer the question the strategy actually turns on -- is premium rich,
+    # and is this a regime where selling it has historically worked -- rather than
+    # the directional question the news corpus has been shown not to carry.
+    realized_vol_window: int = 20        # trading days of returns behind realised vol
+    iv_rank_window_days: int = 252       # ~1y of daily ATM IV readings retained
+    iv_rank_min_days: int = 20           # below this a percentile is meaningless
+    # Blocks the side already moving against a seller: at 0.5 a ~1.5% five-day
+    # move (trend_score saturates at 3%) stops put spreads in a selloff and call
+    # spreads in a rally.
+    #
+    # Ships at 0 (disabled) on purpose. Everything else in this block only
+    # measures; this one changes which trades are allowed to exist, and landing a
+    # behaviour change in the same deploy as the instrumentation that is supposed
+    # to evaluate it would leave no clean before-picture. Turn it on as its own
+    # change once there is a week of readings to judge it against.
+    trend_side_block: float = 0.0
     require_market_hours: bool = True    # only recommend trades during RTH
     market_tz: str = "America/New_York"  # exchange timezone for the market-hours check
     alert_only_on_trade: bool = True     # push external alerts only when a trade is recommended
