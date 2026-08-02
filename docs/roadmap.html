@@ -1,0 +1,578 @@
+<title>Roadmap — Fundamental + Technical to Shadow Trading</title>
+<style>
+  :root {
+    color-scheme: light dark;
+
+    /* Neutral carries a slight violet bias toward the accent, so the greys read
+       as chosen rather than inherited. Distinct from the scanner tracker (teal)
+       and the Sopana checklist (blue-grey) on purpose: this document spans both
+       and should not be mistaken for either. */
+    --ground:     #F2F1F5;
+    --surface:    #FFFFFF;
+    --sunken:     #E9E8EE;
+    --hair:       #D6D4DE;
+    --hair-firm:  #B9B6C6;
+    --ink:        #16141C;
+    --ink-2:      #454154;
+    --muted:      #6E6A7E;
+
+    --accent:     #4B4A9B;
+    --accent-bg:  #E7E7F3;
+
+    --done:       #2F6B4F;
+    --done-bg:    #E2EFE8;
+    --active:     #8A5A0B;
+    --active-bg:  #F7EEDA;
+    --block:      #A33F33;
+    --block-bg:   #F9E7E3;
+
+    --shadow: 0 1px 2px rgba(22,20,28,.05), 0 6px 18px -10px rgba(22,20,28,.22);
+
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground:#111017; --surface:#1A1822; --sunken:#15131C;
+      --hair:#2C2938; --hair-firm:#413D53;
+      --ink:#EDEBF2; --ink-2:#B9B4C8; --muted:#868196;
+      --accent:#9C9BE0; --accent-bg:#22213A;
+      --done:#6FBF97; --done-bg:#152A20;
+      --active:#DDA94F; --active-bg:#2C2213;
+      --block:#E4796B; --block-bg:#2E1A17;
+      --shadow: 0 1px 2px rgba(0,0,0,.35), 0 6px 18px -10px rgba(0,0,0,.7);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground:#111017; --surface:#1A1822; --sunken:#15131C;
+    --hair:#2C2938; --hair-firm:#413D53;
+    --ink:#EDEBF2; --ink-2:#B9B4C8; --muted:#868196;
+    --accent:#9C9BE0; --accent-bg:#22213A;
+    --done:#6FBF97; --done-bg:#152A20;
+    --active:#DDA94F; --active-bg:#2C2213;
+    --block:#E4796B; --block-bg:#2E1A17;
+    --shadow: 0 1px 2px rgba(0,0,0,.35), 0 6px 18px -10px rgba(0,0,0,.7);
+  }
+  :root[data-theme="light"] {
+    --ground:#F2F1F5; --surface:#FFFFFF; --sunken:#E9E8EE;
+    --hair:#D6D4DE; --hair-firm:#B9B6C6;
+    --ink:#16141C; --ink-2:#454154; --muted:#6E6A7E;
+    --accent:#4B4A9B; --accent-bg:#E7E7F3;
+    --done:#2F6B4F; --done-bg:#E2EFE8;
+    --active:#8A5A0B; --active-bg:#F7EEDA;
+    --block:#A33F33; --block-bg:#F9E7E3;
+    --shadow: 0 1px 2px rgba(22,20,28,.05), 0 6px 18px -10px rgba(22,20,28,.22);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: var(--sans); font-size: 16px; line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap {
+    max-width: 64rem; margin: 0 auto;
+    padding: clamp(1.5rem,4vw,3.5rem) clamp(1rem,4vw,2.25rem) 5rem;
+    display: flex; flex-direction: column; gap: 2.75rem;
+  }
+  .prose { max-width: 44rem; }
+
+  /* Headings use the sans at heavy weight and tight tracking rather than a
+     serif: this is a plan to work from, not an essay to read. */
+  .eyebrow {
+    font-family: var(--mono); font-size: .68rem; letter-spacing: .16em;
+    text-transform: uppercase; color: var(--accent); font-weight: 600;
+  }
+  h1 {
+    margin: .6rem 0 0; font-size: clamp(1.75rem,4.2vw,2.5rem); font-weight: 750;
+    letter-spacing: -.025em; line-height: 1.1; text-wrap: balance;
+  }
+  .standfirst { color: var(--ink-2); margin: .7rem 0 0; max-width: 46rem; }
+  h2 {
+    margin: 0; font-size: 1.3rem; font-weight: 700; letter-spacing: -.015em;
+    display: flex; align-items: baseline; gap: .65rem; text-wrap: balance;
+  }
+  h2 .n { font-family: var(--mono); font-size: .72rem; color: var(--accent); font-weight: 500; flex: none; }
+  .sec-head { border-bottom: 1px solid var(--hair-firm); padding-bottom: .5rem; }
+  .lede { color: var(--muted); margin: .35rem 0 0; max-width: 44rem; font-size: .93rem; }
+  section { display: flex; flex-direction: column; gap: 1.1rem; }
+
+  /* two-system reconciliation */
+  .split { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(19rem,1fr)); }
+  .sys {
+    background: var(--surface); border: 1px solid var(--hair); border-radius: 4px;
+    padding: 1.1rem 1.25rem; box-shadow: var(--shadow);
+    display: flex; flex-direction: column; gap: .55rem;
+    border-top: 3px solid var(--hair-firm);
+  }
+  .sys.trades { border-top-color: var(--done); }
+  .sys.idle { border-top-color: var(--block); }
+  .sys h3 { margin: 0; font-size: 1rem; font-weight: 700; }
+  .sys .who { font-family: var(--mono); font-size: .72rem; color: var(--muted); }
+  .sys dl { margin: .3rem 0 0; display: grid; grid-template-columns: auto 1fr; gap: .3rem .9rem; font-size: .85rem; }
+  .sys dt { color: var(--muted); }
+  .sys dd { margin: 0; font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--ink-2); }
+  .sys dd.bad { color: var(--block); font-weight: 600; }
+  .sys dd.good { color: var(--done); font-weight: 600; }
+
+  /* callouts */
+  .note {
+    border-left: 3px solid var(--accent); background: var(--accent-bg);
+    padding: .9rem 1.1rem; border-radius: 0 3px 3px 0; font-size: .9rem; color: var(--ink-2);
+  }
+  .note.warn { border-left-color: var(--active); background: var(--active-bg); }
+  .note.stop { border-left-color: var(--block); background: var(--block-bg); }
+  .note strong { color: var(--ink); }
+  .note p { margin: 0 0 .5rem; } .note p:last-child { margin-bottom: 0; }
+
+  /* timeline */
+  .week { display: flex; flex-direction: column; gap: .5rem; }
+  .week-label {
+    font-family: var(--mono); font-size: .7rem; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--muted); font-weight: 600; padding-top: .5rem;
+  }
+  .step {
+    background: var(--surface); border: 1px solid var(--hair); border-radius: 4px;
+    box-shadow: var(--shadow); border-left: 3px solid var(--hair-firm);
+    padding: .85rem 1.05rem; display: grid; gap: .2rem .9rem;
+    grid-template-columns: 6.2rem 1fr auto;
+  }
+  .step.crit { border-left-color: var(--block); }
+  .step.now { border-left-color: var(--active); }
+  .step.auto { border-left-color: var(--accent); }
+  .step .date {
+    font-family: var(--mono); font-size: .78rem; font-variant-numeric: tabular-nums;
+    color: var(--ink-2); font-weight: 600; padding-top: .1rem;
+  }
+  .step .what { font-weight: 620; font-size: .95rem; }
+  .step .tag {
+    font-family: var(--mono); font-size: .6rem; font-weight: 700; letter-spacing: .09em;
+    text-transform: uppercase; padding: .16rem .42rem; border-radius: 2px;
+    align-self: start; white-space: nowrap;
+  }
+  .t-scan { background: var(--accent-bg); color: var(--accent); border: 1px solid var(--accent); }
+  .t-sop  { background: var(--done-bg); color: var(--done); border: 1px solid var(--done); }
+  .t-both { background: var(--active-bg); color: var(--active); border: 1px solid var(--active); }
+  .step .body { grid-column: 2 / -1; color: var(--ink-2); font-size: .88rem; }
+  .step .check {
+    grid-column: 2 / -1; margin-top: .45rem; padding: .45rem .6rem;
+    background: var(--sunken); border-radius: 2px; font-size: .82rem;
+    display: flex; gap: .5rem; align-items: baseline;
+  }
+  .step .check b {
+    font-family: var(--mono); font-size: .6rem; letter-spacing: .09em; text-transform: uppercase;
+    color: var(--muted); flex: none;
+  }
+
+  /* tables */
+  .scroll { overflow-x: auto; border: 1px solid var(--hair); border-radius: 4px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-size: .86rem; min-width: 34rem; }
+  th, td { padding: .55rem .8rem; text-align: left; border-bottom: 1px solid var(--hair); vertical-align: top; }
+  thead th {
+    font-family: var(--mono); font-size: .62rem; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--muted); font-weight: 600; background: var(--sunken); white-space: nowrap;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td.yes { color: var(--done); font-weight: 600; }
+  td.no { color: var(--block); font-weight: 600; }
+
+  code {
+    font-family: var(--mono); font-size: .85em; background: var(--sunken);
+    padding: .08em .32em; border-radius: 2px; border: 1px solid var(--hair);
+  }
+  .note code, .check code { background: transparent; border: none; padding: 0; }
+  pre {
+    background: var(--sunken); border: 1px solid var(--hair); border-radius: 3px;
+    padding: .9rem 1rem; overflow-x: auto; margin: 0; font-size: .8rem; line-height: 1.55;
+  }
+  pre code { background: none; border: none; padding: 0; }
+  a { color: var(--accent); }
+  a:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  footer {
+    border-top: 1px solid var(--hair); padding-top: 1.1rem; color: var(--muted);
+    font-family: var(--mono); font-size: .72rem; display: flex; gap: 1.2rem; flex-wrap: wrap;
+  }
+  @media (max-width: 40rem) {
+    .step { grid-template-columns: 1fr; }
+    .step .tag { justify-self: start; }
+    .step .body, .step .check { grid-column: 1 / -1; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">Roadmap &middot; fundamental + technical</div>
+    <h1>Two systems, one book: the sequence to combined shadow trading</h1>
+    <p class="standfirst">
+      Shadow trading is already running &mdash; on the technical half only. The fundamental half has
+      never placed a trade. This is the ordered path to joining them, with the check that closes
+      each step. Dates are earliest-possible and assume nothing slips.
+    </p>
+  </header>
+
+  <!-- =============================================== reconciliation ==== -->
+  <section>
+    <div class="sec-head">
+      <h2><span class="n">01</span> What you actually have</h2>
+    </div>
+    <p class="lede">
+      The confusion is real and it has a cause: these are two separate codebases, on two separate
+      Lambdas, and only one of them trades.
+    </p>
+
+    <div class="split">
+      <div class="sys trades">
+        <h3>Sopana &mdash; the technical half</h3>
+        <div class="who"><code>sopana.py</code> &middot; <code>sopana-dte25</code> &middot; v1.8.2</div>
+        <dl>
+          <dt>Shadow since</dt><dd>2026-07-20</dd>
+          <dt>Positions</dt><dd>5 opened, 3 closed</dd>
+          <dt>Net</dt><dd class="bad">&minus;$330</dd>
+          <dt>Go-live gates</dt><dd class="bad">0 / 7</dd>
+          <dt>Signals</dt><dd>SMA, momentum, skew, OI</dd>
+          <dt>News input</dt><dd class="bad">none</dd>
+        </dl>
+        <p style="margin:.4rem 0 0;font-size:.87rem;color:var(--ink-2)">
+          Already sells iron condors when directional votes fail to clear. Already has an exit
+          engine, a ladder, and a liquidity model. It is the execution system.
+        </p>
+      </div>
+
+      <div class="sys idle">
+        <h3>SPX Scanner &mdash; the fundamental half</h3>
+        <div class="who"><code>spx-scanner</code> &middot; deployed <code>a91aef3</code></div>
+        <dl>
+          <dt>Running since</dt><dd>2026-07-29 (Lambda)</dd>
+          <dt>Signal trades</dt><dd class="bad">0, all time</dd>
+          <dt>Baseline trades</dt><dd>3 open, 0 closed</dd>
+          <dt>Confidence</dt><dd class="bad">0.32&ndash;0.42 vs 0.65</dd>
+          <dt>Tail gate</dt><dd class="good">18/18 cycles clear</dd>
+          <dt>Order path</dt><dd class="bad">none</dd>
+        </dl>
+        <p style="margin:.4rem 0 0;font-size:.87rem;color:var(--ink-2)">
+          199 hand-labelled items say the news corpus carries <strong>hazard</strong>, not direction
+          &mdash; 188 of 199 had no directional sign, but 20 flagged shock risk. It is a signal
+          source, not an execution system.
+        </p>
+      </div>
+    </div>
+
+    <div class="note stop">
+      <p>
+        <strong>Do not build a second shadow-trading system.</strong> Sopana already has the exits,
+        the ladder, the liquidity gates and twelve days of bug-hunting behind it. The scanner has
+        never sent an order and has no order path at all. The fast route to &ldquo;fundamental +
+        technical in shadow&rdquo; is to make the scanner a <em>signal provider</em> to Sopana, not
+        to grow it a second execution engine.
+      </p>
+      <p>
+        That also matches what each is measurably good at. Sopana reads price and vol. The scanner
+        reads events. Feeding the scanner's per-side tail estimate and event-risk flag into Sopana's
+        verdict is a small interface; rebuilding Sopana inside the scanner is a rewrite.
+      </p>
+    </div>
+  </section>
+
+  <!-- ================================================== the blocker ==== -->
+  <section>
+    <div class="sec-head">
+      <h2><span class="n">02</span> The one-line contradiction blocking the scanner</h2>
+    </div>
+    <p class="lede">
+      Worth fixing first because it is small, it is provably wrong, and it is the reason the signal
+      arm has never traded.
+    </p>
+
+<pre><code>def _candidates(self, chain, prediction):
+    ...
+    if prediction["confidence"] &lt; self.s.confidence_gate:
+        return []                                     # &larr; exits here, always
+    put_ok, call_ok = self._sides_allowed(prediction)  # &larr; never reached
+    ...
+    if put_ok and call_ok and allow_iron_condor:
+        results += self._condors(results)              # &larr; never reached</code></pre>
+
+    <div class="note">
+      <p>
+        The iron condor is the instrument for <em>&ldquo;no directional view, both tails quiet.&rdquo;</em>
+        The code builds it. The confidence gate &mdash; which runs first &mdash; rejects the trade for
+        having no directional view. <strong>The scanner declines condors on exactly the grounds that
+        make a condor correct.</strong>
+      </p>
+      <p>
+        <code>_sides_allowed()</code> already says so in its own docstring: <em>&ldquo;Blocking on a
+        NEUTRAL label asked the wrong question &mdash; flat with both tails quiet is the best setup a
+        premium seller gets.&rdquo;</em> That reasoning was fixed one layer down and the gate above it
+        was left alone. Sopana reached the same conclusion independently: when
+        <code>MIN_DIRECTIONAL_VOTES</code> fails to clear, it sells a condor rather than standing aside.
+      </p>
+    </div>
+
+    <div class="scroll"><table>
+      <thead><tr><th>Gate</th><th>Asks</th><th>Fires?</th><th>Keep</th></tr></thead>
+      <tbody>
+        <tr><td><code>confidence_gate</code> 0.65</td><td>How sure are we of the direction</td><td class="no">blocks 100% of cycles</td><td class="no">No &mdash; directional vestige</td></tr>
+        <tr><td><code>_sides_allowed</code> tails</td><td>Is either tail fat</td><td class="yes">0 of 18 cycles blocked</td><td class="yes">Yes &mdash; the real gate</td></tr>
+        <tr><td><code>min_edge_score</code> 0.05</td><td>Is this spread worth selling</td><td class="num">never reached</td><td class="yes">Yes</td></tr>
+        <tr><td><code>min_pop</code> / <code>min_credit_to_width</code></td><td>Is it priced acceptably</td><td class="num">never reached</td><td class="yes">Yes</td></tr>
+        <tr><td>IV/RV, VIX term structure</td><td>Is premium rich, is the regime sane</td><td class="num">shipped, not deployed</td><td class="yes">Yes &mdash; new gate</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <!-- ==================================================== roadmap ===== -->
+  <section>
+    <div class="sec-head">
+      <h2><span class="n">03</span> Sequence</h2>
+    </div>
+    <p class="lede">
+      One change at a time, each with the check that closes it. Tags: <span class="tag t-scan">scanner</span>
+      <span class="tag t-sop">sopana</span> <span class="tag t-both">both</span>
+    </p>
+
+    <div class="week">
+      <div class="week-label">Week of 3 August &mdash; deploy what exists, stop the bleeding</div>
+
+      <div class="step crit">
+        <span class="date">Mon 3 Aug</span>
+        <span class="what">Sopana&rsquo;s first scheduled Lambda session</span>
+        <span class="tag t-sop">sopana</span>
+        <div class="body">
+          Cutover completed 31 Jul but no scheduled session has ever run. Treat 3&ndash;5 Aug as infra
+          burn-in, not Gate&nbsp;1 days. Both open bear calls reach <code>DTE_EXIT=21</code> around
+          6&ndash;7 Aug &mdash; the first mechanical exits ever attempted on this runtime.
+        </div>
+        <div class="check"><b>Check</b><span>three clean sessions, and the 6&ndash;7 Aug exits fire correctly.</span></div>
+      </div>
+
+      <div class="step now">
+        <span class="date">Mon 3 Aug</span>
+        <span class="what">Commit and deploy the scanner backlog</span>
+        <span class="tag t-scan">scanner</span>
+        <div class="body">
+          Nine files uncommitted; the deployed build is two commits behind HEAD. Ships the
+          <code>faulthandler</code> abort diagnostic and the vol-regime measures (IV/RV, VIX term
+          structure, IV rank, trend side filter). Needs Docker Desktop running.
+        </div>
+        <div class="check"><b>Check</b><span>the <code>Regime:</code> log line appears each cycle, and the heap abort finally prints a thread stack.</span></div>
+      </div>
+
+      <div class="step crit">
+        <span class="date">Tue 4 Aug</span>
+        <span class="what">Retire the confidence gate; let the condor through</span>
+        <span class="tag t-scan">scanner</span>
+        <div class="body">
+          Move the directional check so it filters <em>verticals</em> only, leaving the condor path to
+          the tail gate and edge threshold. Add the premium-richness condition from &sect;02 in its place.
+          This is the change that makes the signal arm capable of firing at all.
+        </div>
+        <div class="check"><b>Check</b><span>at least one cycle produces <code>num_candidates &gt; 0</code>. It never has.</span></div>
+      </div>
+
+      <div class="step now">
+        <span class="date">Tue 4 Aug</span>
+        <span class="what">Scoring: prompt attribution + explicit risk field, then re-grade</span>
+        <span class="tag t-scan">scanner</span>
+        <div class="body">
+          <code>save_score()</code> records the model but not the prompt, so a production A/B is
+          unattributable. <code>SCORE_SCHEMA</code> has no risk field, so the metric weighted 8&times;
+          is inferred from a proxy two other objectives fight over. Both are small; both gate the
+          <code>theta</code> switch.
+        </div>
+        <div class="check"><b>Check</b><span>weighted error &lt; 233, risk recall &ge; 45%, bear:bull inside 2.5:1. Fail any one and stay on <code>current</code>.</span></div>
+      </div>
+    </div>
+
+    <div class="week">
+      <div class="week-label">Week of 10 August &mdash; make the scanner emit something Sopana can eat</div>
+
+      <div class="step auto">
+        <span class="date">~Mon 11 Aug</span>
+        <span class="what">First clean read on the scoring prompt switch</span>
+        <span class="tag t-scan">scanner</span>
+        <div class="body">
+          <code>recent_scores()</code> reads a 7-day lookback, so for a week after switching the
+          synthesis sees a blend of old- and new-prompt scores. Judge nothing before this date.
+        </div>
+        <div class="check"><b>Check</b><span>synthesis confidence and per-side tails re-read on a corpus scored entirely under one prompt.</span></div>
+      </div>
+
+      <div class="step crit">
+        <span class="date">Wed 12 Aug</span>
+        <span class="what">Publish the hazard signal</span>
+        <span class="tag t-both">both</span>
+        <div class="body">
+          The scanner writes <code>downside_risk</code>, <code>upside_risk</code> and an event-risk
+          flag to a table Sopana can read &mdash; one row per cycle. No coupling beyond a shared
+          Postgres read; either system keeps running if the other stops.
+        </div>
+        <div class="check"><b>Check</b><span>Sopana logs the scanner's tails on every tick, and behaves identically while ignoring them.</span></div>
+      </div>
+
+      <div class="step now">
+        <span class="date">Thu 13 Aug</span>
+        <span class="what">Drop StockTwits / Reddit and split the macro feeds</span>
+        <span class="tag t-scan">scanner</span>
+        <div class="body">
+          Social and YouTube are 54% of the corpus and produced <strong>one</strong> actionable item in
+          107 labelled. Macro is 24% relevant because BBC World, Al&nbsp;Jazeera and NPR World are
+          general news, not macro &mdash; every relevant macro item had a price channel.
+        </div>
+        <div class="check"><b>Check</b><span>relevance precision on a re-grade rises toward the 56.8% measured on the macro/news/econ subset.</span></div>
+      </div>
+    </div>
+
+    <div class="week">
+      <div class="week-label">Week of 17 August &mdash; wire it in, in one direction only</div>
+
+      <div class="step auto">
+        <span class="date">~Tue 18 Aug</span>
+        <span class="what">Sopana&rsquo;s skew vote activates</span>
+        <span class="tag t-sop">sopana</span>
+        <div class="body">
+          Auto-fires once <code>dte25_skew_daily</code> has 20 days. This is a signal change on the
+          technical side &mdash; do not stack the scanner integration on the same week.
+        </div>
+        <div class="check"><b>Check</b><span>directional-vs-condor mix and per-verdict P&amp;L before and after.</span></div>
+      </div>
+
+      <div class="step crit">
+        <span class="date">Fri 21 Aug</span>
+        <span class="what">Hazard veto goes live in shadow</span>
+        <span class="tag t-both">both</span>
+        <div class="body">
+          Sopana consumes the scanner's signal as a <strong>veto only</strong>: block the put side when
+          downside risk is fat, block entries when a high-impact print lands inside the DTE window.
+          It may never open a trade Sopana wouldn't have opened anyway. A veto can only subtract, so
+          the worst case is fewer trades &mdash; not a new failure mode.
+        </div>
+        <div class="check"><b>Check</b><span>log every veto with the reason for two weeks before letting it bind. Count how many trades it would have stopped, and what those trades did.</span></div>
+      </div>
+    </div>
+
+    <div class="week">
+      <div class="week-label">Late August onward &mdash; accumulate, don&rsquo;t tinker</div>
+
+      <div class="step auto">
+        <span class="date">~Mon 31 Aug</span>
+        <span class="what">IV rank becomes readable</span>
+        <span class="tag t-scan">scanner</span>
+        <div class="body">
+          Needs 20 trading days of daily ATM IV banked, and the clock starts at deploy, not today.
+          Until then it returns <code>None</code> and the premium-richness gate runs on IV/RV alone.
+        </div>
+        <div class="check"><b>Check</b><span><code>iv_rank</code> present in the <code>Regime:</code> line.</span></div>
+      </div>
+
+      <div class="step crit">
+        <span class="date">~mid Sept</span>
+        <span class="what">20 closed Sopana trades under one stable version</span>
+        <span class="tag t-sop">sopana</span>
+        <div class="body">
+          Gate&nbsp;2. Currently 3 closed, across two now-obsolete versions. This is the binding
+          constraint on everything downstream, and no amount of signal work shortens it.
+        </div>
+        <div class="check"><b>Check</b><span>win rate &ge;70%, expectancy &gt;$100, profit factor &gt;1.3, and the stop fired at least twice.</span></div>
+      </div>
+
+      <div class="step">
+        <span class="date">late Sept</span>
+        <span class="what">Earliest live consideration</span>
+        <span class="tag t-sop">sopana</span>
+        <div class="body">
+          Unchanged from the existing go-live checklist. All seven gates, no partial credit. Gate&nbsp;4
+          (order path, zero orders ever sent) can and should be validated in parallel &mdash; it does
+          not depend on any of the above.
+        </div>
+        <div class="check"><b>Check</b><span>see the Sopana go-live checklist. This roadmap does not move that date.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================================== principles ==== -->
+  <section>
+    <div class="sec-head">
+      <h2><span class="n">04</span> Rules this sequence obeys</h2>
+    </div>
+
+    <div class="note warn">
+      <p>
+        <strong>One change at a time, with trades in between.</strong> Sopana shipped eleven versions
+        in twelve days and has never been stable for three consecutive trading days. That is why
+        Gate&nbsp;1&rsquo;s clean-day clock has not started, and it is the single biggest reason live
+        trading is still far away. Every step above is deliberately separated by days, not hours.
+      </p>
+      <p>
+        Applied on 2 Aug: <code>trend_side_block</code> ships at <strong>0</strong>. It is the only
+        one of the four new measures that changes which trades may exist, and landing a behaviour
+        change in the same deploy as the instrumentation meant to evaluate it would leave no clean
+        before-picture. It becomes its own step once there is a week of readings.
+      </p>
+    </div>
+
+    <div class="note">
+      <p>
+        <strong>Gate&nbsp;1 resets on behaviour, not on severity</strong> &mdash; resolved 2 Aug.
+        The checklist said P0/P1 in one place and &ldquo;any bug&rdquo; in another. Both are wrong.
+        &ldquo;Any bug&rdquo; is unfalsifiable: there is always a log string or an unbinding
+        threshold, so the counter never reaches ten and the gate becomes a permanent block rather
+        than a gate. P0/P1-only fails the other way, and bug&nbsp;#10 is the proof &mdash; labelled
+        P2, yet it silently discarded call wings that <em>qualified</em> because the put wing failed
+        an OI check. It earned a P2 because it did not lose money, not because it did not matter.
+      </p>
+      <p>
+        The replacement is a behavioural test, which cannot be gamed by triage optimism:
+        <strong>the counter resets on any bug that changed, or could have changed, which trades
+        open, close, or how they are sized. Observability, logging and cosmetic defects do
+        not.</strong> Against the existing log that resets on #1, #2, #3, #4, #6, #7, #9 and #10;
+        not on #8 (proposed, never shipped) or on v1.8.2&rsquo;s reason codes.
+      </p>
+    </div>
+
+    <div class="note stop">
+      <p>
+        <strong>Do not start the clean-day clock on Monday.</strong> v1.8.2 made bug&nbsp;#10
+        <em>visible</em>; its root cause is still open. Gate&nbsp;1&rsquo;s second clause forbids a
+        bug-fix version bump inside the window &mdash; so starting the clock with #10 unfixed
+        guarantees a reset the moment it is fixed. That is a ten-day timer you already know you will
+        restart. Fix the root cause first: a few days now against ten later.
+      </p>
+    </div>
+
+    <div class="note">
+      <p>
+        <strong>The scanner feeds Sopana, never the reverse.</strong> One order path, one exit engine,
+        one place where risk is sized. A second execution system doubles the surface area that has to
+        earn ten clean days.
+      </p>
+    </div>
+
+    <div class="note">
+      <p>
+        <strong>Direction is not the product.</strong> 188 of 199 labelled items carried no directional
+        sign. The tail gate has passed 18 of 18 cycles. The strategy wins when SPX <em>fails</em> to
+        move sharply &mdash; so the questions worth asking are &ldquo;is premium rich&rdquo; and
+        &ldquo;is a shock window open&rdquo;, and the default trade when both answer well is a condor.
+      </p>
+    </div>
+
+    <div class="note stop">
+      <p>
+        <strong>Nothing here is evidence of edge yet.</strong> Three closed trades on code with known
+        defects, net &minus;$330, and a scanner arm that has never traded. Every number in this
+        document is an input to a decision, not a result.
+      </p>
+    </div>
+  </section>
+
+  <footer>
+    <span>Drafted 2026-08-02</span>
+    <span>Systems: <code>spx-scanner</code>, <code>sopana-dte25</code></span>
+    <span>Companions: operational tracker, Sopana go-live checklist</span>
+    <span>Educational research only &mdash; not financial advice</span>
+  </footer>
+</div>

@@ -178,19 +178,20 @@
     <h1>Open investigations, running experiments, and what to watch next</h1>
     <p class="standfirst">
       Everything currently unresolved in the pipeline, each with the condition that would make you
-      act on it. Regenerated 30 July 2026, 20:40 PT from the live database, CloudWatch and the
-      deployed configuration. Twelve items closed since the 09:03 edition, including the account's
-      root access key.
+      act on it. Regenerated 2 August 2026 from the live database, CloudWatch and the deployed
+      configuration. Since the 30 July edition: the eval set is labelled and the scoring-model
+      question is closed, a native heap abort was found in the collectors, the price/vol regime is
+      now measured, and the confidence gate was found to make the iron condor unreachable.
     </p>
   </header>
 
   <dl class="strip">
-    <div class="cell"><dt>Build</dt><dd>783ca7b</dd></div>
+    <div class="cell"><dt>Deployed</dt><dd class="ok">r46 &middot; 19128a5</dd></div>
     <div class="cell"><dt>AWS identity</dt><dd class="ok">spx-deployer</dd></div>
     <div class="cell"><dt>Root keys</dt><dd class="ok">none</dd></div>
     <div class="cell"><dt>Alarms</dt><dd class="ok">both OK</dd></div>
-    <div class="cell"><dt>X spend today</dt><dd>162 / 260</dd></div>
-    <div class="cell"><dt>Open paper</dt><dd class="warn">2 baseline, 0 signal</dd></div>
+    <div class="cell"><dt>X spend, 31 Jul close</dt><dd class="warn">176 / 260</dd></div>
+    <div class="cell"><dt>Open paper</dt><dd class="warn">3 baseline, 0 signal</dd></div>
   </dl>
 
   <!-- ============ LEAD ============ -->
@@ -235,7 +236,16 @@
         <em>&ldquo;size down or stand aside&rdquo;</em>. That is a model declining to have a view, with reasons,
         rather than one failing to form one.
       </p>
-      <div class="trigger"><b>Next</b><span>let tomorrow's session run untouched. If confidence still sits in the low 30s across varied tape, calibration becomes the suspect — and the labelled eval set is how you would prove it, not by moving the gate to meet the number.</span></div>
+      <p>
+        <strong>Answered, 2 August &mdash; and neither candidate was right.</strong> The session ran
+        untouched and confidence moved (0.32&ndash;0.42, no two consecutive cycles alike), so the
+        corpus was suppressing variance. But the level never approached the gate, and 199 hand
+        labels explain why: <strong>188 of 199 items carried no directional sign at all</strong>, and
+        70 of the 81 judged relevant were still zero. The gate asks how sure the model is of a
+        direction that the inputs do not contain. No scorer and no model fixes that &mdash; Sonnet 5
+        was tried and its weighted error landed inside the 1.3% run-to-run noise floor.
+      </p>
+      <div class="trigger"><b>Next</b><span>retire the gate rather than lower it. See the item below: it runs before the tail gate and makes the iron condor &mdash; the trade for exactly this situation &mdash; unreachable.</span></div>
     </div>
   </section>
 
@@ -243,10 +253,127 @@
   <section>
     <div class="sec-head">
       <h2>Watch list</h2>
-      <span class="sec-note">shipped today, one observation each at most</span>
+      <span class="sec-note">shipped today or newly found, one observation each at most</span>
     </div>
 
     <div class="items">
+
+      <article class="item sev-risk">
+        <div class="item-top">
+          <h3>The confidence gate makes the iron condor unreachable</h3>
+          <span class="pill p-risk">blocks 100% of cycles</span>
+          <span class="when">found 2 Aug</span>
+        </div>
+        <p>
+          <code>_candidates()</code> checks directional confidence and returns an empty list
+          <em>before</em> it ever consults <code>_sides_allowed()</code> or builds a condor:
+        </p>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Order in <code>_candidates()</code></th><th>Gate</th><th>Reached?</th></tr></thead>
+            <tbody>
+              <tr><td class="num">1</td><td><code>confidence &lt; 0.65</code> &rarr; <code>return []</code></td><td class="num was">exits here, every cycle</td></tr>
+              <tr><td class="num">2</td><td><code>_sides_allowed()</code> per-tail check</td><td class="num was">never reached</td></tr>
+              <tr><td class="num">3</td><td><code>_condors()</code></td><td class="num was">never reached</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          The condor is the instrument for &ldquo;no directional view, both tails quiet&rdquo;. The code
+          builds it; the gate above rejects the trade for having no directional view. <strong>The
+          scanner declines condors on precisely the grounds that make a condor correct.</strong>
+          <code>_sides_allowed()</code> already says so in its own docstring &mdash; <em>&ldquo;flat
+          with both tails quiet is the best setup a premium seller gets&rdquo;</em> &mdash; so the
+          reasoning was fixed one layer down and the gate above it was left alone. Sopana reached the
+          same conclusion independently: when its directional votes fail to clear it sells a condor
+          rather than standing aside.
+        </p>
+        <p>
+          The tail gate that <em>should</em> be deciding this has passed <strong>18 of 18</strong>
+          cycles &mdash; downside 36&ndash;48%, upside 20&ndash;32%, against a 55% cap, zero breaches.
+          Every prediction on record already says no adverse move is detected.
+        </p>
+        <div class="trigger"><b>Act</b><span>move the directional check so it filters verticals only, leaving condors to the tail gate, <code>min_edge_score</code> and the new premium-richness terms. The close condition is simple and has never once been met: a cycle logging <code>num_candidates &gt; 0</code>.</span></div>
+      </article>
+
+      <article class="item sev-new">
+        <div class="item-top">
+          <h3>Is premium rich, and is the regime sane?</h3>
+          <span class="pill p-new">shipped 2 Aug</span>
+          <span class="when">IV rank readable ~31 Aug</span>
+        </div>
+        <p>
+          Nothing measured the two questions a theta strategy actually turns on. Four measures now do,
+          all arithmetic on data already fetched. First live reading, 2 Aug:
+        </p>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Measure</th><th>Reading</th><th>Says</th></tr></thead>
+            <tbody>
+              <tr><td>IV / RV</td><td class="num">1.09&times;</td><td>ATM IV 13.6% vs 20d realised 12.5% &mdash; premium only mildly rich</td></tr>
+              <tr><td>VIX / VIX3M</td><td class="num now">0.841</td><td>contango, the normal seller-friendly regime</td></tr>
+              <tr><td>IV rank</td><td class="num">&mdash;</td><td>needs ~20 daily readings; clock starts at deploy</td></tr>
+              <tr><td>trend_score</td><td class="num">+0.35</td><td>mild uptrend, inside the (disabled) block threshold</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          ATM IV sitting below VIX is the cross-check that the calculation is right: VIX prices the
+          whole skew including out-of-the-money puts, so an at-the-money strike should read lower.
+          <code>trend_side_block</code> ships at <strong>0</strong> &mdash; it is the only one of the
+          four that changes which trades may exist, and shipping it live in the same deploy as the
+          instrumentation meant to judge it would leave no clean before-picture.
+        </p>
+        <div class="trigger"><b>Act if</b><span>IV/RV sits below ~1.0 for a week &rarr; premium is not being paid and selling it is a losing proposition regardless of signal. If VIX/VIX3M crosses above 1.0 &rarr; backwardation, stand aside. Revisit <code>trend_side_block</code> as its own change once a week of readings exists to judge it against.</span></div>
+      </article>
+
+      <article class="item sev-risk">
+        <div class="item-top">
+          <h3>The scanner is dying mid-cycle on a native heap abort</h3>
+          <span class="pill p-risk">3 events &middot; 0 cycles lost</span>
+          <span class="when">blocked: instrumentation undeployed</span>
+        </div>
+        <p>
+          Roughly one invocation in eighteen dies with glibc's
+          <code>double free or corruption</code> and <code>Runtime.ExitError</code>. This is not a
+          Python exception — the interpreter is killed outright, so the <code>try/except</code> in
+          <code>lambda_handler</code> never runs and no traceback is written. It has been present
+          since the Lambda cutover and went unnoticed because it always recovers: EventBridge
+          invokes asynchronously, so Lambda retries the failed cycle by itself.
+        </p>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Event (UTC)</th><th>glibc message</th><th>Died after</th><th>Peak mem</th><th>Outcome</th></tr></thead>
+            <tbody>
+              <tr><td class="num">30 Jul 00:21</td><td class="num">(!prev)</td><td class="num">6s</td><td class="num">396 MB</td><td class="num was">retry also failed</td></tr>
+              <tr><td class="num">31 Jul 13:10</td><td class="num">(out)</td><td class="num">9s</td><td class="num was">517 MB</td><td class="num now">recovered on retry</td></tr>
+              <tr><td class="num">31 Jul 19:55</td><td class="num">(!prev)</td><td class="num">8s</td><td class="num was">439 MB</td><td class="num now">recovered on retry</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Two explanations are already eliminated. It is <em>not</em> trafilatura's module-level
+          <code>HTML_PARSER</code> being shared across the eight fulltext threads: lxml allocates a
+          per-parser lock and acquires it in <code>_ParserContext.prepare()</code>, and its own docs
+          call sharing &ldquo;not harmful&rdquo;. It is <em>not</em> cold starts either — 60 of 71
+          invocations are cold and only two of those died.
+        </p>
+        <p>
+          The leading suspect is <code>psycopg2-binary</code>, whose wheel bundles its own
+          <code>libssl-fe1b61af.so.3</code> and <code>libcrypto-88208852.so.3</code> beside the
+          OpenSSL that Python's own <code>ssl</code> module already loaded. Two OpenSSL copies in one
+          process is a documented crash hazard, and it fits: the aborts land in the collection phase,
+          where eight threads are doing concurrent HTTPS while libpq's copy is resident. Unproven —
+          Docker Desktop was down, so the image itself was never opened.
+        </p>
+        <p>
+          The one anomaly that does not yet fit any theory: both 31 July aborts show
+          <em>higher</em> peak memory than healthy cycles (517 and 439 MB against 330–390 MB) despite
+          dying after eight seconds rather than running a full hundred. A cycle that dies that early
+          should have allocated less, not more.
+        </p>
+        <div class="trigger"><b>Act if</b><span>a retry fails too — <code>spx-scanner-errors</code> was retuned to &ge;2 errors in 15 min on 31 Jul and now means exactly that: a cycle genuinely lost. Blocked meanwhile on shipping <code>faulthandler.enable(all_threads=True)</code>, which is written but uncommitted; until it deploys every abort stays silent. Once it lands, the dumped thread stack names the library — if it is not psycopg2 or <code>ssl</code>, the OpenSSL theory is dead.</span></div>
+      </article>
 
       <article class="item sev-new">
         <div class="item-top">
@@ -445,15 +572,53 @@
       <article class="item sev-run">
         <div class="item-top">
           <h3>Per-item scoring model, Haiku against the alternatives</h3>
-          <span class="pill p-run">blocked</span>
-          <span class="when">not started</span>
+          <span class="pill p-run">answered</span>
+          <span class="when">199 of 200 labelled, 1 Aug</span>
         </div>
         <p>
-          Scoring runs on <code>claude-haiku-4-5</code> at ~1,200 items a day; synthesis on
-          <code>claude-opus-5</code> once a cycle. <code>tools/evalset.py</code> and
-          <code>tools/calibration.py</code> exist, and every score records which model produced it.
+          The eval set is no longer the blocker: 199 items hand-labelled on 1 Aug against
+          <code>label_relevant</code> / <code>label_direction</code> / <code>label_risk</code>. Four
+          graded runs since. Rank on <b>weighted error</b> — it is the only metric that prices a
+          missed shock (&times;8) against a false alarm (&times;1).
         </p>
-        <div class="trigger"><b>Blocked on</b><span>a labelled eval set — and it is now on the critical path. Retuning the confidence gate without knowing whether the scorer is noisy just fits the gate to the noise.</span></div>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Run</th><th>weighted err</th><th>direction</th><th>precision</th><th>recall</th><th>RISK recall</th></tr></thead>
+            <tbody>
+              <tr><td class="num">Haiku &middot; current</td><td class="num">236</td><td class="num was">24.7%</td><td class="num">44.2%</td><td class="num now">85.2%</td><td class="num now">45.0%</td></tr>
+              <tr><td class="num">Haiku &middot; current (repeat)</td><td class="num">233</td><td class="num was">22.2%</td><td class="num">46.4%</td><td class="num now">87.7%</td><td class="num now">45.0%</td></tr>
+              <tr><td class="num">Opus-tier &middot; Sonnet 5 &middot; current</td><td class="num">231</td><td class="num">48.1%</td><td class="num">46.5%</td><td class="num was">56.8%</td><td class="num was">15.0%</td></tr>
+              <tr><td class="num">Haiku &middot; <b>theta</b></td><td class="num now">195</td><td class="num now">61.7%</td><td class="num now">50.0%</td><td class="num was">44.4%</td><td class="num was">20.0%</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Re-running <code>current</code> unchanged gave 233 against 236, so <b>run-to-run noise is
+          ~1.3%</b>. That is the yardstick everything else is read against: Sonnet 5's 231 sits
+          <em>inside</em> the noise floor, while <code>theta</code>'s 195 is a real 16% gain. A free
+          prompt change beat a 4&times;-cost model upgrade by an order of magnitude.
+          <b>The model question is closed — stay on Haiku.</b>
+        </p>
+        <p>
+          <code>theta</code> is not yet safe to ship. Its gain comes entirely from cutting false
+          alarms (82&rarr;36) and wrong directions (63&rarr;31) by being far more conservative — it
+          flags 72 items where <code>current</code> flags 153. That same conservatism drove
+          <b>risk recall down 45%&rarr;20%</b>, so 128 of its remaining 195 error (66%) is now missed
+          risk: the one failure that costs real money. It also skews <b>bear:bull 5.0:1</b> against a
+          labelled 1.75:1, which would feed straight into the per-side tail gate and bias against put
+          spreads.
+        </p>
+        <p>
+          The deeper finding is that no prompt can fix this. Risk recall reads 45 / 45 / 20 / 15
+          across the four runs because <code>SCORE_SCHEMA</code> <b>has no risk field</b> — the grader
+          infers it from <code>abs(direction) &gt; 0.3 or magnitude &gt; 0.5</code>, so every prompt
+          that improves direction trades away risk detection. The most heavily weighted metric is
+          measured through a proxy two other objectives are fighting over. A prediction that
+          <code>theta</code>'s &ldquo;high magnitude even at direction 0&rdquo; line would open the
+          second path was tested and <em>falsified</em> — risk recall fell rather than rose.
+        </p>
+        <div class="trigger"><b>Switch when</b><span>all four hold on a re-grade against the same 199 labels: (1) <code>item_scores</code> records the prompt variant, not just the model — today <code>save_score()</code> stores <code>model</code> only, so a production A/B would be unattributable; (2) an explicit <code>risk</code> field exists in <code>SCORE_SCHEMA</code> and is scored directly rather than inferred; (3) weighted error below 233 — <code>current</code>'s measured baseline, not 236; (4) risk recall at or above 45%, i.e. no regression on the expensive metric, and bear:bull inside ~2.5:1. Fail any one and stay on <code>current</code>.</span></div>
+        <div class="trigger"><b>Timeline</b><span>4 Aug — ship prompt attribution + the risk field, re-grade (~15 min, ~$0.35), decide against the four gates above. If they pass, switch <code>SCORING_PROMPT</code> the same day. Effect is <em>not</em> immediate: <code>recent_scores()</code> reads a 7-day lookback, so synthesis sees a mix of old- and new-prompt scores until ~11 Aug. Judge nothing before then. First clean read: 11 Aug.</span></div>
       </article>
 
     </div>
@@ -528,11 +693,10 @@
   <section>
     <div class="sec-head">
       <h2>Closed out</h2>
-      <span class="sec-note">28–30 July &middot; outlined items closed today</span>
+      <span class="sec-note">28–30 July &middot; outlined items closed today &middot; one reopened 31 Jul: &ldquo;zero warnings or errors across a full day&rdquo; was falsified by two native aborts, now tracked above</span>
     </div>
     <div class="settled-grid">
       <div class="settled-item today">Off-window X gate confirmed firing — 19:41 PT</div>
-      <div class="settled-item today">Zero warnings or errors across a full day of cycles</div>
       <div class="settled-item today">Story weight now decays; 72h half-life</div>
       <div class="settled-item today">48h &ldquo;half-life&rdquo; was a time constant — renamed, curve unchanged</div>
       <div class="settled-item today">pip split across 3 layers; Docker proxy drops big blobs</div>
@@ -567,8 +731,8 @@
   </section>
 
   <footer>
-    <span>Regenerated 30 July 2026, 20:40 PT</span>
-    <span>Build <code>783ca7b</code></span>
+    <span>Regenerated 2 August 2026</span>
+    <span>Deployed <code>r46-g19128a5</code> &middot; branch <code>vol-regime-and-diagnostics</code></span>
     <span>Source: <code>docs/tracker.html</code></span>
     <span>Data: Lightsail Postgres, CloudWatch, deployed Lambda configuration</span>
   </footer>
