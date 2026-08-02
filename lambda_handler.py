@@ -10,7 +10,18 @@ per-day, not per-process, so it will not save you from a concurrent double-run.
 """
 from __future__ import annotations
 
+import faulthandler
 import os
+
+# A native heap abort kills the process without a Python traceback: CloudWatch gets
+# "double free or corruption" and Lambda reports Runtime.ExitError, which says the
+# interpreter died but not where. faulthandler traps SIGABRT/SIGSEGV and dumps a
+# stack for EVERY thread to stderr first -- and stderr is already reaching
+# CloudWatch, because that is how the glibc message itself arrives. The threads are
+# the point: collection fans article fetches out across eight workers, so the useful
+# question is which of them was in native code at the moment the heap gave out.
+# Costs nothing until the process actually dies.
+faulthandler.enable(all_threads=True)
 
 from config import get_settings
 from main import Pipeline
