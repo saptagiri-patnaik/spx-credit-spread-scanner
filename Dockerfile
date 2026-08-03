@@ -15,10 +15,27 @@ COPY requirements.txt ${LAMBDA_TASK_ROOT}/
 # single source of truth, and these lines only decide which packages land in
 # which layer. A name that stops matching costs a slower push, never a wrong
 # install -- the final line installs everything regardless.
+# Split finer on 3 Aug. Three layers was not enough: the two that remained came
+# out at 64.7 MB and 67.5 MB, and the proxy killed both on every attempt --
+# eleven pushes across two deploy runs and a direct `docker push`, always the
+# same two digests, always "broken pipe" or "use of closed network connection".
+# Everything smaller went through untouched on the same runs, which is the whole
+# diagnosis: it is blob size, not the registry, the credentials or the layer.
+#
+# lxml, babel and regex are trafilatura's heavyweight transitive dependencies and
+# are installed by name first purely to move them into their own blob. They are
+# unpinned on purpose -- the trafilatura line immediately below resolves the
+# actual constraint, and the final line still installs everything, so a name that
+# stops matching costs a slower push and never a wrong install.
+RUN pip install --no-cache-dir lxml babel regex
 RUN grep -iE '^(trafilatura)' ${LAMBDA_TASK_ROOT}/requirements.txt > /tmp/a.txt \
     && pip install --no-cache-dir -r /tmp/a.txt
-RUN grep -iE '^(SQLAlchemy|anthropic|psycopg2-binary)' ${LAMBDA_TASK_ROOT}/requirements.txt > /tmp/b.txt \
+RUN grep -iE '^(psycopg2-binary)' ${LAMBDA_TASK_ROOT}/requirements.txt > /tmp/b.txt \
     && pip install --no-cache-dir -r /tmp/b.txt
+RUN grep -iE '^(SQLAlchemy)' ${LAMBDA_TASK_ROOT}/requirements.txt > /tmp/c.txt \
+    && pip install --no-cache-dir -r /tmp/c.txt
+RUN grep -iE '^(anthropic)' ${LAMBDA_TASK_ROOT}/requirements.txt > /tmp/d.txt \
+    && pip install --no-cache-dir -r /tmp/d.txt
 RUN pip install --no-cache-dir -r ${LAMBDA_TASK_ROOT}/requirements.txt
 
 COPY alerts/     ${LAMBDA_TASK_ROOT}/alerts/

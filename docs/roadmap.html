@@ -250,7 +250,7 @@
   <div class="headline">
     <div class="top">
       <span class="date">late Sept 2026</span>
-      <span class="cap">earliest combined go-live &middot; assessed 2 Aug</span>
+      <span class="cap">earliest combined go-live &middot; assessed 3 Aug</span>
     </div>
     <p>
       Unchanged from Sopana&rsquo;s own estimate, and that is the point: <strong>joining the two
@@ -414,7 +414,7 @@
           <code>faulthandler</code> abort diagnostic and the vol-regime measures (IV/RV, VIX term
           structure, IV rank, trend side filter). Needs Docker Desktop running.
         </div>
-        <div class="check"><b>Check</b><span>the <code>Regime:</code> log line appears each cycle, and the heap abort finally prints a thread stack.</span></div>
+        <div class="check"><b>Closed 3 Aug</b><span>ten market-hours cycles, <code>Regime:</code> on every one, and the abort printed a full thread dump &mdash; which named the cause rather than merely capturing it.</span></div>
       </div>
 
       <div class="step crit">
@@ -427,6 +427,20 @@
           This is the change that makes the signal arm capable of firing at all.
         </div>
         <div class="check"><b>Check</b><span>at least one cycle produces <code>num_candidates &gt; 0</code>. It never has.</span></div>
+      </div>
+
+      <div class="step now">
+        <span class="date">Mon 3 Aug</span>
+        <span class="what">Heap abort diagnosed and fixed</span>
+        <span class="tag t-scan">scanner</span>
+        <div class="body">
+          The dump caught all eight fulltext workers inside trafilatura, three in
+          <code>prune_unwanted_nodes</code> at once, and nothing in <code>psycopg2</code> &mdash;
+          which had been the leading suspect. lxml locks the parser but not the tree mutation that
+          follows, and a shared parser means shared interned strings. Fixed with a lock around
+          <code>trafilatura.extract()</code>; the HTTP fetch stays parallel.
+        </div>
+        <div class="check"><b>Check</b><span>Gate 8 closes after 10 consecutive trading days with no abort. It blocks the veto, so this is on the critical path.</span></div>
       </div>
 
       <div class="step now">
@@ -570,7 +584,7 @@
         <tr><td class="num">5</td><td>Signal maturity</td><td>Skew vote active with &ge;20 days history</td><td class="owner">sopana</td><td><span class="chip c-part">auto ~18 Aug</span></td></tr>
         <tr><td class="num">6</td><td>Operational resilience</td><td>Lambda burn-in, token staleness alert seen firing, overnight gap survived</td><td class="owner">sopana</td><td><span class="chip c-part">from 3 Aug</span></td></tr>
         <tr><td class="num">7</td><td>Capital &amp; risk sizing</td><td>BP fits the real account; worst-case simultaneous loss modelled</td><td class="owner">sopana</td><td><span class="chip c-no">BP &gt; account</span></td></tr>
-        <tr><td class="num">8</td><td><strong>Scanner reliability</strong></td><td>Native heap abort diagnosed and fixed; scanner completes 10 consecutive trading days without a lost cycle</td><td class="owner">integration</td><td><span class="chip c-no">~5.6% abort</span></td></tr>
+        <tr><td class="num">8</td><td><strong>Scanner reliability</strong></td><td>Native heap abort diagnosed and fixed; scanner completes 10 consecutive trading days without a lost cycle</td><td class="owner">integration</td><td><span class="chip c-part">fixed 3 Aug &middot; 0 / 10 days</span></td></tr>
         <tr><td class="num">9</td><td><strong>Veto calibration</strong></td><td>2 weeks logged non-binding; every veto counted, and what the vetoed trade went on to do is known</td><td class="owner">integration</td><td><span class="chip c-no">not started</span></td></tr>
         <tr><td class="num">10</td><td><strong>Veto failure mode</strong></td><td>Scanner down or stale &rArr; no veto, never block-all, never crash. Staleness bound set and tested</td><td class="owner">integration</td><td><span class="chip c-no">not designed</span></td></tr>
       </tbody>

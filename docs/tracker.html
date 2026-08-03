@@ -178,7 +178,7 @@
     <h1>Open investigations, running experiments, and what to watch next</h1>
     <p class="standfirst">
       Everything currently unresolved in the pipeline, each with the condition that would make you
-      act on it. Regenerated 2 August 2026 from the live database, CloudWatch and the deployed
+      act on it. Regenerated 3 August 2026 from the live database, CloudWatch and the deployed
       configuration. Since the 30 July edition: the eval set is labelled and the scoring-model
       question is closed, a native heap abort was found in the collectors, the price/vol regime is
       now measured, and the confidence gate was found to make the iron condor unreachable.
@@ -186,7 +186,7 @@
   </header>
 
   <dl class="strip">
-    <div class="cell"><dt>Deployed</dt><dd class="ok">r46 &middot; 19128a5</dd></div>
+    <div class="cell"><dt>Deployed</dt><dd class="warn">r46 &middot; 19128a5</dd></div>
     <div class="cell"><dt>AWS identity</dt><dd class="ok">spx-deployer</dd></div>
     <div class="cell"><dt>Root keys</dt><dd class="ok">none</dd></div>
     <div class="cell"><dt>Alarms</dt><dd class="ok">both OK</dd></div>
@@ -300,7 +300,7 @@
         <div class="item-top">
           <h3>Is premium rich, and is the regime sane?</h3>
           <span class="pill p-new">shipped 2 Aug</span>
-          <span class="when">IV rank readable ~31 Aug</span>
+          <span class="when">first full session 3 Aug</span>
         </div>
         <p>
           Nothing measured the two questions a theta strategy actually turns on. Four measures now do,
@@ -310,9 +310,9 @@
           <table>
             <thead><tr><th>Measure</th><th>Reading</th><th>Says</th></tr></thead>
             <tbody>
-              <tr><td>IV / RV</td><td class="num">1.09&times;</td><td>ATM IV 13.6% vs 20d realised 12.5% &mdash; premium only mildly rich</td></tr>
-              <tr><td>VIX / VIX3M</td><td class="num now">0.841</td><td>contango, the normal seller-friendly regime</td></tr>
-              <tr><td>IV rank</td><td class="num">&mdash;</td><td>needs ~20 daily readings; clock starts at deploy</td></tr>
+              <tr><td>IV / RV</td><td class="num was">0.84&ndash;0.93</td><td>below 1 all day 3 Aug &mdash; options priced <em>less</em> movement than SPX delivered</td></tr>
+              <tr><td>VIX / VIX3M</td><td class="num now">0.829&ndash;0.850</td><td>contango all day, the normal seller-friendly regime</td></tr>
+              <tr><td>IV rank</td><td class="num">1 / 20</td><td>first reading banked 3 Aug: <code>iv 0.1085</code></td></tr>
               <tr><td>trend_score</td><td class="num">+0.35</td><td>mild uptrend, inside the (disabled) block threshold</td></tr>
             </tbody>
           </table>
@@ -327,11 +327,11 @@
         <div class="trigger"><b>Act if</b><span>IV/RV sits below ~1.0 for a week &rarr; premium is not being paid and selling it is a losing proposition regardless of signal. If VIX/VIX3M crosses above 1.0 &rarr; backwardation, stand aside. Revisit <code>trend_side_block</code> as its own change once a week of readings exists to judge it against.</span></div>
       </article>
 
-      <article class="item sev-risk">
+      <article class="item sev-new">
         <div class="item-top">
           <h3>The scanner is dying mid-cycle on a native heap abort</h3>
-          <span class="pill p-risk">3 events &middot; 0 cycles lost</span>
-          <span class="when">blocked: instrumentation undeployed</span>
+          <span class="pill p-new">diagnosed &amp; fixed 3 Aug</span>
+          <span class="when">watching: 0 / 10 clean days</span>
         </div>
         <p>
           Roughly one invocation in eighteen dies with glibc's
@@ -352,27 +352,40 @@
           </table>
         </div>
         <p>
-          Two explanations are already eliminated. It is <em>not</em> trafilatura's module-level
-          <code>HTML_PARSER</code> being shared across the eight fulltext threads: lxml allocates a
-          per-parser lock and acquires it in <code>_ParserContext.prepare()</code>, and its own docs
-          call sharing &ldquo;not harmful&rdquo;. It is <em>not</em> cold starts either — 60 of 71
-          invocations are cold and only two of those died.
+          <strong>Diagnosed 3 Aug.</strong> The <code>faulthandler</code> dump deployed the day
+          before caught the fourth abort and named it. All eight fulltext workers were inside
+          trafilatura, three of them in <code>htmlprocessing.prune_unwanted_nodes</code> at the same
+          instant. The glibc message was <code>corrupted double-linked list</code>.
         </p>
+        <div class="trigger"><b>Ruled out</b><span><code>psycopg2-binary</code>'s bundled OpenSSL, which had been the leading suspect. It is loaded — it appears in the extension-module list — but <em>no thread was executing in it</em>. Cold starts were eliminated earlier: 60 of 71 invocations are cold and only two died.</span></div>
         <p>
-          The leading suspect is <code>psycopg2-binary</code>, whose wheel bundles its own
-          <code>libssl-fe1b61af.so.3</code> and <code>libcrypto-88208852.so.3</code> beside the
-          OpenSSL that Python's own <code>ssl</code> module already loaded. Two OpenSSL copies in one
-          process is a documented crash hazard, and it fits: the aborts land in the collection phase,
-          where eight threads are doing concurrent HTTPS while libpq's copy is resident. Unproven —
-          Docker Desktop was down, so the image itself was never opened.
+          The earlier elimination of the shared parser checked the right lock and drew a conclusion
+          about the wrong operation. lxml genuinely does lock parsers —
+          <code>_ParserContext.prepare()</code> takes a per-parser lock — but that covers
+          <em>parsing</em>. <code>prune_unwanted_nodes</code> mutates the tree afterwards, outside
+          the lock, and because all eight threads share trafilatura's one module-level
+          <code>HTML_PARSER</code>, their trees share libxml2's interned string dictionary.
+          Concurrent mutation against a shared refcounted dict is the gap.
         </p>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Event (UTC)</th><th>glibc message</th><th>Died after</th><th>Outcome</th></tr></thead>
+            <tbody>
+              <tr><td class="num">30 Jul 00:21</td><td class="num">(!prev)</td><td class="num">6s</td><td class="num was">retry also failed</td></tr>
+              <tr><td class="num">31 Jul 13:10</td><td class="num">(out)</td><td class="num">9s</td><td class="num now">recovered on retry</td></tr>
+              <tr><td class="num">31 Jul 19:55</td><td class="num">(!prev)</td><td class="num">8s</td><td class="num now">recovered on retry</td></tr>
+              <tr><td class="num">3 Aug 16:10</td><td class="num now">double-linked list</td><td class="num">7s</td><td class="num now">stack captured</td></tr>
+            </tbody>
+          </table>
+        </div>
         <p>
-          The one anomaly that does not yet fit any theory: both 31 July aborts show
-          <em>higher</em> peak memory than healthy cycles (517 and 439 MB against 330–390 MB) despite
-          dying after eight seconds rather than running a full hundred. A cycle that dies that early
-          should have allocated less, not more.
+          Fixed the same day <em>in source, not in production</em>: a module-level lock around <code>trafilatura.extract()</code> in
+          <code>utils/extract.py</code>. The HTTP fetch above it stays parallel — a 15s timeout per
+          article against tens of milliseconds of parsing — so throughput is essentially unchanged.
+          Five tests pin it: extraction never overlaps, fetching still does, a failing document
+          releases the lock.
         </p>
-        <div class="trigger"><b>Act if</b><span>a retry fails too — <code>spx-scanner-errors</code> was retuned to &ge;2 errors in 15 min on 31 Jul and now means exactly that: a cycle genuinely lost. Blocked meanwhile on shipping <code>faulthandler.enable(all_threads=True)</code>, which is written but uncommitted; until it deploys every abort stays silent. Once it lands, the dumped thread stack names the library — if it is not psycopg2 or <code>ssl</code>, the OpenSSL theory is dead.</span></div>
+        <div class="trigger"><b>Blocked on</b><span>the deploy path &mdash; see below. The fix is committed as <code>19ce24f</code> but production still runs <code>r46</code>, so tonight's cycles carry the same risk. <b>Closes when</b> the scanner completes 10 consecutive trading days with no abort. That is Gate 8 on the combined go-live checklist, and it blocks the hazard veto — a source that dies silently and leaves a stale flag behind is worse than no veto at all.</span></div>
       </article>
 
       <article class="item sev-new">
@@ -635,6 +648,29 @@
 
       <article class="item sev-risk">
         <div class="item-top">
+          <h3>The deploy path cannot reliably ship a build</h3>
+          <span class="pill p-risk">blocking</span>
+          <span class="when">found 3 Aug</span>
+        </div>
+        <p>
+          Twenty-one push attempts on 3 Aug &mdash; two <code>deploy.ps1</code> runs and two direct
+          <code>docker push</code> loops &mdash; all died against Docker Desktop's proxy at
+          <code>192.168.65.1:3128</code>, with <code>broken pipe</code> or
+          <code>use of closed network connection</code>. Not credentials: re-authenticating changed
+          nothing, and the script's &ldquo;ECR login expires&rdquo; hint is misleading here.
+        </p>
+        <p>
+          It is purely blob size. Splitting the dependency install from three layers to six pushed
+          the 67.5&nbsp;MB layer through on the next attempt. What remains is
+          <code>ADD file:41dd4d7f&hellip;</code> at <b>433&nbsp;MB</b> &mdash; the root filesystem of
+          <code>public.ecr.aws/lambda/python:3.12</code>. That is AWS's layer; it cannot be split
+          from this side.
+        </p>
+        <div class="trigger"><b>Act</b><span>the morning deploy of 2 Aug succeeded after four retries, so the proxy is not always fatal &mdash; a later retry may simply work. The durable fix is a proxy bypass for <code>*.amazonaws.com</code> in Docker Desktop &rarr; Settings &rarr; Resources &rarr; Proxies, which routes ECR traffic around the component that is truncating it. Until then, a code fix can be written, tested and committed but not shipped, which puts every dated step on the roadmap at risk.</span></div>
+      </article>
+
+      <article class="item sev-risk">
+        <div class="item-top">
           <h3>Secrets sit in Lambda environment variables</h3>
           <span class="pill p-risk">security</span>
           <span class="when">unscheduled</span>
@@ -731,8 +767,8 @@
   </section>
 
   <footer>
-    <span>Regenerated 2 August 2026</span>
-    <span>Deployed <code>r46-g19128a5</code> &middot; branch <code>vol-regime-and-diagnostics</code></span>
+    <span>Regenerated 3 August 2026</span>
+    <span>Deployed <code>r46-g19128a5</code> &middot; HEAD <code>19ce24f</code> undeployed</span>
     <span>Source: <code>docs/tracker.html</code></span>
     <span>Data: Lightsail Postgres, CloudWatch, deployed Lambda configuration</span>
   </footer>
