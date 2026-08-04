@@ -181,8 +181,10 @@
       act on it. Regenerated 4 August 2026, evening, from the live database, CloudWatch and the deployed
       configuration. Since the 3 August edition: the ZIP ran its first full live session cleanly,
       the confidence gate was found to be measuring on a scale that changed underneath it and has
-      been recalibrated, and the paper tracker was found unable to mark &mdash; or close &mdash; any
-      position more than a few days old.
+      been recalibrated <em>and then rescoped</em> so the iron condor is no longer rejected for
+      having no directional view, the paper tracker was found unable to mark &mdash; or close &mdash;
+      any position more than a few days old, and the scoring prompt question was settled against
+      <code>theta</code> once risk could be measured rather than inferred.
     </p>
   </header>
 
@@ -299,16 +301,27 @@
       <article class="item sev-risk">
         <div class="item-top">
           <h3>The confidence gate makes the iron condor unreachable</h3>
-          <span class="pill p-risk">was 100% of cycles &middot; now ~63%</span>
-          <span class="when">found 2 Aug &middot; eased 4 Aug</span>
+          <span class="pill p-watch">fixed 4 Aug</span>
+          <span class="when">found 2 Aug &middot; fixed 4 Aug</span>
         </div>
         <p>
-          <strong>Partially relieved, not fixed.</strong> The 4 Aug recalibration to 0.40 means the
-          gate no longer exits on every cycle, so a condor can now be constructed on roughly 37% of
-          them. The ordering problem below is untouched: the directional check still runs first, so
-          on the other ~63% the condor is still rejected for having no directional view. Lowering the
-          threshold changed how often the wrong question is asked, not which question it is.
+          <strong>Fixed, and by reordering rather than by lowering.</strong> The earlier
+          recalibration to 0.40 only changed how often the wrong question got asked. The gate now
+          scopes to the directional trade: verticals are still <em>constructed</em> unconditionally,
+          because a condor is assembled from one of each, but they are only <em>offered</em> when
+          confidence clears. The condor no longer passes through the directional check at all &mdash;
+          it is decided by <code>_sides_allowed()</code>, <code>min_edge_score</code> and the pricing
+          filters, none of which ask which way the market is going.
         </p>
+        <p>
+          Premium richness shipped in the same change, as an edge <em>input</em> rather than the
+          second veto it was tempting to make it. IV/RV below 1 lowers the score; it does not refuse
+          the trade. At weight 0.15 today's 0.85&ndash;0.90 costs ~0.02 of edge against a 0.05
+          threshold, and the ratio is clamped to 0.5&ndash;1.5 so one bad quote cannot own the
+          ranking. The discipline is the lesson from this very item: a hard floor on a number with
+          days of history is how the confidence gate came to block every cycle for a fortnight.
+        </p>
+        <p class="was">The original finding, kept because it is what the fix was aimed at:</p>
         <p>
           <code>_candidates()</code> checks directional confidence and returns an empty list
           <em>before</em> it ever consults <code>_sides_allowed()</code> or builds a condor:
@@ -338,7 +351,7 @@
           cycles &mdash; downside 36&ndash;48%, upside 20&ndash;32%, against a 55% cap, zero breaches.
           Every prediction on record already says no adverse move is detected.
         </p>
-        <div class="trigger"><b>Act</b><span>move the directional check so it filters verticals only, leaving condors to the tail gate, <code>min_edge_score</code> and the new premium-richness terms. The close condition is simple and has never once been met: a cycle logging <code>num_candidates &gt; 0</code>.</span></div>
+        <div class="trigger"><b>Closes when</b><span>a cycle logs <code>num_candidates &gt; 0</code> with confidence <em>below</em> the gate — the condor reached on its own merits. Every cycle of today's session would now reach that path, where none did before: both tails sat 22&ndash;40% against the 55% cap while confidence never cleared 0.42. Whether a condor then <em>prices</em> through the delta, POP, RoR and liquidity filters is the open question, and it is the right one to be left with.</span></div>
       </article>
 
       <article class="item sev-risk">
@@ -381,6 +394,44 @@
           and only while something sits outside the scan window.
         </p>
         <div class="trigger"><b>Watch</b><span>positions 1&ndash;3 should close on <code>time</code> at the next in-session cycle after deploy, writing the first realised P&amp;L rows. If they do not, marking is failing for a second reason and the fallback path is hiding it.</span></div>
+      </article>
+
+      <article class="item sev-risk">
+        <div class="item-top">
+          <h3>One hung API call spends the entire cycle budget</h3>
+          <span class="pill p-risk">fixed 4 Aug &middot; 1 lost cycle</span>
+          <span class="when">found 4 Aug</span>
+        </div>
+        <p>
+          The 15:55 PDT cycle ran for the full 600&nbsp;s and returned
+          <code>Status: timeout</code> having logged only collection. The automatic retry, on
+          identical code and environment, finished in <strong>127&nbsp;s</strong>. The cause is a
+          default nobody set:
+        </p>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Limit</th><th>Value</th><th>Effect</th></tr></thead>
+            <tbody>
+              <tr><td>Anthropic SDK read timeout</td><td class="num was">600 s</td><td class="was">one request can outlive the cycle</td></tr>
+              <tr><td>Lambda function timeout</td><td class="num">600 s</td><td>identical, so nothing degrades &mdash; it just dies</td></tr>
+              <tr><td>Typical Haiku scoring call</td><td class="num">2&ndash;5 s</td><td>the 600 s was never a considered figure</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Scoring now uses <strong>30&nbsp;s</strong> and synthesis <strong>120&nbsp;s</strong> &mdash;
+          separated because synthesis is one Opus call over 40 stories at ~15&nbsp;s, and sharing the
+          scorer's budget would cut off the cycle's single most valuable request. The SDK's own two
+          retries still fit inside a cycle.
+        </p>
+        <p>
+          Worth stating plainly: <strong>this was not caused by the deploy it followed.</strong> It
+          landed one minute after <code>r55</code> went live, which is exactly the coincidence that
+          invites a wrong conclusion &mdash; but <code>r55</code> changed the gate value, the marking
+          chain and two deploy scripts, none of which the scoring path touches, and the retry
+          succeeded on that same code. It is the only timeout in 48 hours across both functions.
+        </p>
+        <div class="trigger"><b>Watch</b><span>a second timeout would falsify the diagnosis, since a per-request cap now bounds it. Cycle duration should stay in the 110&ndash;160 s band it has held all week.</span></div>
       </article>
 
       <article class="item sev-new">
@@ -707,7 +758,7 @@
       <article class="item sev-run">
         <div class="item-top">
           <h3>Per-item scoring model, Haiku against the alternatives</h3>
-          <span class="pill p-run">answered</span>
+          <span class="pill p-run">answered &middot; prompt settled 4 Aug</span>
           <span class="when">199 of 200 labelled, 1 Aug</span>
         </div>
         <p>
@@ -752,8 +803,53 @@
           <code>theta</code>'s &ldquo;high magnitude even at direction 0&rdquo; line would open the
           second path was tested and <em>falsified</em> — risk recall fell rather than rose.
         </p>
-        <div class="trigger"><b>Switch when</b><span>all four hold on a re-grade against the same 199 labels: (1) <code>item_scores</code> records the prompt variant, not just the model — today <code>save_score()</code> stores <code>model</code> only, so a production A/B would be unattributable; (2) an explicit <code>risk</code> field exists in <code>SCORE_SCHEMA</code> and is scored directly rather than inferred; (3) weighted error below 233 — <code>current</code>'s measured baseline, not 236; (4) risk recall at or above 45%, i.e. no regression on the expensive metric, and bear:bull inside ~2.5:1. Fail any one and stay on <code>current</code>.</span></div>
-        <div class="trigger"><b>Timeline</b><span>4 Aug — ship prompt attribution + the risk field, re-grade (~15 min, ~$0.35), decide against the four gates above. If they pass, switch <code>SCORING_PROMPT</code> the same day. Effect is <em>not</em> immediate: <code>recent_scores()</code> reads a 7-day lookback, so synthesis sees a mix of old- and new-prompt scores until ~11 Aug. Judge nothing before then. First clean read: 11 Aug.</span></div>
+
+        <h4 style="margin:1.1rem 0 .4rem;font-size:.95rem">Re-graded 4 August, with risk asked directly</h4>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Run</th><th>weighted err</th><th>direction</th><th>precision</th><th>recall</th><th>RISK recall</th><th>bear:bull</th></tr></thead>
+            <tbody>
+              <tr><td class="num"><b>current</b> (incumbent)</td><td class="num now">177</td><td class="num">37.0%</td><td class="num">42.6%</td><td class="num">71.6%</td><td class="num now">70.0%</td><td class="num now">1.3 : 1</td></tr>
+              <tr><td class="num"><b>theta</b></td><td class="num now">168</td><td class="num now">65.4%</td><td class="num now">53.3%</td><td class="num was">39.5%</td><td class="num was">30.0%</td><td class="num now">1.6 : 1</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          <strong>Verdict: stay on <code>current</code>.</strong> Gate 4 is the one that binds —
+          <code>theta</code> returns 30.0% risk recall against a 45% floor, missing 14 of 20 labelled
+          risk items. Its weighted-error edge is 168 against 177: real, but nine points, and bought
+          with a 40-point deficit on the metric priced at &times;8. The rule was &ldquo;fail any one
+          and stay&rdquo;, and this is what that rule is for.
+        </p>
+        <p>
+          <strong>The central hypothesis is falsified.</strong> The claim above was that the proxy was
+          <em>why</em> <code>theta</code> looked bad on risk — that every prompt improving direction
+          necessarily traded away risk detection, because risk was being read off direction and
+          magnitude. Asked the question directly, <code>theta</code> still only reaches 30%. Its
+          conservatism suppresses risk detection genuinely, not as a measurement artifact. The proxy
+          was a real defect and worth removing; it was not <code>theta</code>'s excuse.
+        </p>
+        <p>
+          <strong>These numbers do not compare to the four runs above, and should not be read as an
+          improvement.</strong> Two things changed at once: the grader now reads an explicit field,
+          and the shared <code>_KEYS</code> block asks every variant for <code>risk</code>, which moved
+          behaviour on the other fields too — <code>current</code>'s direction accuracy went
+          22.2%&rarr;37.0% and its relevance recall 87.7%&rarr;71.6%. So <code>current</code>'s
+          233&rarr;177 is not the scorer getting better; it is the measurement becoming honest, on a
+          slightly different prompt. The only clean comparison is <code>current</code> against
+          <code>theta</code> under identical conditions today, and that is the one the verdict rests on.
+        </p>
+        <p>
+          One observation worth carrying forward: <code>theta</code>'s stated confidence tracks
+          accuracy far better than <code>current</code>'s. Rising 55.6 &rarr; 18.8 &rarr; 50.0 &rarr;
+          <b>97.1%</b> across the confidence bands, against <code>current</code>'s non-monotonic
+          46.8 &rarr; 12.5 &rarr; 34.1 &rarr; 80.0. This is <em>item-level</em> confidence, not the
+          synthesis confidence the trade gate reads, so it does not bear on that gate directly — but
+          item confidence is the weight in <code>direction &times; confidence</code> aggregation, so
+          <code>current</code> is weighting its own scores with a noisy number.
+        </p>
+        <div class="trigger"><b>Settled 4 Aug</b><span>gates (1) and (2) shipped; (3) passed at 168; (4) <b>failed</b> at 30.0% risk recall. <code>SCORING_PROMPT</code> stays <code>current</code> and the 7-day lookback contamination never starts, so there is nothing to wait until 11 Aug for. The corpus stays on one prompt.</span></div>
+        <div class="trigger"><b>Next</b><span>the question is no longer &ldquo;which of these two&rdquo;. <code>current</code> flags 136 items to find 58 (42.6% precision) while <code>theta</code> flags 60 to find 32 and misses 14 shocks. A variant is needed that keeps <code>theta</code>'s direction accuracy and calibration <em>without</em> its across-the-board conservatism — most plausibly by separating the &ldquo;is this relevant at all&rdquo; judgement from the &ldquo;is this dangerous&rdquo; one, which are now visibly in tension inside a single prompt. Grade it on the same 199 labels against <code>current</code>'s 177 / 70.0%.</span></div>
       </article>
 
     </div>
@@ -903,6 +999,11 @@
       <span class="sec-note">28–30 July &middot; outlined items closed today &middot; one reopened 31 Jul: &ldquo;zero warnings or errors across a full day&rdquo; was falsified by two native aborts, now tracked above</span>
     </div>
     <div class="settled-grid">
+      <div class="settled-item today">Condor no longer gated on a directional view; premium richness joins the edge score</div>
+      <div class="settled-item today"><code>risk</code> asked directly &mdash; the &times;8 metric is no longer a proxy</div>
+      <div class="settled-item today"><code>item_scores</code> records the prompt that ran, not the one configured</div>
+      <div class="settled-item today">Prompt question settled: <code>theta</code> fails risk recall 30% &lt; 45%, stay on <code>current</code></div>
+      <div class="settled-item today">Anthropic SDK's 600 s default timeout equalled the whole cycle budget</div>
       <div class="settled-item today">ZIP ran its first full live session &mdash; 9 cycles, no errors, 387 MB peak</div>
       <div class="settled-item today">Confidence gate recalibrated 0.65 &rarr; 0.40 for the synthesis scale</div>
       <div class="settled-item today">Marking now uses its own chain; aged positions are markable and closable again</div>
