@@ -181,8 +181,9 @@ class Pipeline:
             self.repo.save_prediction(prediction, spreads)
             # Mark and exit existing positions before opening new ones, so a
             # position that hits its stop this cycle is closed on this cycle's
-            # chain rather than next cycle's.
-            self.paper.manage(chain)
+            # chain rather than next cycle's. Marking reads its own chain: the
+            # scan chain does not contain aged positions (see _marking_chain).
+            self.paper.manage(self._marking_chain(chain))
             self.paper.maybe_open(scan, chain, spread_id=None)
             self.paper.maybe_open_baseline(chain)
 
@@ -193,6 +194,69 @@ class Pipeline:
         trade_alert = bool(scan["recommended"]) and self._claim_trade_alert(best)
         push = trade_alert or not getattr(self.s, "alert_only_on_trade", True)
         self.notifier.send(self._format(prediction, scan), external=push, trade=trade_alert)
+
+    def _marking_chain(self, scan_chain: dict | None) -> dict | None:
+        """A chain that actually contains the legs of every open position.
+
+        The scan chain spans dte_min..dte_max measured from *today*, so a position
+        falls out of it within days of being opened: entered at 20-25 DTE, it is
+        below dte_min inside a week. mark_spread then returns None and manage()
+        skips that position -- and it skips it BEFORE the time exit is evaluated,
+        so an unmarkable position is not merely unpriced, it is unclosable. Three
+        positions opened in July sat open past their 4-day hold for that reason,
+        and no position had ever closed.
+
+        Widening the scan chain instead would be the wrong fix: atm_iv averages
+        across every expiry in the chain it is handed, so folding in nearer-dated
+        contracts would quietly shift the regime level that the synthesis prompt
+        and the IV/RV ratio are read from.
+
+        Costs one extra chain request per cycle, and only while a position sits
+        outside the scan window -- when everything open is already covered, the
+        scan chain is reused as-is.
+        """
+        positions = self.repo.open_paper_positions()
+        if not positions:
+            return scan_chain
+
+        expirations = []
+        for pos in positions:
+            try:
+                expirations.append(dt.date.fromisoformat(str(pos.expiration)[:10]))
+            except ValueError:
+                self.log.warning(
+                    "Paper: position %d has an unparseable expiration %r.",
+                    pos.id, pos.expiration,
+                )
+        if not expirations:
+            return scan_chain
+
+        today = dt.date.today()
+        scan_from = today + dt.timedelta(days=self.s.dte_min)
+        scan_to = today + dt.timedelta(days=self.s.dte_max)
+        if scan_from <= min(expirations) and max(expirations) <= scan_to:
+            return scan_chain
+
+        # A date in the past cannot be quoted: an expired-but-still-open position
+        # would otherwise ask for a window starting before today and get nothing.
+        from_date = max(today, min(expirations))
+        to_date = max(max(expirations), scan_to)
+        chain = self.schwab.option_chain(
+            self.schwab.symbol(self.s.underlying), from_date, to_date
+        )
+        if not chain:
+            # Fall back rather than skip: the scan chain still covers whatever
+            # was opened recently, so some positions can be marked.
+            self.log.warning(
+                "Paper: marking chain %s..%s failed; falling back to the scan chain.",
+                from_date, to_date,
+            )
+            return scan_chain
+        self.log.info(
+            "Paper: marking %d position(s) against a %s..%s chain.",
+            len(positions), from_date, to_date,
+        )
+        return chain
 
     def _iv_rank(self, atm_iv: float | None) -> float | None:
         """Where today's ATM implied vol sits in its own trailing history, 0..1.

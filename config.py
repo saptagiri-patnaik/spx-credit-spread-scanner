@@ -144,7 +144,20 @@ class Settings(BaseSettings):
     horizon_days: int = 6            # 5-7 day prediction window
     dte_min: int = 20
     dte_max: int = 25
-    confidence_gate: float = 0.65
+    # Calibrated against the SYNTHESIS aggregator, not the mean one. This is a
+    # threshold on a number whose scale changed under it: the mean aggregator
+    # reported 0.54-0.59 and grazed 0.65 twice in 180 predictions, so 0.65 was
+    # already a near-dead gate. Synthesis reports genuinely differentiated -- and
+    # systematically lower -- conviction, 0.30-0.42 over its first 41 cycles, and
+    # 0.65 became unreachable outright: the model arm has never opened a position.
+    # 0.40 is that distribution's 75th percentile, so the gate keeps its intended
+    # meaning (trade the upper quartile of conviction) on the new scale.
+    #
+    # Provisional: 41 observations across seven sessions of one calm, contango,
+    # IV-under-RV regime. Re-derive it once a wider regime range has banked --
+    # and see the roadmap for making the gate a percentile so that a future
+    # aggregator swap cannot silently close it again.
+    confidence_gate: float = 0.40
     # Confidence scale calibration. `direction` is a weighted *average* of item scores,
     # so it realistically lands ~0.2-0.5; treat this magnitude as full conviction so the
     # gate is actually reachable. Raise it to make the gate stricter (fewer trades).

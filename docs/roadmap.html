@@ -250,7 +250,7 @@
   <div class="headline">
     <div class="top">
       <span class="date">late Sept 2026</span>
-      <span class="cap">earliest combined go-live &middot; assessed 3 Aug, market close</span>
+      <span class="cap">earliest combined go-live &middot; assessed 4 Aug, market close</span>
     </div>
     <p>
       Unchanged from Sopana&rsquo;s own estimate, and that is the point: <strong>joining the two
@@ -343,6 +343,24 @@
       arm has never traded.
     </p>
 
+    <div class="note">
+      <p>
+        <strong>Update, 4 August &mdash; half of this moved, and it was the less interesting half.</strong>
+        The gate was found to be a fixed threshold on a number whose scale changed under it: the
+        weighted-mean aggregator reported 0.54&ndash;0.59, synthesis reports 0.30&ndash;0.42, and 0.65
+        was never re-derived when the swap happened. It has been recalibrated to <strong>0.40</strong>,
+        the 75th percentile of the synthesis distribution.
+      </p>
+      <p>
+        That unblocks the signal arm, which is why it shipped first &mdash; but <em>the contradiction
+        below is unchanged</em>. The ordering is the defect, not the threshold. At 0.40 the directional
+        check still runs before <code>_sides_allowed()</code>, so the condor is now merely
+        <em>usually</em> unreachable (~63% of cycles) rather than always. Recalibrating changed how
+        often the wrong question gets asked. The step below changes which question it is, and it is
+        still the one that matters.
+      </p>
+    </div>
+
 <pre><code>def _candidates(self, chain, prediction):
     ...
     if prediction["confidence"] &lt; self.s.confidence_gate:
@@ -371,8 +389,8 @@
     <div class="scroll"><table>
       <thead><tr><th>Gate</th><th>Asks</th><th>Fires?</th><th>Keep</th></tr></thead>
       <tbody>
-        <tr><td><code>confidence_gate</code> 0.65</td><td>How sure are we of the direction</td><td class="no">blocks 100% of cycles</td><td class="no">No &mdash; directional vestige</td></tr>
-        <tr><td><code>_sides_allowed</code> tails</td><td>Is either tail fat</td><td class="yes">0 of 28 cycles blocked</td><td class="yes">Yes &mdash; the real gate</td></tr>
+        <tr><td><code>confidence_gate</code> <s>0.65</s> 0.40</td><td>How sure are we of the direction</td><td class="no">was 100% of cycles; ~63% at 0.40</td><td class="no">No &mdash; directional vestige</td></tr>
+        <tr><td><code>_sides_allowed</code> tails</td><td>Is either tail fat</td><td class="yes">0 of 37 cycles blocked</td><td class="yes">Yes &mdash; the real gate</td></tr>
         <tr><td><code>min_edge_score</code> 0.05</td><td>Is this spread worth selling</td><td class="num">never reached</td><td class="yes">Yes</td></tr>
         <tr><td><code>min_pop</code> / <code>min_credit_to_width</code></td><td>Is it priced acceptably</td><td class="num">never reached</td><td class="yes">Yes</td></tr>
         <tr><td>IV/RV, VIX term structure</td><td>Is premium rich, is the regime sane</td><td class="num">live 3 Aug, reading only</td><td class="yes">Yes &mdash; as an <em>edge input</em>, not a gate</td></tr>
@@ -429,16 +447,63 @@
         <div class="check"><b>Closed 3 Aug</b><span>ten market-hours cycles, <code>Regime:</code> on every one, and the abort printed a full thread dump &mdash; which named the cause rather than merely capturing it.</span></div>
       </div>
 
-      <div class="step crit">
+      <div class="step now">
         <span class="date">Tue 4 Aug</span>
+        <span class="what">Recalibrate the gate to the scale the aggregator actually reports</span>
+        <span class="tag t-scan">scanner</span>
+        <div class="body">
+          Not the planned step, but it came first because it is smaller and it was mismeasurement
+          rather than design. <code>confidence_gate</code> was set for the weighted-mean aggregator
+          (0.54&ndash;0.59, grazing 0.65 twice in 139 predictions) and never re-derived when synthesis
+          replaced it (0.30&ndash;0.42 over 41). Moved to <b>0.40</b>, the synthesis 75th percentile,
+          so the gate keeps its intended meaning &mdash; trade the upper quartile of conviction &mdash;
+          on the scale in use.
+          <br><br>
+          Provisional, and deliberately so: 41 observations from seven sessions of a single calm,
+          contango, IV-under-RV regime. Re-derive once a wider regime range has banked.
+        </div>
+        <div class="check"><b>Check</b><span>at least one cycle produces <code>num_candidates &gt; 0</code>, and a first <code>arm='model'</code> row appears. Neither has ever happened. If the arm still does not trade at 0.40, the blocker is downstream &mdash; edge, POP, RoR or liquidity &mdash; and that is a separate investigation.</span></div>
+      </div>
+
+      <div class="step now">
+        <span class="date">Tue 4 Aug</span>
+        <span class="what">Give marking its own chain, so positions can close</span>
+        <span class="tag t-scan">scanner</span>
+        <div class="body">
+          Found while reviewing the session: the once-per-cycle chain spans
+          <code>dte_min..dte_max</code> <em>from today</em>, so a position drops out of it days after
+          opening and <code>mark_spread()</code> returns <code>None</code>. <code>manage()</code>
+          skips an unmarkable position <em>before</em> testing the exits, making it unclosable &mdash;
+          zero closed rows and zero realised P&amp;L in eight days, with three positions sitting past
+          their 4-day hold.
+          <br><br>
+          Marking now fetches its own chain spanning the open expiries. The scan chain is deliberately
+          left narrow: <code>atm_iv()</code> averages across every expiry it is given, so widening it
+          would have moved the regime level that the synthesis prompt and IV/RV read from.
+        </div>
+        <div class="check"><b>Check</b><span>positions 1&ndash;3 close on <code>time</code> at the first in-session cycle after deploy, writing the first realised P&amp;L the project has ever recorded.</span></div>
+      </div>
+
+      <div class="step crit">
+        <span class="date">next</span>
         <span class="what">Retire the confidence gate; let the condor through</span>
         <span class="tag t-scan">scanner</span>
         <div class="body">
-          Move the directional check so it filters <em>verticals</em> only, leaving the condor path to
-          the tail gate and edge threshold. Add the premium-richness condition from &sect;02 in its place.
-          This is the change that makes the signal arm capable of firing at all.
+          Still outstanding, and still the one that matters. Move the directional check so it filters
+          <em>verticals</em> only, leaving the condor path to the tail gate and edge threshold. Add the
+          premium-richness condition from &sect;02 in its place.
+          <br><br>
+          The recalibration above lowered the threshold; it did not change the ordering. The condor is
+          now reachable on ~37% of cycles instead of none, which is an improvement in frequency and
+          not in reasoning &mdash; on the rest the trade is still declined for having no directional
+          view, which is the condition that makes a condor correct.
+          <br><br>
+          Fold in the durable form while here: express the gate as a <em>percentile of recent
+          predictions</em> rather than an absolute number. A fixed threshold silently closed once
+          already when the aggregator changed under it, and nothing alarmed &mdash; a gate that blocks
+          every cycle is indistinguishable in the logs from a market that never qualifies.
         </div>
-        <div class="check"><b>Check</b><span>at least one cycle produces <code>num_candidates &gt; 0</code>. It never has.</span></div>
+        <div class="check"><b>Check</b><span>a cycle logs <code>num_candidates &gt; 0</code> with confidence <em>below</em> the directional gate, proving the condor path is reached on its own merits.</span></div>
       </div>
 
       <div class="step crit">

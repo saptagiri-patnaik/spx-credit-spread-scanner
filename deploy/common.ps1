@@ -80,8 +80,13 @@ function Get-AwsAccount {
 function Get-Registry { param($Account) "$Account.dkr.ecr.$Region.amazonaws.com" }
 function Get-ImageUri { param($Account) "$(Get-Registry $Account)/$RepoName" }
 
+# Takes the function to check, defaulting to $FuncName so existing callers are
+# unchanged. It previously took no parameter at all and always tested $FuncName,
+# which meant `Test-LambdaExists $ZipFuncName` silently checked the container
+# instead -- a guard that would have passed even with the ZIP function missing.
 function Test-LambdaExists {
-    aws lambda get-function --function-name $FuncName --region $Region *> $null
+    param([string]$Name = $FuncName)
+    aws lambda get-function --function-name $Name --region $Region *> $null
     return $LASTEXITCODE -eq 0
 }
 
