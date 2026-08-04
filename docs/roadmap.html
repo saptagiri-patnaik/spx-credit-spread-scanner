@@ -250,7 +250,7 @@
   <div class="headline">
     <div class="top">
       <span class="date">late Sept 2026</span>
-      <span class="cap">earliest combined go-live &middot; assessed 3 Aug</span>
+      <span class="cap">earliest combined go-live &middot; assessed 3 Aug, market close</span>
     </div>
     <p>
       Unchanged from Sopana&rsquo;s own estimate, and that is the point: <strong>joining the two
@@ -264,7 +264,7 @@
   <dl class="prog">
     <div><dt>Gates passed</dt><dd class="no">0 / 10</dd></div>
     <div><dt>Blocking</dt><dd class="no">7</dd></div>
-    <div><dt>Closed trades</dt><dd class="no">3 / 20</dd></div>
+    <div><dt>Closed trades</dt><dd class="no">5 / 20</dd></div>
     <div><dt>Clean days</dt><dd class="no">0 / 10</dd></div>
     <div><dt>Orders sent</dt><dd class="no">0, ever</dd></div>
     <div><dt>Scanner trades</dt><dd class="no">0, ever</dd></div>
@@ -393,16 +393,28 @@
     <div class="week">
       <div class="week-label">Week of 3 August &mdash; deploy what exists, stop the bleeding</div>
 
-      <div class="step crit">
+      <div class="step now">
         <span class="date">Mon 3 Aug</span>
-        <span class="what">Sopana&rsquo;s first scheduled Lambda session</span>
+        <span class="what">First scheduled session ran clean &mdash; and the exits arrived early</span>
         <span class="tag t-sop">sopana</span>
         <div class="body">
-          Cutover completed 31 Jul but no scheduled session has ever run. Treat 3&ndash;5 Aug as infra
-          burn-in, not Gate&nbsp;1 days. Both open bear calls reach <code>DTE_EXIT=21</code> around
-          6&ndash;7 Aug &mdash; the first mechanical exits ever attempted on this runtime.
+          <b>Session 1 of 3 burn-in: clean.</b> 96 ticks at five-minute spacing, 1.5&ndash;2.7s each,
+          95&nbsp;MB of 512, no errors, and the 09:30&nbsp;ET market-hours gate flipped exactly on time.
+          <br><br>
+          The exit test then arrived four days early and by a different route than planned. Both bear
+          calls were held into a +1% SPX rally, hit their 2&times;-credit stop, and closed at 14:00
+          and 14:05 UTC with reason and P&amp;L logged &mdash; <code>#5 stop_loss 7.35 &minus;$740</code>,
+          <code>#4 stop_loss 7.20 &minus;$720</code>. Correct behaviour: <code>sopana.py</code> orders
+          exits <code>profit_target &rarr; stop_loss &rarr; event_exit</code>, so a stop that binds
+          before the time exit is the design working, not bypassing it.
+          <br><br>
+          <b>So the stop path is proven and <code>DTE_EXIT=21</code> is still not.</b> The original
+          check was aimed at the time exit via the 6&ndash;7 Aug expiries; those positions no longer
+          exist. With zero open positions and every tick since logging
+          <code>[GATE] skip entry: iv_rank &lt; 20.0</code>, the mechanical time exit may stay
+          unexercised for a while yet.
         </div>
-        <div class="check"><b>Check</b><span>three clean sessions, and the 6&ndash;7 Aug exits fire correctly.</span></div>
+        <div class="check"><b>Remaining</b><span>sessions on 4 and 5 Aug also clean, to finish burn-in. The <code>DTE_EXIT</code> path needs its own test whenever a position next reaches 21 DTE &mdash; it cannot ride on this week any more. Gate&nbsp;3 wanted the stop fired twice: <b>that is now satisfied</b>, and the tail is measured rather than merely absent.</span></div>
       </div>
 
       <div class="step now">
@@ -427,6 +439,27 @@
           This is the change that makes the signal arm capable of firing at all.
         </div>
         <div class="check"><b>Check</b><span>at least one cycle produces <code>num_candidates &gt; 0</code>. It never has.</span></div>
+      </div>
+
+      <div class="step crit">
+        <span class="date">decided 3 Aug</span>
+        <span class="what">Premium richness is an edge input, not a hard gate</span>
+        <span class="tag t-scan">scanner</span>
+        <div class="body">
+          IV/RV folds into <code>min_edge_score</code> so thin premium <em>lowers</em> the score
+          rather than vetoing the trade. It does not get its own threshold.
+          <br><br>
+          The reason is the failure being fixed one step above. <code>confidence_gate = 0.65</code>
+          was a single unvalidated number placed in front of everything, and it blocked 100% of
+          cycles for two weeks while nobody could tell whether the bar or the signal was wrong.
+          There are <b>four days</b> of IV/RV history. Setting a hard threshold on that would repeat
+          the mistake with a fresher number &mdash; an arm that never fires, for a new reason.
+          <br><br>
+          Routing it through the edge score means an unusually good structure can still trade in
+          thin premium, and the gate that ultimately decides is <code>min_edge_score</code>, which
+          is already tuned and already understood.
+        </div>
+        <div class="check"><b>Revisit when</b><span>~40 trading days of IV/RV exist and the distribution is known. A hard floor is defensible against a measured distribution; it is not defensible against four days. Note this cuts against the instinct to gate hard on a number that currently reads 0.84&ndash;0.93 &mdash; the discipline is to let the edge score price it, not to add a second veto.</span></div>
       </div>
 
       <div class="step now">
@@ -578,11 +611,11 @@
       <thead><tr><th>#</th><th>Gate</th><th>Closes when</th><th>Owner</th><th>Now</th></tr></thead>
       <tbody>
         <tr><td class="num">1</td><td>Code stability</td><td>10 consecutive trading days, no behavioural bug, no bug-fix version bump &mdash; and none open at the start</td><td class="owner">sopana</td><td><span class="chip c-no">0 / 10</span></td></tr>
-        <tr><td class="num">2</td><td>Sample size</td><td>&ge;20 closed trades on one stable version, spanning VIX &lt;15 and &gt;22</td><td class="owner">sopana</td><td><span class="chip c-no">3 / 20</span></td></tr>
-        <tr><td class="num">3</td><td>Performance</td><td>Win rate &ge;70%, expectancy &gt;$100, profit factor &gt;1.3, stop fired &ge;2&times;</td><td class="owner">sopana</td><td><span class="chip c-no">n too small</span></td></tr>
+        <tr><td class="num">2</td><td>Sample size</td><td>&ge;20 closed trades on one stable version, spanning VIX &lt;15 and &gt;22</td><td class="owner">sopana</td><td><span class="chip c-no">5 / 20</span></td></tr>
+        <tr><td class="num">3</td><td>Performance</td><td>Win rate &ge;70%, expectancy &gt;$100, profit factor &gt;1.3, stop fired &ge;2&times;</td><td class="owner">sopana</td><td><span class="chip c-part">stops fired 2&times; &middot; n still too small</span></td></tr>
         <tr><td class="num">4</td><td>Order path</td><td>One real 1-contract round trip, slippage measured, rejection + partial fill handled</td><td class="owner">sopana</td><td><span class="chip c-no">0 orders</span></td></tr>
         <tr><td class="num">5</td><td>Signal maturity</td><td>Skew vote active with &ge;20 days history</td><td class="owner">sopana</td><td><span class="chip c-part">auto ~18 Aug</span></td></tr>
-        <tr><td class="num">6</td><td>Operational resilience</td><td>Lambda burn-in, token staleness alert seen firing, overnight gap survived</td><td class="owner">sopana</td><td><span class="chip c-part">from 3 Aug</span></td></tr>
+        <tr><td class="num">6</td><td>Operational resilience</td><td>Lambda burn-in, token staleness alert seen firing, overnight gap survived</td><td class="owner">sopana</td><td><span class="chip c-part">burn-in 1 / 3 &middot; exits proven</span></td></tr>
         <tr><td class="num">7</td><td>Capital &amp; risk sizing</td><td>BP fits the real account; worst-case simultaneous loss modelled</td><td class="owner">sopana</td><td><span class="chip c-no">BP &gt; account</span></td></tr>
         <tr><td class="num">8</td><td><strong>Scanner reliability</strong></td><td>Native heap abort diagnosed and fixed; scanner completes 10 consecutive trading days without a lost cycle</td><td class="owner">integration</td><td><span class="chip c-part">fixed 3 Aug &middot; 0 / 10 days</span></td></tr>
         <tr><td class="num">9</td><td><strong>Veto calibration</strong></td><td>2 weeks logged non-binding; every veto counted, and what the vetoed trade went on to do is known</td><td class="owner">integration</td><td><span class="chip c-no">not started</span></td></tr>
