@@ -1,0 +1,345 @@
+<title>Combined System — Scanner + Sopana</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --ground:#EDEDEA; --surface:#FFFFFF; --sunk:#E3E2DE; --hair:#D2D1CB;
+    --firm:#B0AEA5; --ink:#17171A; --ink2:#46464B; --muted:#6E6E75;
+    --accent:#A8650F; --accent-bg:#F6ECDC;
+    --pass:#33705A; --pass-bg:#E0EFE8;
+    --stop:#A0342A; --stop-bg:#F7E4E1;
+    /* One hue per system, so a lane is identifiable without reading its label. */
+    --scan:#2F6E86; --scan-bg:#E2EEF3;
+    --sop:#6B4A8C; --sop-bg:#EDE6F4;
+    --shadow:0 1px 2px rgba(20,20,22,.05),0 8px 22px -14px rgba(20,20,22,.3);
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --ground:#141519; --surface:#1D1E23; --sunk:#17181C; --hair:#2E3037;
+    --firm:#464951; --ink:#ECECEE; --ink2:#B6B7BC; --muted:#84868D;
+    --accent:#E0A44E; --accent-bg:#2B2114;
+    --pass:#68B894; --pass-bg:#16281F; --stop:#E07A6C; --stop-bg:#2C1815;
+    --scan:#79B6CE; --scan-bg:#152A33; --sop:#B195D4; --sop-bg:#231B30;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 22px -14px rgba(0,0,0,.8);
+  }}
+  :root[data-theme="dark"]{
+    --ground:#141519; --surface:#1D1E23; --sunk:#17181C; --hair:#2E3037;
+    --firm:#464951; --ink:#ECECEE; --ink2:#B6B7BC; --muted:#84868D;
+    --accent:#E0A44E; --accent-bg:#2B2114;
+    --pass:#68B894; --pass-bg:#16281F; --stop:#E07A6C; --stop-bg:#2C1815;
+    --scan:#79B6CE; --scan-bg:#152A33; --sop:#B195D4; --sop-bg:#231B30;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 22px -14px rgba(0,0,0,.8);
+  }
+  :root[data-theme="light"]{
+    --ground:#EDEDEA; --surface:#FFFFFF; --sunk:#E3E2DE; --hair:#D2D1CB;
+    --firm:#B0AEA5; --ink:#17171A; --ink2:#46464B; --muted:#6E6E75;
+    --accent:#A8650F; --accent-bg:#F6ECDC;
+    --pass:#33705A; --pass-bg:#E0EFE8; --stop:#A0342A; --stop-bg:#F7E4E1;
+    --scan:#2F6E86; --scan-bg:#E2EEF3; --sop:#6B4A8C; --sop-bg:#EDE6F4;
+    --shadow:0 1px 2px rgba(20,20,22,.05),0 8px 22px -14px rgba(20,20,22,.3);
+  }
+
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);
+       font-size:16px;line-height:1.55;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:62rem;margin:0 auto;padding:clamp(1.25rem,4vw,3rem) clamp(.85rem,4vw,2rem) 5rem}
+
+  header{margin-bottom:1.4rem}
+  .eyebrow{font-family:var(--mono);font-size:.66rem;letter-spacing:.16em;text-transform:uppercase;
+           color:var(--accent);font-weight:700}
+  h1{margin:.5rem 0 0;font-size:clamp(1.55rem,4vw,2.15rem);font-weight:750;letter-spacing:-.025em;
+     line-height:1.12;text-wrap:balance}
+  .sub{color:var(--ink2);margin:.5rem 0 0;max-width:46rem;font-size:.95rem}
+  .hint{display:flex;gap:.5rem;margin:1.15rem 0 1.6rem;padding:.6rem .85rem;background:var(--accent-bg);
+        border-left:3px solid var(--accent);border-radius:0 3px 3px 0;font-size:.85rem;color:var(--ink2)}
+  .hint b{color:var(--ink)}
+
+  .legend{display:flex;gap:1.2rem;flex-wrap:wrap;margin-bottom:1.5rem;font-family:var(--mono);
+          font-size:.72rem;color:var(--muted)}
+  .legend span{display:flex;align-items:center;gap:.4rem}
+  .legend i{width:.85rem;height:.85rem;border-radius:2px;display:block}
+
+  /* two lanes side by side, joining at the veto */
+  .lanes{display:grid;gap:1rem;grid-template-columns:1fr 1fr;margin-bottom:.4rem}
+  .lane-head{font-family:var(--mono);font-size:.66rem;letter-spacing:.13em;text-transform:uppercase;
+             font-weight:700;padding:.4rem .1rem;border-bottom:2px solid var(--hair)}
+  .lane-head.s{color:var(--scan);border-bottom-color:var(--scan)}
+  .lane-head.p{color:var(--sop);border-bottom-color:var(--sop)}
+  .lane{display:flex;flex-direction:column;gap:.4rem}
+
+  .node{background:var(--surface);border:1px solid var(--hair);border-radius:4px;
+        box-shadow:var(--shadow);border-left:4px solid var(--firm);overflow:hidden}
+  .node.s{border-left-color:var(--scan)} .node.p{border-left-color:var(--sop)}
+  .node.join{border-left-color:var(--accent)} .node.blocked{border-left-color:var(--stop)}
+  .nbtn{width:100%;background:none;border:0;padding:.7rem .85rem;text-align:left;cursor:pointer;
+        font:inherit;color:inherit;display:grid;grid-template-columns:1fr auto;gap:.15rem .6rem}
+  .nbtn:hover{background:var(--sunk)}
+  .nbtn:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+  .name{font-weight:670;font-size:.93rem;letter-spacing:-.008em}
+  .meta{grid-column:1/-1;font-family:var(--mono);font-size:.71rem;color:var(--muted);
+        font-variant-numeric:tabular-nums}
+  .caret{font-family:var(--mono);font-size:.85rem;color:var(--muted);transition:transform .18s ease}
+  .node[open] .caret{transform:rotate(90deg)}
+  .chip{font-family:var(--mono);font-size:.56rem;font-weight:700;letter-spacing:.08em;
+        text-transform:uppercase;padding:.13rem .38rem;border-radius:2px;white-space:nowrap}
+  .c-ok{background:var(--pass-bg);color:var(--pass)}
+  .c-stop{background:var(--stop-bg);color:var(--stop)}
+  .c-new{background:var(--accent-bg);color:var(--accent)}
+
+  .detail{display:none;padding:0 .85rem .9rem;border-top:1px solid var(--hair)}
+  .node[open] .detail{display:block}
+  .detail h4{margin:.85rem 0 .35rem;font-family:var(--mono);font-size:.6rem;letter-spacing:.13em;
+             text-transform:uppercase;color:var(--muted);font-weight:700}
+  .detail p{margin:0 0 .5rem;font-size:.85rem;color:var(--ink2)}
+  .detail ul{margin:0 0 .5rem;padding-left:1.05rem;font-size:.84rem;color:var(--ink2)}
+  .detail li{margin-bottom:.2rem}
+  .kv{display:grid;grid-template-columns:auto 1fr;gap:.2rem .7rem;font-size:.82rem;margin:0 0 .55rem}
+  .kv dt{font-family:var(--mono);font-size:.72rem;color:var(--muted);white-space:nowrap}
+  .kv dd{margin:0;color:var(--ink2)}
+  .flag{border-left:3px solid var(--stop);background:var(--stop-bg);padding:.55rem .7rem;
+        border-radius:0 3px 3px 0;font-size:.83rem;color:var(--ink2);margin:.45rem 0}
+  .flag.good{border-left-color:var(--pass);background:var(--pass-bg)}
+  .flag.warn{border-left-color:var(--accent);background:var(--accent-bg)}
+  .flag b{color:var(--ink)}
+  code{font-family:var(--mono);font-size:.85em;background:var(--sunk);padding:.06em .3em;border-radius:2px}
+  .flag code{background:transparent;padding:0}
+
+  .merge{display:flex;flex-direction:column;align-items:center;gap:.15rem;padding:.5rem 0;
+         font-family:var(--mono);font-size:.68rem;color:var(--accent);font-weight:700}
+  .merge i{display:block;width:2px;height:1rem;background:var(--accent)}
+  .single{display:flex;flex-direction:column;gap:.4rem;margin-top:.4rem}
+
+  .gates{margin-top:2.5rem}
+  .gates h2{font-size:1.2rem;font-weight:700;letter-spacing:-.015em;margin:0 0 .2rem}
+  .gates p.l{color:var(--muted);font-size:.88rem;margin:0 0 .9rem}
+  .scroll{overflow-x:auto;border:1px solid var(--hair);border-radius:4px;background:var(--surface)}
+  table{border-collapse:collapse;width:100%;font-size:.83rem;min-width:32rem}
+  th,td{padding:.5rem .7rem;text-align:left;border-bottom:1px solid var(--hair);vertical-align:top}
+  thead th{font-family:var(--mono);font-size:.6rem;letter-spacing:.1em;text-transform:uppercase;
+           color:var(--muted);font-weight:700;background:var(--sunk);white-space:nowrap}
+  tbody tr:last-child td{border-bottom:none}
+  td.n{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+
+  footer{margin-top:2.5rem;padding-top:1rem;border-top:1px solid var(--hair);
+         font-family:var(--mono);font-size:.7rem;color:var(--muted);display:flex;gap:1.1rem;flex-wrap:wrap}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+  @media (max-width:44rem){ .lanes{grid-template-columns:1fr} }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Combined system &middot; target architecture</div>
+    <h1>Two systems, one order path</h1>
+    <p class="sub">
+      The scanner reads events. Sopana reads price. Only Sopana can place an order &mdash; so the
+      scanner joins as a <b>veto</b>, never as a trigger. Left lane is live today; right lane is
+      live today; the amber join is the work.
+    </p>
+  </header>
+
+  <div class="hint"><b>Click any box</b> to open it. Everything amber is not built yet.</div>
+
+  <div class="legend">
+    <span><i style="background:var(--scan)"></i>scanner &mdash; fundamental</span>
+    <span><i style="background:var(--sop)"></i>sopana &mdash; technical</span>
+    <span><i style="background:var(--accent)"></i>integration &mdash; to build</span>
+    <span><i style="background:var(--stop)"></i>blocking</span>
+  </div>
+
+  <div class="lanes">
+    <div>
+      <div class="lane-head s">Scanner &middot; spx-scanner</div>
+      <div class="lane">
+
+        <div class="node s"><button class="nbtn" aria-expanded="false" aria-controls="s1">
+          <span class="name">Collect &amp; score</span><span class="caret">&rsaquo;</span>
+          <span class="meta">6 sources &middot; ~700 items/day &middot; Haiku</span></button>
+          <div class="detail" id="s1">
+            <p>News, macro, social, YouTube, econ calendar, 15 curated X accounts. Each item scored
+              for direction, magnitude, confidence.</p>
+            <div class="flag warn"><b>79% of the volume is being cut on 13 Aug.</b> Social and
+              YouTube produced one actionable item in 107 labelled.</div>
+          </div></div>
+
+        <div class="node s"><button class="nbtn" aria-expanded="false" aria-controls="s2">
+          <span class="name">Cluster &amp; synthesise</span><span class="caret">&rsaquo;</span>
+          <span class="meta">top 40 stories &middot; 1 Opus call/cycle</span></button>
+          <div class="detail" id="s2">
+            <p>Deduplicated to distinct stories, decayed 72h, capped at 60% per source type, then one
+              Opus call produces the view.</p>
+            <dl class="kv">
+              <dt>direction</dt><dd>&minus;0.10 to &minus;0.15, every cycle</dd>
+              <dt>confidence</dt><dd>0.32 &ndash; 0.42</dd>
+              <dt>tails</dt><dd>down 36&ndash;48%, up 20&ndash;32%</dd>
+            </dl>
+          </div></div>
+
+        <div class="node s"><button class="nbtn" aria-expanded="false" aria-controls="s3">
+          <span class="name">Hazard signal</span>
+          <span class="chip c-new">to build</span><span class="caret">&rsaquo;</span>
+          <span class="meta">per-side tails + event flag &rarr; Postgres</span></button>
+          <div class="detail" id="s3">
+            <h4>What actually crosses the boundary</h4>
+            <ul>
+              <li><code>downside_risk</code>, <code>upside_risk</code> &mdash; per-side tail estimates</li>
+              <li><code>event_risk</code> &mdash; a high-impact print inside the DTE window</li>
+              <li><code>as_of</code> &mdash; so Sopana can reject a stale row</li>
+            </ul>
+            <p>One row per cycle in a shared table. No RPC, no coupling &mdash; either system keeps
+              running if the other stops.</p>
+            <div class="flag good"><b>This is what the labels say news is good for.</b> 188 of 199
+              items had no directional sign, but 20 flagged shock risk. Hazard, not direction.</div>
+          </div></div>
+
+      </div>
+    </div>
+
+    <div>
+      <div class="lane-head p">Sopana &middot; sopana-dte25</div>
+      <div class="lane">
+
+        <div class="node p"><button class="nbtn" aria-expanded="false" aria-controls="p1">
+          <span class="name">Read the tape</span><span class="caret">&rsaquo;</span>
+          <span class="meta">every 5 min &middot; spot, VIX, IV rank, SMA</span></button>
+          <div class="detail" id="p1">
+            <p>Ticks every five minutes from 06:00&ndash;13:59 PT. Reads spot, VIX, its own IV rank
+              and a moving average, then marks open positions.</p>
+            <div class="flag warn"><b>Two IV ranks will disagree.</b> Sopana computes one from its
+              own history; the scanner now computes another. Decide which is authoritative before
+              the veto lands.</div>
+          </div></div>
+
+        <div class="node p"><button class="nbtn" aria-expanded="false" aria-controls="p2">
+          <span class="name">Vote on direction</span><span class="caret">&rsaquo;</span>
+          <span class="meta">SMA + momentum + skew &middot; min 2 votes</span></button>
+          <div class="detail" id="p2">
+            <p>Composite vote decides bull put, bear call, or &mdash; when votes fail to clear
+              &mdash; an iron condor.</p>
+            <div class="flag good"><b>Sopana already solved the condor problem.</b> No directional
+              conviction produces a condor rather than standing aside. The scanner builds condors but
+              gates them out first; this is the pattern it should copy.</div>
+            <dl class="kv"><dt>skew vote</dt><dd>inactive until ~18 Aug &mdash; needs 20 days of history</dd></dl>
+          </div></div>
+
+        <div class="node p"><button class="nbtn" aria-expanded="false" aria-controls="p3">
+          <span class="name">Liquidity &amp; sizing gates</span><span class="caret">&rsaquo;</span>
+          <span class="meta">OI 250/25 &middot; spread &le;8% &middot; ladder caps</span></button>
+          <div class="detail" id="p3">
+            <p>Asymmetric open-interest floors per wing, relative bid-ask ceiling, one entry per day,
+              max concurrent, max same direction.</p>
+            <div class="flag"><b>Bug #10 is open here.</b> A condor verdict discards a wing that
+              qualified when the other wing fails a gate. v1.8.2 made it visible; the root cause is
+              unfixed, and Gate 1's clock cannot start until it is.</div>
+          </div></div>
+
+      </div>
+    </div>
+  </div>
+
+  <div class="merge"><i></i><span>&#9660; JOIN &mdash; veto only, never a trigger &#9660;</span><i></i></div>
+
+  <div class="single">
+
+    <div class="node join"><button class="nbtn" aria-expanded="false" aria-controls="j1">
+      <span class="name">Apply the hazard veto</span>
+      <span class="chip c-new">21 Aug</span><span class="caret">&rsaquo;</span>
+      <span class="meta">subtracts trades only &middot; fail-open &middot; 2 weeks logged first</span></button>
+      <div class="detail" id="j1">
+        <h4>Three rules that make this safe</h4>
+        <ul>
+          <li><b>Veto only.</b> It may block a side or an entry. It may never open a trade Sopana
+            would not have opened anyway &mdash; so the worst case is fewer trades, not a new
+            failure mode.</li>
+          <li><b>Fail open.</b> Scanner down or row stale &rArr; no veto. A missing scanner means
+            Sopana trades exactly as it does today, which is a known quantity. Fail-closed would let
+            an unrelated outage silently halt the book.</li>
+          <li><b>Log before binding.</b> Two weeks non-binding: count every veto and what the trade
+            it would have blocked went on to do.</li>
+        </ul>
+        <h4>What it blocks</h4>
+        <dl class="kv">
+          <dt>fat downside</dt><dd>no put spreads</dd>
+          <dt>fat upside</dt><dd>no call spreads</dd>
+          <dt>event inside DTE</dt><dd>no new entries</dd>
+        </dl>
+        <div class="flag warn"><b>Sequence matters more than the code.</b> Wiring this is a change to
+          Sopana, and the first defect in it is a bug-fix version bump that resets Gate 1's ten-day
+          clock. Land it <i>before</i> the clock starts and it costs nothing; land it after and it
+          costs ten days twice.</div>
+      </div></div>
+
+    <div class="node blocked"><button class="nbtn" aria-expanded="false" aria-controls="j2">
+      <span class="name">Place the order</span>
+      <span class="chip c-stop">0 sent, ever</span><span class="caret">&rsaquo;</span>
+      <span class="meta">Gate 4 &middot; hard blocker &middot; depends on nothing</span></button>
+      <div class="detail" id="j2">
+        <p><code>place_order()</code> has never executed. The JSON has never been validated against
+          Schwab. Shadow prices at mid; live will not.</p>
+        <h4>To close it</h4>
+        <ul>
+          <li>Validate the order JSON against a Schwab preview</li>
+          <li>One real 1-contract open + close, done by hand</li>
+          <li>Measure fill vs mid &mdash; an actual slippage number</li>
+          <li>Exercise rejection and partial-fill handling</li>
+        </ul>
+        <div class="flag good"><b>The cheapest item on the board.</b> It depends on no trades, no
+          history and no other gate. It could be closed this week, entirely in parallel.</div>
+      </div></div>
+
+    <div class="node p"><button class="nbtn" aria-expanded="false" aria-controls="j3">
+      <span class="name">Manage and exit</span><span class="caret">&rsaquo;</span>
+      <span class="meta">2&times; credit stop &middot; DTE exit &middot; marked every 5 min</span></button>
+      <div class="detail" id="j3">
+        <h4>Live right now</h4>
+        <dl class="kv">
+          <dt>pos #4</dt><dd>bear call, mark 6.70 vs 7.20 stop, unrealised &minus;$620</dd>
+          <dt>pos #5</dt><dd>bear call, mark 6.80 vs 7.30 stop, unrealised &minus;$630</dd>
+        </dl>
+        <div class="flag"><b>Both are bear calls into a rally.</b> Combined &minus;$1,250 and within
+          0.50 of their stops. If they fire, it is the first exit this runtime has ever executed
+          &mdash; and Gate 3 requires the stop to have fired twice before performance can be judged.</div>
+      </div></div>
+
+  </div>
+
+  <section class="gates">
+    <h2>Ten gates to live</h2>
+    <p class="l">Sopana's seven, unchanged. Three added because a veto source that fails badly is
+      worse than no veto.</p>
+    <div class="scroll"><table>
+      <thead><tr><th>#</th><th>Gate</th><th>Owner</th><th>Now</th></tr></thead>
+      <tbody>
+        <tr><td class="n">1</td><td>Code stability &mdash; 10 clean days, behavioural reset</td><td class="n">sopana</td><td class="n">0 / 10</td></tr>
+        <tr><td class="n">2</td><td>Sample size &mdash; 20 closed trades, one version</td><td class="n">sopana</td><td class="n">3 / 20</td></tr>
+        <tr><td class="n">3</td><td>Performance &mdash; WR, expectancy, profit factor, stops fired</td><td class="n">sopana</td><td class="n">n too small</td></tr>
+        <tr><td class="n">4</td><td>Order path &mdash; validated round trip</td><td class="n">sopana</td><td class="n">0 orders</td></tr>
+        <tr><td class="n">5</td><td>Signal maturity &mdash; skew vote active</td><td class="n">sopana</td><td class="n">~18 Aug</td></tr>
+        <tr><td class="n">6</td><td>Operational resilience &mdash; Lambda burn-in</td><td class="n">sopana</td><td class="n">from 3 Aug</td></tr>
+        <tr><td class="n">7</td><td>Capital &amp; risk sizing</td><td class="n">sopana</td><td class="n">BP &gt; account</td></tr>
+        <tr><td class="n">8</td><td>Scanner reliability &mdash; no silent death</td><td class="n">integration</td><td class="n">~5.6% abort</td></tr>
+        <tr><td class="n">9</td><td>Veto calibration &mdash; 2 weeks logged</td><td class="n">integration</td><td class="n">not started</td></tr>
+        <tr><td class="n">10</td><td>Veto failure mode &mdash; fail open, staleness bound</td><td class="n">integration</td><td class="n">not designed</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <footer>
+    <span>Live figures 3 Aug 2026</span>
+    <span>Earliest combined go-live: late Sept 2026</span>
+    <span>Source <code>docs/combined-flow.html</code></span>
+    <span>Educational research only &mdash; not financial advice</span>
+  </footer>
+</div>
+
+<script>
+  (function () {
+    document.querySelectorAll('.node').forEach(function (node) {
+      var btn = node.querySelector('.nbtn');
+      btn.addEventListener('click', function () {
+        var open = node.hasAttribute('open');
+        if (open) { node.removeAttribute('open'); } else { node.setAttribute('open', ''); }
+        btn.setAttribute('aria-expanded', String(!open));
+      });
+    });
+  })();
+</script>

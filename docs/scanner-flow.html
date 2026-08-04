@@ -1,0 +1,425 @@
+<title>SPX Scanner — Pipeline Flow</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    /* Graphite neutrals with a faint warm bias toward the amber accent, so the
+       greys read as chosen. Distinct from the other trackers on purpose. */
+    --ground:#EDEDEA; --surface:#FFFFFF; --sunk:#E3E2DE; --hair:#D2D1CB;
+    --firm:#B0AEA5; --ink:#17171A; --ink2:#46464B; --muted:#6E6E75;
+    --accent:#A8650F; --accent-bg:#F6ECDC;
+    --pass:#33705A; --pass-bg:#E0EFE8;
+    --stop:#A0342A; --stop-bg:#F7E4E1;
+    --idle:#6E6E75; --idle-bg:#E7E7E4;
+    --shadow:0 1px 2px rgba(20,20,22,.05),0 8px 22px -14px rgba(20,20,22,.3);
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --ground:#141519; --surface:#1D1E23; --sunk:#17181C; --hair:#2E3037;
+    --firm:#464951; --ink:#ECECEE; --ink2:#B6B7BC; --muted:#84868D;
+    --accent:#E0A44E; --accent-bg:#2B2114;
+    --pass:#68B894; --pass-bg:#16281F; --stop:#E07A6C; --stop-bg:#2C1815;
+    --idle:#84868D; --idle-bg:#222327;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 22px -14px rgba(0,0,0,.8);
+  }}
+  :root[data-theme="dark"]{
+    --ground:#141519; --surface:#1D1E23; --sunk:#17181C; --hair:#2E3037;
+    --firm:#464951; --ink:#ECECEE; --ink2:#B6B7BC; --muted:#84868D;
+    --accent:#E0A44E; --accent-bg:#2B2114;
+    --pass:#68B894; --pass-bg:#16281F; --stop:#E07A6C; --stop-bg:#2C1815;
+    --idle:#84868D; --idle-bg:#222327;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 22px -14px rgba(0,0,0,.8);
+  }
+  :root[data-theme="light"]{
+    --ground:#EDEDEA; --surface:#FFFFFF; --sunk:#E3E2DE; --hair:#D2D1CB;
+    --firm:#B0AEA5; --ink:#17171A; --ink2:#46464B; --muted:#6E6E75;
+    --accent:#A8650F; --accent-bg:#F6ECDC;
+    --pass:#33705A; --pass-bg:#E0EFE8; --stop:#A0342A; --stop-bg:#F7E4E1;
+    --idle:#6E6E75; --idle-bg:#E7E7E4;
+    --shadow:0 1px 2px rgba(20,20,22,.05),0 8px 22px -14px rgba(20,20,22,.3);
+  }
+
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);
+       font-size:16px;line-height:1.55;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:56rem;margin:0 auto;padding:clamp(1.25rem,4vw,3rem) clamp(.85rem,4vw,2rem) 5rem}
+
+  header{margin-bottom:1.5rem}
+  .eyebrow{font-family:var(--mono);font-size:.66rem;letter-spacing:.16em;text-transform:uppercase;
+           color:var(--accent);font-weight:700}
+  h1{margin:.5rem 0 0;font-size:clamp(1.6rem,4vw,2.2rem);font-weight:750;letter-spacing:-.025em;
+     line-height:1.12;text-wrap:balance}
+  .sub{color:var(--ink2);margin:.5rem 0 0;max-width:44rem;font-size:.95rem}
+
+  .hint{display:flex;align-items:center;gap:.5rem;margin:1.25rem 0 1.75rem;padding:.6rem .85rem;
+        background:var(--accent-bg);border-left:3px solid var(--accent);border-radius:0 3px 3px 0;
+        font-size:.85rem;color:var(--ink2)}
+  .hint b{color:var(--ink)}
+
+  /* ---------- funnel summary ---------- */
+  .funnel{display:grid;gap:1px;background:var(--hair);border:1px solid var(--hair);
+          border-radius:4px;overflow:hidden;margin-bottom:2rem;
+          grid-template-columns:repeat(auto-fit,minmax(7rem,1fr))}
+  .fq{background:var(--surface);padding:.7rem .85rem;text-align:center}
+  .fq dt{font-family:var(--mono);font-size:.58rem;letter-spacing:.11em;text-transform:uppercase;
+         color:var(--muted);font-weight:700}
+  .fq dd{margin:.25rem 0 0;font-family:var(--mono);font-size:1.15rem;font-weight:700;
+         font-variant-numeric:tabular-nums}
+  .fq dd.zero{color:var(--stop)}
+
+  /* ---------- flow spine ---------- */
+  .flow{display:flex;flex-direction:column;gap:0}
+  .node{background:var(--surface);border:1px solid var(--hair);border-radius:4px;
+        box-shadow:var(--shadow);border-left:4px solid var(--firm);overflow:hidden}
+  .node.ok{border-left-color:var(--pass)}
+  .node.blocked{border-left-color:var(--stop)}
+  .node.new{border-left-color:var(--accent)}
+
+  .nbtn{width:100%;background:none;border:0;padding:.85rem 1rem;text-align:left;cursor:pointer;
+        display:grid;grid-template-columns:2rem 1fr auto;gap:.2rem .75rem;align-items:center;
+        font:inherit;color:inherit}
+  .nbtn:hover{background:var(--sunk)}
+  .nbtn:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+  .num{font-family:var(--mono);font-size:.78rem;color:var(--muted);font-weight:700;
+       justify-self:center}
+  .name{font-weight:680;font-size:1rem;letter-spacing:-.01em}
+  .chip{font-family:var(--mono);font-size:.58rem;font-weight:700;letter-spacing:.08em;
+        text-transform:uppercase;padding:.15rem .42rem;border-radius:2px;white-space:nowrap}
+  .c-ok{background:var(--pass-bg);color:var(--pass)}
+  .c-stop{background:var(--stop-bg);color:var(--stop)}
+  .c-new{background:var(--accent-bg);color:var(--accent)}
+  .c-idle{background:var(--idle-bg);color:var(--idle)}
+  .io{grid-column:2/-1;font-family:var(--mono);font-size:.76rem;color:var(--muted);
+      font-variant-numeric:tabular-nums;display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
+  .io b{color:var(--ink2);font-weight:600}
+  .caret{grid-row:1/3;grid-column:3;font-family:var(--mono);font-size:.9rem;color:var(--muted);
+         transition:transform .18s ease}
+  .node[open] .caret{transform:rotate(90deg)}
+
+  /* attrition bar */
+  .bar{grid-column:2/-1;height:5px;background:var(--sunk);border-radius:3px;overflow:hidden;
+       margin-top:.35rem;position:relative}
+  .bar i{position:absolute;inset:0 auto 0 0;background:var(--pass);opacity:.75;display:block}
+  .node.blocked .bar i{background:var(--stop)}
+  .node.new .bar i{background:var(--accent)}
+
+  /* detail */
+  .detail{display:none;padding:0 1rem 1rem;border-top:1px solid var(--hair)}
+  .node[open] .detail{display:block}
+  .detail h4{margin:1rem 0 .4rem;font-family:var(--mono);font-size:.62rem;letter-spacing:.13em;
+             text-transform:uppercase;color:var(--muted);font-weight:700}
+  .detail p{margin:0 0 .6rem;font-size:.88rem;color:var(--ink2);max-width:46rem}
+  .detail ul{margin:0 0 .6rem;padding-left:1.1rem;font-size:.87rem;color:var(--ink2)}
+  .detail li{margin-bottom:.22rem}
+  .kv{display:grid;grid-template-columns:auto 1fr;gap:.25rem .8rem;font-size:.84rem;margin:0 0 .7rem}
+  .kv dt{font-family:var(--mono);font-size:.74rem;color:var(--muted);white-space:nowrap}
+  .kv dd{margin:0;color:var(--ink2)}
+  .flag{border-left:3px solid var(--stop);background:var(--stop-bg);padding:.6rem .8rem;
+        border-radius:0 3px 3px 0;font-size:.85rem;color:var(--ink2);margin:.5rem 0}
+  .flag.good{border-left-color:var(--pass);background:var(--pass-bg)}
+  .flag.warn{border-left-color:var(--accent);background:var(--accent-bg)}
+  .flag b{color:var(--ink)}
+  code{font-family:var(--mono);font-size:.85em;background:var(--sunk);padding:.06em .3em;
+       border-radius:2px}
+  .flag code{background:transparent;padding:0}
+
+  /* connector */
+  .link{display:flex;flex-direction:column;align-items:center;gap:.1rem;padding:.35rem 0;
+        font-family:var(--mono);font-size:.66rem;color:var(--muted)}
+  .link i{display:block;width:2px;height:.9rem;background:var(--firm)}
+  .link.dead i{background:var(--stop)}
+  .link.dead span{color:var(--stop);font-weight:700}
+
+  footer{margin-top:2.5rem;padding-top:1rem;border-top:1px solid var(--hair);
+         font-family:var(--mono);font-size:.7rem;color:var(--muted);
+         display:flex;gap:1.1rem;flex-wrap:wrap}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+  @media (max-width:34rem){
+    .nbtn{grid-template-columns:1.6rem 1fr auto}
+    .name{font-size:.94rem}
+  }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">SPX Scanner &middot; pipeline</div>
+    <h1>What happens to a headline between arriving and not being traded</h1>
+    <p class="sub">
+      Seven stages, live numbers from 3 August. Every stage shows what goes in and what comes out.
+      The pipeline is a funnel that currently ends in zero &mdash; the stage where it stops is
+      marked in red.
+    </p>
+  </header>
+
+  <div class="hint"><b>Click any stage</b> to open it. Numbers are real, measured, not illustrative.</div>
+
+  <dl class="funnel">
+    <div class="fq"><dt>Items held</dt><dd>8,277</dd></div>
+    <div class="fq"><dt>Scored/day</dt><dd>~700</dd></div>
+    <div class="fq"><dt>Stories sent</dt><dd>40</dd></div>
+    <div class="fq"><dt>Predictions</dt><dd>1 / cycle</dd></div>
+    <div class="fq"><dt>Candidates</dt><dd class="zero">0</dd></div>
+    <div class="fq"><dt>Trades</dt><dd class="zero">0 ever</dd></div>
+  </dl>
+
+  <div class="flow">
+
+    <!-- 1 -->
+    <div class="node ok" id="n1">
+      <button class="nbtn" aria-expanded="false" aria-controls="d1">
+        <span class="num">01</span>
+        <span class="name">Collect</span>
+        <span class="chip c-ok">healthy</span>
+        <span class="caret">&rsaquo;</span>
+        <span class="io"><b>in</b> 6 collectors <span>&rarr;</span> <b>out</b> ~65 new items/cycle
+          <span>&middot;</span> ~40% dropped by the substance filter</span>
+        <span class="bar"><i style="width:62%"></i></span>
+      </button>
+      <div class="detail" id="d1">
+        <h4>Six sources, very unequal</h4>
+        <dl class="kv">
+          <dt>social</dt><dd>StockTwits + Reddit &mdash; <b>67% of everything scored</b></dd>
+          <dt>macro</dt><dd>Fed, ECB, BBC World, Al Jazeera, Guardian, NPR, OilPrice</dd>
+          <dt>youtube</dt><dd>US-restricted search, transcripts</dd>
+          <dt>news</dt><dd>6 publisher-direct RSS feeds, SPX-keyword filtered</dd>
+          <dt>wire</dt><dd>15 curated X accounts &mdash; NickTimiraos, LiveSquawk, Reuters</dd>
+          <dt>econ</dt><dd>FRED calendar &mdash; scheduled releases, not news</dd>
+        </dl>
+        <h4>Filters applied here</h4>
+        <ul>
+          <li><code>content_hash</code> &mdash; SHA-256 over source+id+url+title, so the same story
+            from one feed twice is stored once</li>
+          <li><code>has_substance</code> &mdash; drops anything under 8 real words after stripping
+            cashtags, @mentions and URLs. Kills <code>$SPY $QQQ</code> spam.</li>
+          <li>Full text pulled for news and macro links via trafilatura, 8 threads in parallel</li>
+        </ul>
+        <div class="flag"><b>Where the aborts happen.</b> The native heap crash
+          (<code>double free or corruption</code>, ~1 invocation in 18) lands in this stage, while
+          eight threads do concurrent HTTPS. Suspect is <code>psycopg2-binary</code>'s bundled
+          OpenSSL beside Python's own.</div>
+        <div class="flag warn"><b>Scheduled to shrink.</b> 199 hand-labelled items found social and
+          YouTube produce <b>one</b> actionable item in 107. Both are cut on 13 Aug &mdash; 79% less
+          scoring volume, and precision rises from 44% to 57%.</div>
+      </div>
+    </div>
+
+    <div class="link"><i></i><span>up to 80 unscored items per cycle</span><i></i></div>
+
+    <!-- 2 -->
+    <div class="node ok" id="n2">
+      <button class="nbtn" aria-expanded="false" aria-controls="d2">
+        <span class="num">02</span>
+        <span class="name">Score each item</span>
+        <span class="chip c-ok">running</span>
+        <span class="caret">&rsaquo;</span>
+        <span class="io"><b>model</b> claude-haiku-4-5 <span>&middot;</span> ~700 items/day
+          <span>&middot;</span> ~$1.13/day</span>
+        <span class="bar"><i style="width:88%"></i></span>
+      </button>
+      <div class="detail" id="d2">
+        <h4>One call per item, chunked at 6,000 chars</h4>
+        <p>Returns strict JSON: <code>direction</code> (&minus;1..+1), <code>magnitude</code>,
+          <code>confidence</code>, <code>macro_impact</code>, <code>catalysts</code>.
+          Long articles split into up to 3 chunks, combined confidence-weighted.</p>
+        <h4>Graded against 199 hand labels</h4>
+        <dl class="kv">
+          <dt>relevance precision</dt><dd>44% &mdash; flag-everything scores 41%</dd>
+          <dt>direction accuracy</dt><dd>25% &mdash; <b>always saying &ldquo;no view&rdquo; scores 86%</b></dd>
+          <dt>risk recall</dt><dd>45% &mdash; misses 11 of 20 shock items</dd>
+          <dt>calibration</dt><dd>44% &rarr; 5% &rarr; 16% &rarr; 83% &mdash; not monotonic</dd>
+        </dl>
+        <div class="flag"><b>The schema has no risk field.</b> Risk is inferred from
+          <code>abs(direction) &gt; 0.3 or magnitude &gt; 0.5</code>, so every prompt that improves
+          direction trades away risk detection. The metric weighted 8&times; is measured through a
+          proxy two other objectives fight over.</div>
+        <div class="flag good"><b>Model question settled.</b> Sonnet 5 was graded on the same labels;
+          its weighted error landed inside the 1.3% run-to-run noise floor. A prompt change
+          (<code>theta</code>, 195 vs 233) beat a 4&times;-cost model upgrade.</div>
+      </div>
+    </div>
+
+    <div class="link"><i></i><span>7-day lookback of scored items</span><i></i></div>
+
+    <!-- 3 -->
+    <div class="node ok" id="n3">
+      <button class="nbtn" aria-expanded="false" aria-controls="d3">
+        <span class="num">03</span>
+        <span class="name">Cluster into stories</span>
+        <span class="chip c-ok">healthy</span>
+        <span class="caret">&rsaquo;</span>
+        <span class="io"><b>in</b> ~2,268 stories <span>&rarr;</span> <b>out</b> top 40
+          <span>&middot;</span> ~5,500 untitled &rarr; one chatter number</span>
+        <span class="bar"><i style="width:2%"></i></span>
+      </button>
+      <div class="detail" id="d3">
+        <h4>Three things decide which 40 get sent</h4>
+        <ul>
+          <li><b>Source weight</b> &mdash; macro 1.2, news/wire 1.0, social 0.6, plus a 1.3 ranking
+            nudge for macro</li>
+          <li><b>Recency decay</b> &mdash; weight halves every 72h, per item. Before this shipped, a
+            98-hour-old &ldquo;U.S. and Iran halt attacks&rdquo; outranked a 23-hour-old
+            &ldquo;attacks resume&rdquo; on the same conflict.</li>
+          <li><b>Diversity cap</b> &mdash; no source type may exceed 60% of the prompt</li>
+        </ul>
+        <h4>What the cap actually does</h4>
+        <p>Macro sits at <b>exactly 24 of 40 in every cycle since it shipped</b> &mdash; the cap is
+          saturated, not slack. Without it macro took 39 of 40.</p>
+        <div class="flag warn"><b>But macro is the weakest source.</b> Labels put macro at 24%
+          relevant against news at 79%. The weights are inverted relative to measured value: the best
+          source has the lowest weight. BBC World / Al Jazeera / NPR World are general news, not
+          macro &mdash; every <i>relevant</i> macro item had a price channel.</div>
+        <p>Items with no title (retail chatter) never become stories. They collapse into one
+          aggregate tone number, so 5,500 posts contribute a single figure.</p>
+      </div>
+    </div>
+
+    <div class="link"><i></i><span>40 stories + market context + event calendar</span><i></i></div>
+
+    <!-- 4 -->
+    <div class="node new" id="n4">
+      <button class="nbtn" aria-expanded="false" aria-controls="d4">
+        <span class="num">04</span>
+        <span class="name">Measure the regime</span>
+        <span class="chip c-new">new 2 Aug</span>
+        <span class="caret">&rsaquo;</span>
+        <span class="io"><b>today</b> IV/RV 0.93 <span>&middot;</span> VIX/VIX3M 0.850
+          <span>&middot;</span> trend +0.35</span>
+        <span class="bar"><i style="width:70%"></i></span>
+      </button>
+      <div class="detail" id="d4">
+        <h4>The questions a theta strategy actually turns on</h4>
+        <dl class="kv">
+          <dt>IV / RV</dt><dd>ATM implied against 20-day realised. Above 1 the market charges more
+            for a move than the index has delivered. <b>Today 0.93 &mdash; below 1</b>.</dd>
+          <dt>VIX / VIX3M</dt><dd>Above 1 is backwardation, historically a poor regime for selling
+            premium. Today 0.850 &mdash; healthy contango.</dd>
+          <dt>IV rank</dt><dd>Where today sits in its own trailing range. Needs ~20 daily readings;
+            first reading banked 3 Aug.</dd>
+          <dt>trend</dt><dd>5-day move, saturating at 3%. Used to pick a <i>side</i>, never to
+            predict. Currently disabled.</dd>
+        </dl>
+        <div class="flag warn"><b>Day-one reading is already useful.</b> IV/RV at 0.93 means options
+          are pricing <i>less</i> movement than SPX has actually delivered &mdash; selling insurance
+          below the recent claim rate. That is the seller's edge running backwards, and there was no
+          way to see it before 2 Aug.</div>
+      </div>
+    </div>
+
+    <div class="link"><i></i><span>one Opus call per cycle</span><i></i></div>
+
+    <!-- 5 -->
+    <div class="node ok" id="n5">
+      <button class="nbtn" aria-expanded="false" aria-controls="d5">
+        <span class="num">05</span>
+        <span class="name">Synthesise a view</span>
+        <span class="chip c-ok">running</span>
+        <span class="caret">&rsaquo;</span>
+        <span class="io"><b>model</b> claude-opus-5 <span>&middot;</span> 9 calls/day
+          <span>&middot;</span> ~$0.39/day</span>
+        <span class="bar"><i style="width:80%"></i></span>
+      </button>
+      <div class="detail" id="d5">
+        <h4>Produces four numbers and a rationale</h4>
+        <dl class="kv">
+          <dt>direction</dt><dd>&minus;0.10 to &minus;0.15, every cycle, for two weeks</dd>
+          <dt>confidence</dt><dd>0.32 &ndash; 0.42</dd>
+          <dt>downside_risk</dt><dd>36% &ndash; 48%</dd>
+          <dt>upside_risk</dt><dd>20% &ndash; 32%</dd>
+        </dl>
+        <p>Only this path produces the per-side tail estimates the trade gates depend on. The
+          weighted-mean aggregator runs alongside it and supplies the sub-scores in each alert.</p>
+        <div class="flag good"><b>The tails are the useful output.</b> 199 labels found the news
+          corpus carries <b>hazard</b>, not direction &mdash; 188 of 199 items had no directional
+          sign, but 20 flagged shock risk.</div>
+      </div>
+    </div>
+
+    <div class="link dead"><i></i><span>&#9660; 100% of cycles stop here &#9660;</span><i></i></div>
+
+    <!-- 6 -->
+    <div class="node blocked" id="n6">
+      <button class="nbtn" aria-expanded="false" aria-controls="d6">
+        <span class="num">06</span>
+        <span class="name">Gate the trade</span>
+        <span class="chip c-stop">blocking</span>
+        <span class="caret">&rsaquo;</span>
+        <span class="io"><b>in</b> 1 prediction <span>&rarr;</span> <b>out</b> 0 candidates,
+          every cycle, always</span>
+        <span class="bar"><i style="width:0%"></i></span>
+      </button>
+      <div class="detail" id="d6">
+        <h4>Four gates, in this order</h4>
+        <dl class="kv">
+          <dt>1. confidence</dt><dd><code>&lt; 0.65 &rarr; return []</code> &mdash;
+            <b>exits here every cycle</b>. Confidence has never exceeded 0.42.</dd>
+          <dt>2. tails</dt><dd>never reached. Would pass: <b>18 of 18 cycles</b> clear the 55% cap.</dd>
+          <dt>3. verticals</dt><dd>never reached</dd>
+          <dt>4. iron condor</dt><dd>never reached</dd>
+        </dl>
+        <div class="flag"><b>The contradiction.</b> The iron condor is the instrument for
+          &ldquo;no directional view, both tails quiet&rdquo;. The code builds it. The confidence
+          gate &mdash; which runs first &mdash; rejects the trade for having no directional view.
+          The scanner declines condors on precisely the grounds that make a condor correct.</div>
+        <div class="flag warn"><b>And the question is unanswerable.</b> 188 of 199 labelled items
+          carry no directional sign. The gate asks how sure the model is of a direction the inputs
+          do not contain. No model fixes that &mdash; Sonnet was tried.</div>
+        <p>Fix: move the directional check so it filters verticals only, leaving condors to the tail
+          gate, the edge threshold and the new premium-richness terms.</p>
+      </div>
+    </div>
+
+    <div class="link dead"><i></i><span>nothing has ever reached here</span><i></i></div>
+
+    <!-- 7 -->
+    <div class="node blocked" id="n7">
+      <button class="nbtn" aria-expanded="false" aria-controls="d7">
+        <span class="num">07</span>
+        <span class="name">Paper trade</span>
+        <span class="chip c-stop">0 signal trades</span>
+        <span class="caret">&rsaquo;</span>
+        <span class="io"><b>signal arm</b> 0 ever <span>&middot;</span> <b>baseline arm</b> 1/day,
+          3 open, 0 closed</span>
+        <span class="bar"><i style="width:8%"></i></span>
+      </button>
+      <div class="detail" id="d7">
+        <h4>Two arms, only one of which trades</h4>
+        <dl class="kv">
+          <dt>signal</dt><dd>Trades only when all gates clear. Has never opened a position.</dd>
+          <dt>baseline</dt><dd>Sells a ~0.15-delta put spread daily, ignoring the model entirely.
+            The control the model is measured against.</dd>
+        </dl>
+        <h4>Exits</h4>
+        <p>Close at 2&times; the credit received, or after 4 days, whichever comes first. Marked
+          against the live chain every cycle.</p>
+        <div class="flag warn"><b>The arms are not comparable.</b> Baseline sells 5-wide at 9%
+          credit-to-width with no pricing floor; the signal arm would sell 25-wide requiring
+          &ge;20%. A P&amp;L difference between them would not isolate the sentiment gate.</div>
+        <div class="flag"><b>No realised P&amp;L exists.</b> Three baseline positions open,
+          +$0.55 unrealised, zero closed. Every number in this pipeline is an input to a decision,
+          not a result.</div>
+      </div>
+    </div>
+
+  </div>
+
+  <footer>
+    <span>Live figures 3 Aug 2026</span>
+    <span>Build <code>r46-g19128a5</code></span>
+    <span>Source <code>docs/scanner-flow.html</code></span>
+    <span>Educational research only &mdash; not financial advice</span>
+  </footer>
+</div>
+
+<script>
+  (function () {
+    var nodes = document.querySelectorAll('.node');
+    nodes.forEach(function (node) {
+      var btn = node.querySelector('.nbtn');
+      btn.addEventListener('click', function () {
+        var open = node.hasAttribute('open');
+        if (open) { node.removeAttribute('open'); } else { node.setAttribute('open', ''); }
+        btn.setAttribute('aria-expanded', String(!open));
+      });
+    });
+  })();
+</script>

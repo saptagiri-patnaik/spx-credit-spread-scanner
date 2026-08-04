@@ -235,11 +235,35 @@ class SynthesisAggregator:
                 f"Retail/social chatter: {chatter['count']} posts, aggregate tone "
                 f"{chatter['direction']:+.2f}. Treat as a sentiment backdrop, not as events."
             )]
-        trend = (market_context or {}).get("trend_score")
-        vix = (market_context or {}).get("vix")
+        ctx = market_context or {}
+        trend = ctx.get("trend_score")
+        vix = ctx.get("vix")
         lines += ["", "Market context:",
                   f"  5-day trend score: {trend if trend is not None else 'unavailable'}",
                   f"  VIX: {vix if vix is not None else 'unavailable'}"]
+        # Priced-risk context. The stories say what might happen; these say what the
+        # option market is already charging for it, which is the difference between
+        # a real edge and a headline the tape has long since absorbed.
+        if ctx.get("iv_rv_ratio") is not None:
+            lines.append(
+                f"  Implied vs realised vol: {ctx['iv_rv_ratio']:.2f}x "
+                f"(ATM IV {ctx.get('atm_iv', 0) * 100:.1f}%, 20d realised "
+                f"{ctx.get('realized_vol', 0) * 100:.1f}%) - above 1.0 means options "
+                "are pricing a bigger move than the index has lately delivered."
+            )
+        if ctx.get("vix_term_structure") is not None:
+            shape = (
+                "BACKWARDATION - near-term fear bid above the 3-month, historically "
+                "a poor regime for selling premium"
+                if ctx["vix_term_structure"] > 1.0
+                else "contango, the normal regime"
+            )
+            lines.append(f"  VIX / VIX3M: {ctx['vix_term_structure']:.3f} - {shape}")
+        if ctx.get("iv_rank") is not None:
+            lines.append(
+                f"  IV rank: {ctx['iv_rank']:.0%} of its own trailing range - "
+                "how rich today's premium is against this index's recent history."
+            )
         if events:
             lines += ["", "High-impact economic events inside the trade window:"]
             lines += [f"  - {e}" for e in events[:8]]

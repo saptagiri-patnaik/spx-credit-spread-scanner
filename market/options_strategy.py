@@ -144,7 +144,23 @@ class OptionsStrategy:
             return (directional and bullish, directional and not bullish)
 
         cap = self._cfg("max_tail_risk", 0.55)
-        return (float(downside) <= cap, float(upside) <= cap)
+        put_ok, call_ok = float(downside) <= cap, float(upside) <= cap
+
+        # Trend is used here to pick a SIDE, never to predict a move. Selling puts
+        # into a falling index is the standard way to be run over: the short strike
+        # keeps getting closer while the premium that looked generous at entry is
+        # repriced against you. Symmetrically for calls in a rally. This blocks the
+        # side that is already moving against a seller and leaves the other open,
+        # so a trending tape narrows the trade rather than cancelling it.
+        block = self._cfg("trend_side_block", 0.0)
+        if block > 0:
+            trend = context.get("trend_score")
+            if trend is not None:
+                if float(trend) <= -block:
+                    put_ok = False
+                elif float(trend) >= block:
+                    call_ok = False
+        return (put_ok, call_ok)
 
     def _candidates(self, chain: dict | None, prediction: dict) -> list[dict]:
         if not chain:

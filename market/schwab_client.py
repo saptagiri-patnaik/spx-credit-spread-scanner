@@ -2,11 +2,21 @@
 from __future__ import annotations
 
 import datetime as dt
+import math
 
 import requests
 from sqlalchemy import create_engine, text
 
 MARKETDATA_BASE = "https://api.schwabapi.com/marketdata/v1"
+
+# Trading days in a year: converts a daily return stdev to the annualised figure
+# that option implied vol is quoted in, so the two are comparable.
+TRADING_DAYS = 252
+
+# Schwab returns sentinel values (-999.0, 0.0) for greeks and vol on illiquid or
+# stale contracts. Anything outside this band is a placeholder, not a quote.
+_IV_MIN_PCT = 0.5
+_IV_MAX_PCT = 300.0
 
 # Map friendly underlyings to Schwab index/ETF symbols.
 SYMBOL_MAP = {"XSP": "$XSP", "SPX": "$SPX", "SPY": "SPY"}
@@ -122,11 +132,16 @@ class SchwabClient:
         except (StopIteration, AttributeError):
             return None
 
-    def _trend_score(self, symbol: str) -> float:
-        """~5-day percent change mapped to [-1, 1] (a ~3% move saturates)."""
+    def daily_closes(self, symbol: str, months: int = 3) -> list[float]:
+        """Daily closes, oldest first. One fetch feeds both trend and realised vol.
+
+        `months` is 3 rather than 1 because a 20-day realised-vol window needs 21
+        closes and a single month of calendar days yields only ~21 trading days --
+        no headroom for holidays, and none at all if the window is widened.
+        """
         headers = self._headers()
         if not headers:
-            return 0.0
+            return []
         try:
             resp = requests.get(
                 f"{MARKETDATA_BASE}/pricehistory",
@@ -134,7 +149,7 @@ class SchwabClient:
                 params={
                     "symbol": symbol,
                     "periodType": "month",
-                    "period": "1",
+                    "period": str(months),
                     "frequencyType": "daily",
                     "frequency": "1",
                 },
@@ -142,22 +157,109 @@ class SchwabClient:
             )
             resp.raise_for_status()
             candles = resp.json().get("candles", [])
-            if len(candles) < 6:
-                return 0.0
-            closes = [c["close"] for c in candles]
-            pct = (closes[-1] - closes[-6]) / closes[-6] * 100.0
-            return max(-1.0, min(1.0, pct / 3.0))
+            return [float(c["close"]) for c in candles if c.get("close")]
         except Exception as exc:  # noqa: BLE001
-            self.log.warning("Schwab trend fail (%s): %s", symbol, exc)
-            return 0.0
+            self.log.warning("Schwab price history fail (%s): %s", symbol, exc)
+            return []
 
-    def market_context(self, underlying: str) -> dict:
+    @staticmethod
+    def trend_score(closes: list[float]) -> float:
+        """~5-day percent change mapped to [-1, 1] (a ~3% move saturates)."""
+        if len(closes) < 6 or not closes[-6]:
+            return 0.0
+        pct = (closes[-1] - closes[-6]) / closes[-6] * 100.0
+        return max(-1.0, min(1.0, pct / 3.0))
+
+    @staticmethod
+    def realized_vol(closes: list[float], window: int = 20) -> float | None:
+        """Annualised stdev of daily log returns, as a decimal (0.14 = 14%).
+
+        Quoted the same way implied vol is, so the two divide into a ratio that
+        means something: above 1 the market is charging more for a move than the
+        index has recently delivered, which is the premium seller's entire edge.
+        """
+        if window < 2 or len(closes) < window + 1:
+            return None
+        returns = []
+        for i in range(len(closes) - window, len(closes)):
+            prev, cur = closes[i - 1], closes[i]
+            if prev <= 0 or cur <= 0:
+                return None
+            returns.append(math.log(cur / prev))
+        mean = sum(returns) / len(returns)
+        variance = sum((r - mean) ** 2 for r in returns) / (len(returns) - 1)
+        return math.sqrt(variance) * math.sqrt(TRADING_DAYS)
+
+    @staticmethod
+    def atm_iv(chain: dict | None) -> float | None:
+        """Implied vol at the money, as a decimal, averaged over calls and puts.
+
+        Averaging every contract that sits at the minimum distance from spot
+        folds together the call and the put at that strike -- and, where the
+        chain spans several expiries in the DTE band, across those too. That is
+        deliberate smoothing: one strike's quote on one expiry is noisy, and this
+        number is only ever read as a regime level.
+        """
+        if not chain:
+            return None
+        try:
+            price = float(chain.get("underlyingPrice") or 0)
+        except (TypeError, ValueError):
+            return None
+        if price <= 0:
+            return None
+
+        best_distance: float | None = None
+        vols: list[float] = []
+        for map_key in ("putExpDateMap", "callExpDateMap"):
+            for strikes in (chain.get(map_key) or {}).values():
+                for options in strikes.values():
+                    for opt in options:
+                        try:
+                            strike = float(opt.get("strikePrice"))
+                            vol = float(opt.get("volatility"))
+                        except (TypeError, ValueError):
+                            continue
+                        if not _IV_MIN_PCT <= vol <= _IV_MAX_PCT:
+                            continue
+                        distance = abs(strike - price)
+                        if best_distance is None or distance < best_distance:
+                            best_distance, vols = distance, [vol]
+                        elif distance == best_distance:
+                            vols.append(vol)
+        if not vols:
+            return None
+        return sum(vols) / len(vols) / 100.0  # Schwab quotes vol in percent
+
+    def market_context(self, underlying: str, chain: dict | None = None) -> dict:
+        """Price/vol regime for the synthesis prompt and the side gates.
+
+        `chain` is passed in rather than fetched: run_once already pulls one for
+        the scan, and a second call would cost a request for data in hand.
+        """
         ctx: dict = {"trend_score": 0.0}
         symbol = self.symbol(underlying)
         try:
-            ctx["trend_score"] = self._trend_score(symbol)
+            closes = self.daily_closes(symbol)
+            ctx["trend_score"] = self.trend_score(closes)
             ctx["price"] = self._last_price(symbol)
             ctx["vix"] = self._last_price("$VIX")
+            ctx["vix3m"] = self._last_price("$VIX3M")
+
+            # Above 1.0 the near month is bid over the three month: backwardation,
+            # the regime where premium selling has historically been punished.
+            if ctx["vix"] and ctx["vix3m"]:
+                ctx["vix_term_structure"] = round(ctx["vix"] / ctx["vix3m"], 3)
+
+            window = int(getattr(self.s, "realized_vol_window", 20))
+            realized = self.realized_vol(closes, window)
+            implied = self.atm_iv(chain)
+            if realized is not None:
+                ctx["realized_vol"] = round(realized, 4)
+            if implied is not None:
+                ctx["atm_iv"] = round(implied, 4)
+            if realized and implied:
+                ctx["iv_rv_ratio"] = round(implied / realized, 3)
         except Exception as exc:  # noqa: BLE001
             self.log.warning("market_context failed: %s", exc)
         return ctx
