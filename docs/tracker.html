@@ -178,7 +178,7 @@
     <h1>Open investigations, running experiments, and what to watch next</h1>
     <p class="standfirst">
       Everything currently unresolved in the pipeline, each with the condition that would make you
-      act on it. Regenerated 3 August 2026 from the live database, CloudWatch and the deployed
+      act on it. Regenerated 3 August 2026, evening, from the live database, CloudWatch and the deployed
       configuration. Since the 30 July edition: the eval set is labelled and the scoring-model
       question is closed, a native heap abort was found in the collectors, the price/vol regime is
       now measured, and the confidence gate was found to make the iron condor unreachable.
@@ -186,7 +186,7 @@
   </header>
 
   <dl class="strip">
-    <div class="cell"><dt>Deployed</dt><dd class="warn">r46 &middot; 19128a5</dd></div>
+    <div class="cell"><dt>Deployed</dt><dd class="ok">r50 &middot; f13dd1c &middot; zip</dd></div>
     <div class="cell"><dt>AWS identity</dt><dd class="ok">spx-deployer</dd></div>
     <div class="cell"><dt>Root keys</dt><dd class="ok">none</dd></div>
     <div class="cell"><dt>Alarms</dt><dd class="ok">both OK</dd></div>
@@ -379,13 +379,13 @@
           </table>
         </div>
         <p>
-          Fixed the same day <em>in source, not in production</em>: a module-level lock around <code>trafilatura.extract()</code> in
+          Fixed the same day: a module-level lock around <code>trafilatura.extract()</code> in
           <code>utils/extract.py</code>. The HTTP fetch above it stays parallel — a 15s timeout per
           article against tens of milliseconds of parsing — so throughput is essentially unchanged.
           Five tests pin it: extraction never overlaps, fetching still does, a failing document
           releases the lock.
         </p>
-        <div class="trigger"><b>Blocked on</b><span>the deploy path &mdash; see below. The fix is committed as <code>19ce24f</code> but production still runs <code>r46</code>, so tonight's cycles carry the same risk. <b>Closes when</b> the scanner completes 10 consecutive trading days with no abort. That is Gate 8 on the combined go-live checklist, and it blocks the hazard veto — a source that dies silently and leaves a stale flag behind is worse than no veto at all.</span></div>
+        <div class="trigger"><b>Closes when</b><span>the scanner completes 10 consecutive trading days with no abort. <b>The clock starts 4 Aug</b> &mdash; the lock reached production on 3 Aug at 18:55 PT, when the schedule moved to <code>spx-scanner-zip</code>. That is Gate 8 on the combined go-live checklist, and it blocks the hazard veto — a source that dies silently and leaves a stale flag behind is worse than no veto at all.</span></div>
       </article>
 
       <article class="item sev-new">
@@ -646,11 +646,11 @@
 
     <div class="items">
 
-      <article class="item sev-risk">
+      <article class="item sev-new">
         <div class="item-top">
-          <h3>The deploy path cannot reliably ship a build</h3>
-          <span class="pill p-risk">blocking</span>
-          <span class="when">found 3 Aug</span>
+          <h3>The container deploy path cannot ship from this machine</h3>
+          <span class="pill p-new">routed around 3 Aug</span>
+          <span class="when">container path still dead</span>
         </div>
         <p>
           Twenty-one push attempts on 3 Aug &mdash; two <code>deploy.ps1</code> runs and two direct
@@ -666,7 +666,42 @@
           <code>public.ecr.aws/lambda/python:3.12</code>. That is AWS's layer; it cannot be split
           from this side.
         </p>
-        <div class="trigger"><b>Act</b><span>the morning deploy of 2 Aug succeeded after four retries, so the proxy is not always fatal &mdash; a later retry may simply work. The durable fix is a proxy bypass for <code>*.amazonaws.com</code> in Docker Desktop &rarr; Settings &rarr; Resources &rarr; Proxies, which routes ECR traffic around the component that is truncating it. Until then, a code fix can be written, tested and committed but not shipped, which puts every dated step on the roadmap at risk.</span></div>
+        <p>
+          <b>Resolved by removing the upload, not by fixing it.</b> A ZIP package carries no base
+          layer &mdash; AWS supplies the runtime &mdash; so the payload is <b>32.6&nbsp;MB</b> against
+          433&nbsp;MB, under the 50&nbsp;MB direct-upload limit and needing no S3 hop. The Dockerfile
+          justified the image because dependencies "exceed Lambda's 250&nbsp;MB unzipped limit";
+          measured, the payload is 95.6&nbsp;MB. That premise was wrong.
+        </p>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Measurement</th><th>Size</th><th>What it actually was</th></tr></thead>
+            <tbody>
+              <tr><td class="num">base image rootfs</td><td class="num was">433 MB</td><td>Amazon Linux, CPython, the Runtime Interface Client, boto3/botocore, pip &mdash; <b>every byte supplied free by the managed runtime</b></td></tr>
+              <tr><td class="num">whole base filesystem</td><td class="num">537 MB</td><td>before a line of this project exists</td></tr>
+              <tr><td class="num"><code>site-packages</code>, our image</td><td class="num was">185 MB</td><td>a <b>mix</b> &mdash; 49 MB of AWS's own packages plus ~136 MB of ours, because pip installed into the same directory</td></tr>
+              <tr><td class="num">our dependencies alone</td><td class="num now">95.6 MB</td><td>after trimming pip, setuptools, wheel and <code>__pycache__</code></td></tr>
+              <tr><td class="num">shipped</td><td class="num now">32.6 MB</td><td>zipped; Python compresses about 3:1</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          <b>The lesson, which is the part worth keeping.</b> The 250&nbsp;MB claim was never tested.
+          The only figure that ever looked large was the 185&nbsp;MB <code>site-packages</code>
+          reading &mdash; and that was taken <em>inside the container</em>, so it counted AWS's 49 MB
+          as if it were ours. A measurement taken inside the thing being justified will tend to
+          justify it. The container was adopted to escape a limit it was never near, and in exchange
+          it carried a 433&nbsp;MB upload this network cannot deliver &mdash; which cost a day and
+          held three commits out of production.
+        </p>
+        <p>
+          There was no proxy to bypass, contrary to the first diagnosis:
+          <code>HTTP_PROXY</code> unset, no <code>proxies</code> in <code>~/.docker/config.json</code>,
+          no proxy keys in Docker Desktop's settings, <code>3128</code> absent from all of them.
+          <code>192.168.65.1:3128</code> is Docker's own transparent gateway, exactly as the
+          Dockerfile comment said.
+        </p>
+        <div class="trigger"><b>Standing</b><span>the container path is still dead and is no longer used. <code>deploy/build-zip.ps1</code> verifies rather than trusts: it aborts if any <code>.pyd</code> survives, if no <code>.so</code> exists, or if psycopg2/lxml are missing &mdash; a Windows wheel would otherwise import-fail on the first cycle rather than at build time. Watch for the ECR repository accruing images nothing pulls.</span></div>
       </article>
 
       <article class="item sev-risk">
@@ -732,6 +767,9 @@
       <span class="sec-note">28–30 July &middot; outlined items closed today &middot; one reopened 31 Jul: &ldquo;zero warnings or errors across a full day&rdquo; was falsified by two native aborts, now tracked above</span>
     </div>
     <div class="settled-grid">
+      <div class="settled-item today">Deploy moved to a 32.6 MB ZIP; the 433 MB base layer was never needed</div>
+      <div class="settled-item today">250 MB claim that justified the container was untested &mdash; real payload 95.6 MB</div>
+      <div class="settled-item today">Scheduler role could invoke only the old function &mdash; caught before repointing</div>
       <div class="settled-item today">Off-window X gate confirmed firing — 19:41 PT</div>
       <div class="settled-item today">Story weight now decays; 72h half-life</div>
       <div class="settled-item today">48h &ldquo;half-life&rdquo; was a time constant — renamed, curve unchanged</div>
@@ -768,7 +806,7 @@
 
   <footer>
     <span>Regenerated 3 August 2026</span>
-    <span>Deployed <code>r46-g19128a5</code> &middot; HEAD <code>19ce24f</code> undeployed</span>
+    <span>Deployed <code>r50-gf13dd1c</code> on <code>spx-scanner-zip</code> &middot; master <code>f3d5711</code></span>
     <span>Source: <code>docs/tracker.html</code></span>
     <span>Data: Lightsail Postgres, CloudWatch, deployed Lambda configuration</span>
   </footer>
