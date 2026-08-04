@@ -162,30 +162,75 @@ class OptionsStrategy:
                     call_ok = False
         return (put_ok, call_ok)
 
+    def _premium_edge(self, prediction: dict) -> float:
+        """Score how well the premium pays, without vetoing either answer.
+
+        IV/RV above 1 means the market is charging more for a move than the index
+        has recently delivered -- the premium seller's entire edge. Below 1 it is
+        charging less, which is a reason to demand a better structure, not a
+        reason to refuse to trade.
+
+        Deliberately an edge term and not a threshold. `confidence_gate` was one
+        unvalidated number placed in front of everything, and it blocked every
+        cycle for a fortnight while nobody could tell whether the bar or the
+        signal was wrong. There are only days of IV/RV history; a hard floor here
+        would repeat that mistake with a fresher number. `min_edge_score` stays
+        the gate that decides, because it is already tuned and already understood.
+        """
+        context = prediction.get("market_context") or {}
+        ratio = context.get("iv_rv_ratio")
+        if ratio is None:
+            return 0.0
+        try:
+            ratio = float(ratio)
+        except (TypeError, ValueError):
+            return 0.0
+        if ratio <= 0:
+            return 0.0
+        # Clamp before weighting: one bad quote should tilt the ranking, not own it.
+        ratio = max(0.5, min(1.5, ratio))
+        return self._cfg("premium_weight", 0.15) * (ratio - 1.0)
+
     def _candidates(self, chain: dict | None, prediction: dict) -> list[dict]:
         if not chain:
             return []
         price = self._underlying_price(chain)
         if not price:
             return []
-        if prediction["confidence"] < self.s.confidence_gate:
-            return []
         put_ok, call_ok = self._sides_allowed(prediction)
         if not (put_ok or call_ok):
             return []
 
-        results: list[dict] = []
+        premium = self._premium_edge(prediction)
+
+        # Verticals are always CONSTRUCTED, because a condor is assembled from
+        # one of each. Whether they are OFFERED is a separate question, below.
+        verticals: list[dict] = []
         if put_ok:
-            results += self._verticals(chain, prediction, price, want_puts=True)
+            verticals += self._verticals(chain, prediction, price, premium, want_puts=True)
         if call_ok:
-            results += self._verticals(chain, prediction, price, want_puts=False)
+            verticals += self._verticals(chain, prediction, price, premium, want_puts=False)
+
+        results: list[dict] = []
+
+        # The directional gate governs the DIRECTIONAL trade, and only that. A
+        # vertical is short one tail and long a view, so "not sure which way"
+        # disqualifies it. A condor is short both tails and holds no view at all,
+        # so the same uncertainty is its precondition rather than its objection --
+        # which is why gating condors on directional confidence rejected them on
+        # exactly the grounds that make them correct. What decides a condor now is
+        # the per-tail check in _sides_allowed(), min_edge_score, and the pricing
+        # filters, none of which ask which way the market is going.
+        if float(prediction["confidence"]) >= self.s.confidence_gate:
+            results += verticals
         if put_ok and call_ok and self._cfg("allow_iron_condor", True):
-            results += self._condors(results)
+            results += self._condors(verticals, premium)
+
         results.sort(key=lambda c: c["edge"], reverse=True)
         return results
 
     def _verticals(
-        self, chain: dict, prediction: dict, price: float, want_puts: bool
+        self, chain: dict, prediction: dict, price: float, premium: float, want_puts: bool
     ) -> list[dict]:
         exp_map = chain.get("putExpDateMap" if want_puts else "callExpDateMap", {})
         if not exp_map:
@@ -267,7 +312,12 @@ class OptionsStrategy:
                         continue
                     ev_ratio = pop * ror - (1.0 - pop)
                     align = direction if want_puts else -direction
-                    edge = ev_ratio + align_weight * align * confidence + 0.05 * min(buffer, 2.0)
+                    edge = (
+                        ev_ratio
+                        + align_weight * align * confidence
+                        + 0.05 * min(buffer, 2.0)
+                        + premium
+                    )
                     breakeven = (ss - credit) if want_puts else (ss + credit)
                     results.append(
                         {
@@ -285,6 +335,7 @@ class OptionsStrategy:
                             "expected_move": round(move, 2),
                             "ror": round(ror, 3),
                             "edge": round(edge, 3),
+                            "premium_edge": round(premium, 3),
                             "buffer": round(buffer, 2),
                             "breakeven": round(breakeven, 2),
                             "notes": self._notes(prediction.get("event_risk", False), move, price, buffer),
@@ -294,7 +345,7 @@ class OptionsStrategy:
         return results
 
     # --- iron condors -----------------------------------------------------
-    def _condors(self, verticals: list[dict]) -> list[dict]:
+    def _condors(self, verticals: list[dict], premium: float = 0.0) -> list[dict]:
         """Pair the best put and call spread on each expiry into a condor.
 
         The right instrument for a flat read with both tails quiet: short pure
@@ -333,8 +384,9 @@ class OptionsStrategy:
             ev_ratio = pop * ror - (1.0 - pop)
             buffer = min(put["buffer"], call["buffer"])
             # No alignment term: a condor expresses no directional view, so
-            # rewarding it for agreeing with one would be incoherent.
-            edge = round(ev_ratio + 0.05 * min(buffer, 2.0), 3)
+            # rewarding it for agreeing with one would be incoherent. Premium
+            # richness does apply -- it is a statement about price, not direction.
+            edge = round(ev_ratio + 0.05 * min(buffer, 2.0) + premium, 3)
 
             condors.append({
                 "underlying": put["underlying"],
@@ -347,7 +399,7 @@ class OptionsStrategy:
                 "credit": credit, "max_loss": max_loss,
                 "pop": pop, "short_delta": round(put["short_delta"] + call["short_delta"], 3),
                 "expected_move": put["expected_move"], "ror": round(ror, 3),
-                "edge": edge, "buffer": round(buffer, 2),
+                "edge": edge, "premium_edge": round(premium, 3), "buffer": round(buffer, 2),
                 "breakeven": put["short_strike"] - credit,
                 "notes": (
                     f"Iron condor: {put['short_strike']:.0f}/{put['long_strike']:.0f}P + "
@@ -379,9 +431,19 @@ class OptionsStrategy:
                     f"vs {cap:.0%} cap) - a gap either way breaks a spread. Stay flat."
                 )
             if prediction["confidence"] < self.s.confidence_gate:
+                # Low confidence no longer means "stay flat" -- it excludes the
+                # directional trade and leaves the condor, so say which one failed.
+                if put_ok and call_ok and self._cfg("allow_iron_condor", True):
+                    return (
+                        f"Confidence {prediction['confidence'] * 100:.0f}% is below the gate "
+                        f"{self.s.confidence_gate * 100:.0f}%, so verticals are excluded - and "
+                        "no iron condor met the return / POP / liquidity filters."
+                    )
+                side = "put" if put_ok else "call"
                 return (
                     f"Confidence {prediction['confidence'] * 100:.0f}% is below the gate "
-                    f"{self.s.confidence_gate * 100:.0f}% - stay flat."
+                    f"{self.s.confidence_gate * 100:.0f}%, so verticals are excluded, and only "
+                    f"the {side} tail is sellable - a condor needs both."
                 )
             side = "put" if put_ok else "call"
             return f"No {side} vertical met the return / POP / liquidity filters."

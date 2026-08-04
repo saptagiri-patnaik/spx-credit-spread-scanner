@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import sys
+import types
 from types import SimpleNamespace
 
 import pytest
@@ -144,3 +146,63 @@ def test_build_llm_selects_anthropic():
 def test_unknown_provider_falls_back_to_ollama():
     s = SimpleNamespace(llm_provider="nonsense", ollama_base_url="http://x", ollama_model="m")
     assert isinstance(build_llm(s, _Log()), OllamaClient)
+
+
+# ------------------------------------------------------------- timeouts ----
+def test_client_sets_an_explicit_request_timeout(monkeypatch):
+    """The SDK default read timeout is 600s -- identical to the Lambda budget, so
+    one hung call ends the cycle with no work done instead of degrading it."""
+    seen = {}
+
+    class _FakeAnthropic:
+        def __init__(self, **kwargs):
+            seen.update(kwargs)
+
+    import analysis.claude_client as mod
+    fake = types.ModuleType("anthropic")
+    fake.Anthropic = _FakeAnthropic
+    monkeypatch.setitem(sys.modules, "anthropic", fake)
+
+    mod.ClaudeClient("claude-haiku-4-5", _Log(), api_key="k", timeout=30.0)
+    assert seen["timeout"] == 30.0
+    assert seen["api_key"] == "k"
+
+
+def test_timeout_is_configurable_per_client(monkeypatch):
+    seen = {}
+
+    class _FakeAnthropic:
+        def __init__(self, **kwargs):
+            seen.update(kwargs)
+
+    import analysis.claude_client as mod
+    fake = types.ModuleType("anthropic")
+    fake.Anthropic = _FakeAnthropic
+    monkeypatch.setitem(sys.modules, "anthropic", fake)
+
+    # Synthesis is one Opus call at ~15s and must not share the scorer's 30s.
+    mod.ClaudeClient("claude-opus-5", _Log(), api_key="k", timeout=120.0)
+    assert seen["timeout"] == 120.0
+
+
+def test_build_llm_passes_the_configured_timeout(monkeypatch):
+    seen = {}
+
+    class _FakeAnthropic:
+        def __init__(self, **kwargs):
+            seen.update(kwargs)
+
+    import analysis.claude_client as mod
+    fake = types.ModuleType("anthropic")
+    fake.Anthropic = _FakeAnthropic
+    monkeypatch.setitem(sys.modules, "anthropic", fake)
+
+    mod.build_llm(
+        SimpleNamespace(
+            llm_provider="anthropic", anthropic_model="claude-haiku-4-5",
+            anthropic_api_key="k", anthropic_max_tokens=512,
+            anthropic_timeout_seconds=45.0,
+        ),
+        _Log(),
+    )
+    assert seen["timeout"] == 45.0

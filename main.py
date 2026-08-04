@@ -52,6 +52,7 @@ class Pipeline:
                 logger=logger,
                 api_key=getattr(settings, "anthropic_api_key", None),
                 max_tokens=getattr(settings, "synthesis_max_tokens", 2048),
+                timeout=getattr(settings, "synthesis_timeout_seconds", 120.0),
             )
         self.aggregator = build_aggregator(settings, logger, synthesis_llm)
         self.schwab = SchwabClient(settings, logger)
@@ -124,7 +125,17 @@ class Pipeline:
                 # the Ollama name here silently mislabelled every Claude-scored
                 # row, which makes it impossible to tell which scorer produced
                 # which score -- and that is the whole basis for comparing them.
-                self.repo.save_score(item.id, score, getattr(self.llm, "model", "unknown"))
+                #
+                # The prompt is recorded for the same reason and is at least as
+                # large a lever: SCORING_PROMPT can change between any two cycles,
+                # and recent_scores() reads a 7-day window, so a switch leaves the
+                # corpus mixed for a week with no way to tell the halves apart.
+                self.repo.save_score(
+                    item.id,
+                    score,
+                    getattr(self.llm, "model", "unknown"),
+                    prompt=getattr(self.analyzer, "prompt_name", None),
+                )
 
     def run_once(self) -> None:
         # Collection runs on every cycle regardless of schedule mode: RSS feeds

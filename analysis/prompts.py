@@ -14,7 +14,11 @@ over-anchoring a small model on "most items are zero", and any new candidate
 should be checked against it.
 
 Every variant must return the same JSON keys - the parsing in sentiment.py is
-shared.
+shared. That now includes `risk`, asked directly rather than inferred: the eval
+harness weights a missed risk item 8x, and it used to derive that from
+|direction| > 0.3 or magnitude > 0.5, so an item could register as risky only by
+also claiming a direction or a large move. A shock with no clear direction -- the
+one case a premium seller cannot afford to miss -- scored zero on that proxy.
 """
 from __future__ import annotations
 
@@ -22,6 +26,10 @@ _KEYS = """Return JSON with exactly these keys:
   direction: number from -1 (bearish for SPX) to +1 (bullish for SPX)
   magnitude: number 0..1 (how large the expected SPX move)
   confidence: number 0..1 (your confidence in this read)
+  risk: number 0..1 - the chance this RAISES the odds of a LARGE adverse move
+        in SPX over the next ~3 weeks, in EITHER direction. Independent of
+        direction: an item can be risk 0.8 with direction 0 if it makes a big
+        move more likely without saying which way. Most items are 0.
   macro_impact: one of "risk-on", "risk-off", "neutral"
   catalysts: array of up to 5 short strings naming the key drivers
 """
@@ -96,6 +104,15 @@ Score `direction` by index-level consequence over the next ~3 weeks:
 Use `magnitude` for how BIG a move this implies for the index, independent of
 direction - a volatility-raising event scores high magnitude even at direction 0.
 
+Score `risk` as the probability this item makes a LARGE ADVERSE move more likely,
+whichever way it breaks. This is the field the book is graded on, so judge it on
+its own rather than reading it off the two above:
+
+  0.7 to 1.0   a shock, a systemic stress signal, or a binary event whose outcome
+               could move the index several percent
+  0.3 to 0.6   raises the odds of a sharp move without making one likely
+  0.0 to 0.2   routine; the index absorbs this
+
 """ + _KEYS
 
 PROMPTS: dict[str, tuple[str, str]] = {
@@ -110,3 +127,14 @@ DEFAULT = "current"
 def get_prompt(name: str | None) -> tuple[str, str]:
     """Look up a variant, falling back to the shipped one for unknown names."""
     return PROMPTS.get(name or DEFAULT, PROMPTS[DEFAULT])
+
+
+def resolve_prompt_name(name: str | None) -> str:
+    """The variant that will actually run, which is what should be attributed.
+
+    get_prompt() silently falls back to DEFAULT for an unknown name, so recording
+    the *configured* value would label rows with a prompt that never ran -- a
+    typo in SCORING_PROMPT would otherwise produce a whole day of misattributed
+    scores that look like a clean A/B arm.
+    """
+    return name if name in PROMPTS else DEFAULT

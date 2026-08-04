@@ -5,7 +5,7 @@ import datetime as dt
 from contextlib import contextmanager
 from typing import Iterator
 
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -26,8 +26,29 @@ class Repository:
         self.engine = create_engine(database_url, pool_pre_ping=True, future=True)
         self._Session = sessionmaker(self.engine, expire_on_commit=False, future=True)
 
+    # Columns added to tables that already exist in a live database. create_all()
+    # creates missing TABLES only -- it will not touch a table that is already
+    # there, so a new attribute on an existing model is invisible to it and the
+    # first INSERT fails on an undefined column. There is no migration framework
+    # here, so additive changes are declared and applied idempotently instead.
+    #
+    # Additive and nullable only. Anything that rewrites or drops data does not
+    # belong in a step that runs unattended.
+    _ADDED_COLUMNS = (
+        ("item_scores", "risk", "DOUBLE PRECISION"),
+        ("item_scores", "prompt", "VARCHAR(40)"),
+    )
+
     def init_db(self) -> None:
         Base.metadata.create_all(self.engine)
+        self._apply_added_columns()
+
+    def _apply_added_columns(self) -> None:
+        with self.engine.begin() as conn:
+            for table, column, ddl_type in self._ADDED_COLUMNS:
+                conn.execute(
+                    text(f'ALTER TABLE {table} ADD COLUMN IF NOT EXISTS "{column}" {ddl_type}')
+                )
 
     @contextmanager
     def session(self) -> Iterator[Session]:
@@ -60,9 +81,11 @@ class Repository:
             s.expunge_all()
             return list(rows)
 
-    def save_score(self, item_id: int, score: dict, model: str) -> None:
+    def save_score(
+        self, item_id: int, score: dict, model: str, prompt: str | None = None
+    ) -> None:
         with self.session() as s:
-            s.add(ItemScore(item_id=item_id, model=model, **score))
+            s.add(ItemScore(item_id=item_id, model=model, prompt=prompt, **score))
             item = s.get(Item, item_id)
             if item is not None:
                 item.scored = True

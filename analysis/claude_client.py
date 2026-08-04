@@ -18,16 +18,36 @@ SCORE_SCHEMA = {
         "direction": {"type": "number", "description": "-1 bearish .. +1 bullish for SPX"},
         "magnitude": {"type": "number", "description": "0..1 expected size of the SPX move"},
         "confidence": {"type": "number", "description": "0..1 confidence in this read"},
+        # Asked directly because it is the field the book is actually graded on.
+        # It used to be inferred from |direction| > 0.3 or magnitude > 0.5 -- a
+        # proxy built from two fields answering different questions, so an item
+        # could only register as risky by also claiming a direction or a big
+        # move. A shock with no clear direction, which is the exact case a
+        # premium seller must not miss, scored zero on the proxy.
+        "risk": {
+            "type": "number",
+            "description": (
+                "0..1 chance this RAISES the odds of a LARGE adverse move in SPX "
+                "within ~3 weeks, in either direction. Independent of direction."
+            ),
+        },
         "macro_impact": {"type": "string", "enum": ["risk-on", "risk-off", "neutral"]},
         "catalysts": {"type": "array", "items": {"type": "string"}},
     },
-    "required": ["direction", "magnitude", "confidence", "macro_impact", "catalysts"],
+    "required": ["direction", "magnitude", "confidence", "risk", "macro_impact", "catalysts"],
     "additionalProperties": False,
 }
 
 
 class ClaudeClient:
-    def __init__(self, model: str, logger, api_key: str | None = None, max_tokens: int = 512):
+    def __init__(
+        self,
+        model: str,
+        logger,
+        api_key: str | None = None,
+        max_tokens: int = 512,
+        timeout: float | None = 30.0,
+    ):
         self.model = model
         self.log = logger
         self.max_tokens = max_tokens
@@ -39,9 +59,16 @@ class ClaudeClient:
 
             # A bare constructor resolves ANTHROPIC_API_KEY from the environment,
             # which is how .env-driven config reaches it.
-            self._client = (
-                anthropic.Anthropic(api_key=api_key) if api_key else anthropic.Anthropic()
-            )
+            #
+            # The timeout is set explicitly because the SDK's default read timeout
+            # is 600s -- identical to the Lambda budget, so a single hung request
+            # ends the cycle with nothing done rather than degrading it. One such
+            # timeout is on record (4 Aug 2026, 15:55 PDT); the automatic retry on
+            # unchanged code finished in 127s.
+            kwargs = {"timeout": timeout} if timeout else {}
+            if api_key:
+                kwargs["api_key"] = api_key
+            self._client = anthropic.Anthropic(**kwargs)
         except ImportError:
             self._import_error = "anthropic package not installed (pip install anthropic)"
         except Exception as exc:  # noqa: BLE001 - missing/!invalid key
@@ -112,5 +139,6 @@ def build_llm(settings, logger):
             logger=logger,
             api_key=getattr(settings, "anthropic_api_key", None),
             max_tokens=getattr(settings, "anthropic_max_tokens", 512),
+            timeout=getattr(settings, "anthropic_timeout_seconds", 30.0),
         )
     return OllamaClient(settings.ollama_base_url, settings.ollama_model, logger)

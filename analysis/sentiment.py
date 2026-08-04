@@ -6,7 +6,7 @@ the numeric results are combined (confidence-weighted) into one item score.
 from __future__ import annotations
 
 from .llm import OllamaClient
-from .prompts import get_prompt
+from .prompts import get_prompt, resolve_prompt_name
 
 # Backwards-compatible aliases for the shipped prompt; variants live in prompts.py
 # and are selected per-run via the SCORING_PROMPT setting.
@@ -27,7 +27,11 @@ class SentimentAnalyzer:
         self.log = logger
         self.chunk_chars = getattr(settings, "llm_chunk_chars", 6000)
         self.max_chunks = getattr(settings, "llm_max_chunks", 3)
-        self.system, self.template = get_prompt(getattr(settings, "scoring_prompt", None))
+        # Resolve the name too, not just the text: get_prompt falls back to the
+        # default for an unknown name, so the configured value can differ from
+        # what actually ran. The attributed name must be the one that ran.
+        self.prompt_name = resolve_prompt_name(getattr(settings, "scoring_prompt", None))
+        self.system, self.template = get_prompt(self.prompt_name)
 
     def score(self, item) -> dict | None:
         text = item.content or item.title or ""
@@ -70,9 +74,27 @@ class SentimentAnalyzer:
             "direction": _clamp(out.get("direction", 0), -1, 1),
             "magnitude": _clamp(out.get("magnitude", 0), 0, 1),
             "confidence": _clamp(out.get("confidence", 0), 0, 1),
+            # Older prompts and the Ollama path may omit `risk` entirely. Fall back
+            # to the proxy this field replaces rather than silently scoring 0, which
+            # would read as "definitely safe" on the metric weighted 8x.
+            "risk": self._risk(out),
             "macro_impact": macro_impact,
             "catalysts": {"items": [str(c)[:120] for c in catalysts][:5]},
         }
+
+    @staticmethod
+    def _risk(out: dict) -> float:
+        raw = out.get("risk")
+        if raw is not None:
+            try:
+                return max(0.0, min(1.0, float(raw)))
+            except (TypeError, ValueError):
+                # Deliberately not _clamp's 0.0 default: on a metric weighted 8x,
+                # an unreadable answer must not be recorded as "definitely safe".
+                pass
+        direction = _clamp(out.get("direction", 0), -1, 1)
+        magnitude = _clamp(out.get("magnitude", 0), 0, 1)
+        return 1.0 if (abs(direction) > 0.3 or magnitude > 0.5) else 0.0
 
     def _combine(self, results: list[dict]) -> dict:
         if len(results) == 1:
@@ -82,6 +104,10 @@ class SentimentAnalyzer:
         direction = sum(r["direction"] * r["confidence"] for r in results) / weight
         magnitude = sum(r["magnitude"] * r["confidence"] for r in results) / weight
         confidence = sum(r["confidence"] for r in results) / len(results)
+        # Risk takes the MAX across chunks, not a weighted mean. One paragraph
+        # naming a shock makes the article risky; averaging it against three
+        # unremarkable chunks is how a warning gets diluted into nothing.
+        risk = max(r["risk"] for r in results)
 
         votes: dict[str, float] = {}
         for r in results:
@@ -100,6 +126,7 @@ class SentimentAnalyzer:
             "direction": round(direction, 4),
             "magnitude": round(magnitude, 4),
             "confidence": round(confidence, 4),
+            "risk": round(risk, 4),
             "macro_impact": macro_impact,
             "catalysts": {"items": catalysts[:5]},
         }

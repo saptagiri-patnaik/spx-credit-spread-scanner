@@ -196,6 +196,13 @@ class Settings(BaseSettings):
     allow_iron_condor: bool = True       # sell both wings when both tails are quiet
     min_edge_score: float = 0.05         # only recommend a trade above this edge
     align_weight: float = 0.15           # weight of directional agreement in edge
+    # Weight on premium richness (IV/RV) in the edge score. Deliberately an edge
+    # INPUT and not a gate: IV/RV has only days of history, and a hard floor on a
+    # number that thin is how confidence_gate came to block every cycle for a
+    # fortnight. At 0.15 a ratio of 0.85 costs ~0.02 of edge against a 0.05
+    # threshold -- enough to demand a better structure, not enough to veto one.
+    # The ratio is clamped to 0.5..1.5 before weighting.
+    premium_weight: float = 0.15
 
     # --- Price/vol regime -------------------------------------------------
     # These answer the question the strategy actually turns on -- is premium rich,
@@ -245,6 +252,13 @@ class Settings(BaseSettings):
     # rather than assuming the expensive one wins.
     anthropic_model: str = "claude-haiku-4-5"
     anthropic_max_tokens: int = 512
+    # Per-request timeout. The SDK defaults to a 600s read timeout, which is
+    # exactly the Lambda budget -- so one hung scoring call consumes the whole
+    # cycle and the invocation times out having done no useful work. That is not
+    # hypothetical: it happened at 15:55 PDT on 4 Aug 2026, the retry on identical
+    # code succeeded in 127s. A Haiku call on one chunk normally takes 2-5s, so
+    # 30s is ~6x headroom; the SDK's own 2 retries still fit inside a cycle.
+    anthropic_timeout_seconds: float = 30.0
 
     # --- Aggregation ---
     # "mean"      weighted average over every scored item. Cannot compose
@@ -270,6 +284,12 @@ class Settings(BaseSettings):
     # of its weight after a day and 20% after seven. 0 disables decay.
     synthesis_recency_half_life_hours: float = 72.0
     synthesis_max_tokens: int = 2048
+    # Its own budget, well above anthropic_timeout_seconds: this is one Opus call
+    # reasoning over 40 stories and it measures ~15s in production, where a Haiku
+    # scoring call is 2-5s. Sharing the scorer's 30s would cut off the cycle's
+    # single most valuable request. Still far below the 600s Lambda budget, which
+    # is the point -- see anthropic_timeout_seconds.
+    synthesis_timeout_seconds: float = 120.0
 
     # --- Paper trading (measures whether the suggestions actually pay) ---
     paper_trading_enabled: bool = True
