@@ -286,8 +286,8 @@
         <div class="who"><code>sopana.py</code> &middot; <code>sopana-dte25</code> &middot; v1.8.2</div>
         <dl>
           <dt>Shadow since</dt><dd>2026-07-20</dd>
-          <dt>Positions</dt><dd>5 opened, 3 closed</dd>
-          <dt>Net</dt><dd class="bad">&minus;$330</dd>
+          <dt>Positions</dt><dd>5 closed, 0 open</dd>
+          <dt>Net</dt><dd class="bad">&minus;$1,790</dd>
           <dt>Go-live gates</dt><dd class="bad">0 / 7</dd>
           <dt>Signals</dt><dd>SMA, momentum, skew, OI</dd>
           <dt>News input</dt><dd class="bad">none</dd>
@@ -300,13 +300,13 @@
 
       <div class="sys idle">
         <h3>SPX Scanner &mdash; the fundamental half</h3>
-        <div class="who"><code>spx-scanner</code> &middot; deployed <code>a91aef3</code></div>
+        <div class="who"><code>spx-scanner-zip</code> &middot; deployed <code>r50-gf13dd1c</code></div>
         <dl>
           <dt>Running since</dt><dd>2026-07-29 (Lambda)</dd>
           <dt>Signal trades</dt><dd class="bad">0, all time</dd>
           <dt>Baseline trades</dt><dd>3 open, 0 closed</dd>
           <dt>Confidence</dt><dd class="bad">0.32&ndash;0.42 vs 0.65</dd>
-          <dt>Tail gate</dt><dd class="good">18/18 cycles clear</dd>
+          <dt>Tail gate</dt><dd class="good">28/28 cycles clear</dd>
           <dt>Order path</dt><dd class="bad">none</dd>
         </dl>
         <p style="margin:.4rem 0 0;font-size:.87rem;color:var(--ink-2)">
@@ -372,10 +372,10 @@
       <thead><tr><th>Gate</th><th>Asks</th><th>Fires?</th><th>Keep</th></tr></thead>
       <tbody>
         <tr><td><code>confidence_gate</code> 0.65</td><td>How sure are we of the direction</td><td class="no">blocks 100% of cycles</td><td class="no">No &mdash; directional vestige</td></tr>
-        <tr><td><code>_sides_allowed</code> tails</td><td>Is either tail fat</td><td class="yes">0 of 18 cycles blocked</td><td class="yes">Yes &mdash; the real gate</td></tr>
+        <tr><td><code>_sides_allowed</code> tails</td><td>Is either tail fat</td><td class="yes">0 of 28 cycles blocked</td><td class="yes">Yes &mdash; the real gate</td></tr>
         <tr><td><code>min_edge_score</code> 0.05</td><td>Is this spread worth selling</td><td class="num">never reached</td><td class="yes">Yes</td></tr>
         <tr><td><code>min_pop</code> / <code>min_credit_to_width</code></td><td>Is it priced acceptably</td><td class="num">never reached</td><td class="yes">Yes</td></tr>
-        <tr><td>IV/RV, VIX term structure</td><td>Is premium rich, is the regime sane</td><td class="num">shipped, not deployed</td><td class="yes">Yes &mdash; new gate</td></tr>
+        <tr><td>IV/RV, VIX term structure</td><td>Is premium rich, is the regime sane</td><td class="num">live 3 Aug, reading only</td><td class="yes">Yes &mdash; as an <em>edge input</em>, not a gate</td></tr>
       </tbody>
     </table></div>
   </section>
@@ -473,7 +473,26 @@
           follows, and a shared parser means shared interned strings. Fixed with a lock around
           <code>trafilatura.extract()</code>; the HTTP fetch stays parallel.
         </div>
-        <div class="check"><b>Check</b><span>Gate 8 closes after 10 consecutive trading days with no abort. It blocks the veto, so this is on the critical path.</span></div>
+        <div class="check"><b>Check</b><span>Gate 8 closes after 10 consecutive trading days with no abort. It blocks the veto, so this is on the critical path. <b>Reached production 3 Aug 18:55 PT</b>, when the schedule moved to <code>spx-scanner-zip</code>; the count starts 4 Aug.</span></div>
+      </div>
+
+      <div class="step now">
+        <span class="date">Mon 3 Aug</span>
+        <span class="what">Deploy path rebuilt &mdash; ZIP instead of container</span>
+        <span class="tag t-scan">scanner</span>
+        <div class="body">
+          The container push failed ~30 times on its 433&nbsp;MB base layer and was holding three
+          commits out of production. A ZIP uploads <b>32.6&nbsp;MB</b> instead, because AWS supplies
+          the runtime. New function <code>spx-scanner-zip</code>, same role, memory, timeout and all
+          76 environment variables; the three <code>spx-scanner-grid-*</code> schedules and both
+          alarms now point at it. <code>spx-scanner</code> stays in place, unscheduled, as rollback.
+          <br><br>
+          Two traps caught on the way: <code>spx-scheduler-role</code> could invoke only the old
+          function, so repointing without widening it would have failed every firing silently; and
+          <code>scheduler update-schedule</code> replaces the whole definition, so each schedule's
+          cron, timezone and 1-attempt retry policy had to be echoed back rather than defaulted.
+        </div>
+        <div class="check"><b>Closed 3 Aug</b><span>a scheduled firing landed on <code>spx-scanner-zip</code> at 01:55 UTC running <code>r50-gf13dd1c</code>, with zero invocations on the old function since the cutover. Deploys are now <code>./deploy/build-zip.ps1 -Deploy</code>, about three minutes.</span></div>
       </div>
 
       <div class="step now">
@@ -617,7 +636,7 @@
         <tr><td class="num">5</td><td>Signal maturity</td><td>Skew vote active with &ge;20 days history</td><td class="owner">sopana</td><td><span class="chip c-part">auto ~18 Aug</span></td></tr>
         <tr><td class="num">6</td><td>Operational resilience</td><td>Lambda burn-in, token staleness alert seen firing, overnight gap survived</td><td class="owner">sopana</td><td><span class="chip c-part">burn-in 1 / 3 &middot; exits proven</span></td></tr>
         <tr><td class="num">7</td><td>Capital &amp; risk sizing</td><td>BP fits the real account; worst-case simultaneous loss modelled</td><td class="owner">sopana</td><td><span class="chip c-no">BP &gt; account</span></td></tr>
-        <tr><td class="num">8</td><td><strong>Scanner reliability</strong></td><td>Native heap abort diagnosed and fixed; scanner completes 10 consecutive trading days without a lost cycle</td><td class="owner">integration</td><td><span class="chip c-part">fixed 3 Aug &middot; 0 / 10 days</span></td></tr>
+        <tr><td class="num">8</td><td><strong>Scanner reliability</strong></td><td>Native heap abort diagnosed and fixed; scanner completes 10 consecutive trading days without a lost cycle</td><td class="owner">integration</td><td><span class="chip c-part">live 3 Aug &middot; clock starts 4 Aug</span></td></tr>
         <tr><td class="num">9</td><td><strong>Veto calibration</strong></td><td>2 weeks logged non-binding; every veto counted, and what the vetoed trade went on to do is known</td><td class="owner">integration</td><td><span class="chip c-no">not started</span></td></tr>
         <tr><td class="num">10</td><td><strong>Veto failure mode</strong></td><td>Scanner down or stale &rArr; no veto, never block-all, never crash. Staleness bound set and tested</td><td class="owner">integration</td><td><span class="chip c-no">not designed</span></td></tr>
       </tbody>
@@ -625,12 +644,18 @@
 
     <div class="note stop">
       <p>
-        <strong>Gate 8 exists because the scanner is not yet reliable enough to be trusted with a
-        veto.</strong> It aborts on roughly one invocation in eighteen &mdash; a native heap abort
-        that kills the interpreter with no traceback. As a standalone research tool that is a
+        <strong>Gate 8 exists because the scanner was not reliable enough to be trusted with a
+        veto.</strong> It aborted on roughly one invocation in eighteen &mdash; a native heap abort
+        that killed the interpreter with no traceback. As a standalone research tool that is a
         nuisance the retry absorbs. As the thing deciding whether Sopana may sell puts, a source that
-        dies silently and leaves a three-hour-old hazard flag behind is actively dangerous. The
-        <code>faulthandler</code> diagnostic deployed 2 Aug; the next abort should name the library.
+        dies silently and leaves a three-hour-old hazard flag behind is actively dangerous.
+      </p>
+      <p>
+        <strong>Diagnosed and fixed 3 Aug.</strong> The <code>faulthandler</code> dump named
+        trafilatura's shared lxml parser; extraction is now serialised. So the gate is no longer
+        waiting on a cause &mdash; it is waiting on <em>evidence</em>, which is only time: ten
+        consecutive trading days with no lost cycle, counting from 4 Aug. It stays a gate precisely
+        because a fix nobody has watched run is a hypothesis.
       </p>
     </div>
 
@@ -651,8 +676,9 @@
       <h2><span class="n">05</span> What actually moves the date</h2>
     </div>
     <p class="lede">
-      Three of the ten gates are pure waiting. Nothing in the integration shortens them, and nothing
-      in them shortens the integration.
+      Four of the ten gates are now pure waiting &mdash; Gate&nbsp;8 joined them on 3 Aug, when the
+      abort stopped being a puzzle and became a countdown. Nothing in the integration shortens them,
+      and nothing in them shortens the integration.
     </p>
 
     <div class="scroll"><table>
@@ -661,7 +687,7 @@
         <tr><td>Gate&nbsp;2 &mdash; 20 closed trades</td><td class="num">~mid Sept</td><td>No. ~1 entry/day, 3&ndash;5 day holds. This is the binding constraint on everything.</td></tr>
         <tr><td>Gate&nbsp;1 &mdash; 10 clean days</td><td class="num">~10 td after start</td><td>No, but <strong>when it starts is a choice</strong> &mdash; see below.</td></tr>
         <tr><td>Gate&nbsp;5 &mdash; skew vote</td><td class="num">~18 Aug</td><td>No. Fixed by history depth.</td></tr>
-        <tr><td>Gate&nbsp;8 &mdash; scanner reliability</td><td class="num">days</td><td>Yes &mdash; needs one abort to land with the diagnostic deployed.</td></tr>
+        <tr><td>Gate&nbsp;8 &mdash; scanner reliability</td><td class="num">~18 Aug</td><td>No longer. Fixed 3 Aug, so it is now pure waiting: 10 clean days from 4 Aug.</td></tr>
         <tr><td>Gate&nbsp;4 &mdash; order path</td><td class="num">any time</td><td><strong>Yes, entirely.</strong> Depends on nothing. Do it this week.</td></tr>
         <tr><td>Gates&nbsp;9, 10 &mdash; veto</td><td class="num">~2 weeks</td><td>Yes &mdash; runs in parallel with Gate&nbsp;2 accumulation.</td></tr>
       </tbody>
@@ -694,7 +720,7 @@
       </p>
       <p>
         Worth taking only if the first live fill matters more than the second one being safe. On the
-        current numbers &mdash; three closed trades, all on defective code, net &minus;$330 &mdash;
+        current numbers &mdash; five closed trades, all on defective code, net &minus;$1,790 &mdash;
         it probably does not.
       </p>
     </div>
@@ -742,11 +768,25 @@
 
     <div class="note stop">
       <p>
-        <strong>Do not start the clean-day clock on Monday.</strong> v1.8.2 made bug&nbsp;#10
-        <em>visible</em>; its root cause is still open. Gate&nbsp;1&rsquo;s second clause forbids a
+        <strong>Do not start the clean-day clock while bug&nbsp;#10 is open.</strong> v1.8.2 made it
+        <em>visible</em>; its root cause is still unfixed. Gate&nbsp;1&rsquo;s second clause forbids a
         bug-fix version bump inside the window &mdash; so starting the clock with #10 unfixed
         guarantees a reset the moment it is fixed. That is a ten-day timer you already know you will
         restart. Fix the root cause first: a few days now against ten later.
+      </p>
+      <p>
+        <strong>But #10 currently cannot be observed at all &mdash; found 3 Aug.</strong> All 61
+        <code>[GATE]</code> lines since v1.8.2 read <code>iv_rank &lt; 20</code>, so entry selection
+        never runs and v1.8.2&rsquo;s reason codes have fired <b>zero</b> times. Against the 270 rows
+        in <code>dte25_vix_daily</code> (VIX 13.47&ndash;31.05), <code>MIN_IV_RANK = 20.0</code> needs
+        <b>VIX above roughly 17.0</b>. It closed 3 Aug at 15.77.
+      </p>
+      <p>
+        This changes the shape of the task, not the ordering. #10 must be fixed by
+        <em>reading the code</em> &mdash; the instrumentation added to catch it in the wild cannot
+        report until the tape moves. Waiting for a reproduction is waiting on volatility, which is
+        not a plan. And it is a second reason not to start the clock: a quiet tape means the clock
+        would run on days where Sopana never selected an entry, which certifies nothing.
       </p>
     </div>
 
@@ -761,7 +801,7 @@
     <div class="note">
       <p>
         <strong>Direction is not the product.</strong> 188 of 199 labelled items carried no directional
-        sign. The tail gate has passed 18 of 18 cycles. The strategy wins when SPX <em>fails</em> to
+        sign. The tail gate has passed 28 of 28 cycles. The strategy wins when SPX <em>fails</em> to
         move sharply &mdash; so the questions worth asking are &ldquo;is premium rich&rdquo; and
         &ldquo;is a shock window open&rdquo;, and the default trade when both answer well is a condor.
       </p>
@@ -769,16 +809,17 @@
 
     <div class="note stop">
       <p>
-        <strong>Nothing here is evidence of edge yet.</strong> Three closed trades on code with known
-        defects, net &minus;$330, and a scanner arm that has never traded. Every number in this
-        document is an input to a decision, not a result.
+        <strong>Nothing here is evidence of edge yet.</strong> Five closed trades on code with known
+        defects, net &minus;$1,790, and a scanner arm that has never traded. Every number in this
+        document is an input to a decision, not a result. Two of those five closed on 3 Aug at their
+        stop &mdash; which is the risk control working, and is still a loss.
       </p>
     </div>
   </section>
 
   <footer>
-    <span>Drafted 2026-08-02</span>
-    <span>Systems: <code>spx-scanner</code>, <code>sopana-dte25</code></span>
+    <span>Drafted 2026-08-02 &middot; revised 2026-08-03, market close</span>
+    <span>Systems: <code>spx-scanner-zip</code>, <code>sopana-dte25</code></span>
     <span>Companions: operational tracker, Sopana go-live checklist</span>
     <span>Educational research only &mdash; not financial advice</span>
   </footer>

@@ -701,7 +701,21 @@
           <code>192.168.65.1:3128</code> is Docker's own transparent gateway, exactly as the
           Dockerfile comment said.
         </p>
-        <div class="trigger"><b>Standing</b><span>the container path is still dead and is no longer used. <code>deploy/build-zip.ps1</code> verifies rather than trusts: it aborts if any <code>.pyd</code> survives, if no <code>.so</code> exists, or if psycopg2/lxml are missing &mdash; a Windows wheel would otherwise import-fail on the first cycle rather than at build time. Watch for the ECR repository accruing images nothing pulls.</span></div>
+        <p>
+          <b>GitHub Actions was proposed here and deferred.</b> It was raised while the container
+          push was failing, on the theory that building from a hosted runner would sidestep this
+          machine's upload. It would have &mdash; but the ZIP removed the 433&nbsp;MB upload
+          altogether, so the problem CI was going to solve no longer exists. A deploy is now
+          <code>./deploy/build-zip.ps1 -Deploy</code>, about three minutes.
+        </p>
+        <p>
+          Building it now would add a second deploy path, a stored AWS credential and a release
+          surface nobody watches, in exchange for saving three minutes on a deploy that happens
+          roughly weekly. <b>The version worth having later is CI, not CD</b>: run the 217 tests on
+          every push, and leave the deploy manual. That is the half that catches something &mdash;
+          the tests currently run only when someone remembers.
+        </p>
+        <div class="trigger"><b>Standing</b><span>the container path is still dead and is no longer used. <code>deploy/build-zip.ps1</code> verifies rather than trusts: it aborts if any <code>.pyd</code> survives, if no <code>.so</code> exists, or if psycopg2/lxml are missing &mdash; a Windows wheel would otherwise import-fail on the first cycle rather than at build time. Watch for the ECR repository accruing images nothing pulls. Revisit Actions-as-CI once the 4 Aug scoring work lands, or sooner if a broken commit ever reaches Lambda.</span></div>
       </article>
 
       <article class="item sev-risk">
