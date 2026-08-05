@@ -244,6 +244,9 @@
       Shadow trading is already running &mdash; on the technical half only. The fundamental half has
       never placed a trade. This is the ordered path to joining them, with the check that closes
       each step. Dates are earliest-possible and assume nothing slips.
+      <br><br>
+      Revised 4 August, evening, after four changes shipped as <code>r58-g96e7fba</code> and the
+      scoring-prompt experiment concluded. &sect;00 is what that day settled.
     </p>
   </header>
 
@@ -263,12 +266,85 @@
 
   <dl class="prog">
     <div><dt>Gates passed</dt><dd class="no">0 / 10</dd></div>
-    <div><dt>Blocking</dt><dd class="no">7</dd></div>
-    <div><dt>Closed trades</dt><dd class="no">5 / 20</dd></div>
-    <div><dt>Clean days</dt><dd class="no">0 / 10</dd></div>
+    <div><dt>Blocking</dt><dd class="part">5</dd></div>
+    <div><dt>Closed trades</dt><dd class="no">0 / 20</dd></div>
+    <div><dt>Clean days</dt><dd class="part">1 / 10</dd></div>
     <div><dt>Orders sent</dt><dd class="no">0, ever</dd></div>
     <div><dt>Scanner trades</dt><dd class="no">0, ever</dd></div>
   </dl>
+
+  <!-- =================================================== today ========= -->
+  <section>
+    <div class="sec-head">
+      <h2><span class="n">00</span> What 4 August settled</h2>
+    </div>
+    <p class="lede">
+      Four changes shipped and one experiment concluded. Two of the three things that had kept the
+      scanner from producing a single measurable trade are now removed; the third turned out not to
+      be a measurement problem at all.
+    </p>
+
+    <div class="scroll"><table>
+      <thead><tr><th>Decision</th><th>Was</th><th>Now</th><th>Why</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><b>Confidence gate rescoped</b></td>
+          <td class="no">0.65, before everything</td>
+          <td class="yes">0.40, verticals only</td>
+          <td>A threshold on a number whose scale moved under it when synthesis replaced the weighted mean. Recalibrated to the new distribution's 75th percentile, then reordered so the condor is decided on its own merits.</td>
+        </tr>
+        <tr>
+          <td><b>Premium richness</b></td>
+          <td class="no">read-only</td>
+          <td class="yes">edge input, weight 0.15</td>
+          <td>Routed through <code>min_edge_score</code>, not given a veto. Days of IV/RV history is not enough to defend a floor &mdash; that is exactly how the confidence gate closed.</td>
+        </tr>
+        <tr>
+          <td><b>Position marking</b></td>
+          <td class="no">scan chain only</td>
+          <td class="yes">own chain, open expiries</td>
+          <td>A position aged out of the scan window within days and became unmarkable &mdash; and <code>manage()</code> skips before the exits, so unclosable. Zero closed rows in eight days.</td>
+        </tr>
+        <tr>
+          <td><b>Risk measurement</b></td>
+          <td class="no">inferred from a proxy</td>
+          <td class="yes">asked directly</td>
+          <td>The metric weighted &times;8 was read off <code>|direction| &gt; 0.3 or magnitude &gt; 0.5</code>, so a shock of unclear direction scored zero.</td>
+        </tr>
+        <tr>
+          <td><b>Scoring prompt</b></td>
+          <td class="yes">current</td>
+          <td class="yes">current &mdash; unchanged</td>
+          <td><code>theta</code> failed risk recall at 30% against a 45% floor. Its nine-point weighted-error edge was bought with a 40-point deficit on the expensive metric.</td>
+        </tr>
+        <tr>
+          <td><b>API request timeout</b></td>
+          <td class="no">600 s (SDK default)</td>
+          <td class="yes">30 s / 120 s</td>
+          <td>Identical to the Lambda budget, so one hung call ended a cycle having done nothing. Cost one cycle at 15:55 PDT.</td>
+        </tr>
+      </tbody>
+    </table></div>
+
+    <div class="note">
+      <p>
+        <b>The falsified claim is the most useful result.</b> The roadmap held that the proxy was
+        <em>why</em> <code>theta</code> scored badly on risk &mdash; that any prompt improving
+        direction must trade away a risk signal being read off direction. Asked the question
+        directly, <code>theta</code> still reaches only 30%. Its conservatism suppresses risk
+        detection genuinely. The proxy was a real defect and worth removing; it was not
+        <code>theta</code>'s excuse, and removing it did not rescue the variant it was blamed for.
+      </p>
+      <p>
+        <b>What did not change: no trade has been placed and none has closed.</b> Every gate removed
+        today was upstream of the decision, not the decision itself. The scanner has still never
+        opened a signal position, and <code>paper_positions</code> still holds zero closed rows.
+        Tomorrow's open is the first session in which any of this can be observed rather than
+        reasoned about &mdash; and the honest reading of today is that the blockers were
+        instrumentation, so what is left is the strategy question, untested.
+      </p>
+    </div>
+  </section>
 
   <!-- =============================================== reconciliation ==== -->
   <section>
@@ -300,7 +376,7 @@
 
       <div class="sys idle">
         <h3>SPX Scanner &mdash; the fundamental half</h3>
-        <div class="who"><code>spx-scanner-zip</code> &middot; deployed <code>r50-gf13dd1c</code></div>
+        <div class="who"><code>spx-scanner-zip</code> &middot; deployed <code>r58-g96e7fba</code></div>
         <dl>
           <dt>Running since</dt><dd>2026-07-29 (Lambda)</dd>
           <dt>Signal trades</dt><dd class="bad">0, all time</dd>
@@ -532,9 +608,11 @@
           IV/RV folds into <code>min_edge_score</code> so thin premium <em>lowers</em> the score
           rather than vetoing the trade. It does not get its own threshold.
           <br><br>
-          The reason is the failure being fixed one step above. <code>confidence_gate = 0.65</code>
-          was a single unvalidated number placed in front of everything, and it blocked 100% of
-          cycles for two weeks while nobody could tell whether the bar or the signal was wrong.
+          The reason is the failure fixed one step above. <code>confidence_gate = 0.65</code> was a
+          single unvalidated number placed in front of everything, and it blocked 100% of cycles for
+          two weeks while nobody could tell whether the bar or the signal was wrong. That is not a
+          hypothetical worth avoiding &mdash; it is a thing that already happened here, which is why
+          this decision went the way it did.
           There are <b>four days</b> of IV/RV history. Setting a hard threshold on that would repeat
           the mistake with a fresher number &mdash; an arm that never fires, for a new reason.
           <br><br>
@@ -583,10 +661,10 @@
         <span class="what">Scoring: prompt attribution + explicit risk field, then re-grade</span>
         <span class="tag t-scan">scanner</span>
         <div class="body">
-          <code>save_score()</code> records the model but not the prompt, so a production A/B is
-          unattributable. <code>SCORE_SCHEMA</code> has no risk field, so the metric weighted 8&times;
-          is inferred from a proxy two other objectives fight over. Both are small; both gate the
-          <code>theta</code> switch.
+          <em>As stated before the work:</em> <code>save_score()</code> records the model but not the
+          prompt, so a production A/B is unattributable. <code>SCORE_SCHEMA</code> has no risk field,
+          so the metric weighted 8&times; is inferred from a proxy two other objectives fight over.
+          Both are small; both gate the <code>theta</code> switch.
           <br><br>
           <b>Shipped, and the switch it was gating does not happen.</b> Both instruments landed:
           <code>item_scores</code> now records the prompt variant that actually ran, and

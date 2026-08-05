@@ -145,9 +145,10 @@
     <div class="eyebrow">SPX Scanner &middot; pipeline</div>
     <h1>What happens to a headline between arriving and not being traded</h1>
     <p class="sub">
-      Seven stages, live numbers from 3 August. Every stage shows what goes in and what comes out.
-      The pipeline is a funnel that currently ends in zero &mdash; the stage where it stops is
-      marked in red.
+      Seven stages, live numbers from 4 August, evening. Every stage shows what goes in and what
+      comes out. The pipeline is still a funnel ending in zero &mdash; but the stage that stopped it
+      was reordered on 4 August, so the block has moved from &ldquo;the gate refuses to ask&rdquo; to
+      &ldquo;the pricing filters have never been tested&rdquo;. Nothing has traded yet either way.
     </p>
   </header>
 
@@ -219,22 +220,34 @@
       <div class="detail" id="d2">
         <h4>One call per item, chunked at 6,000 chars</h4>
         <p>Returns strict JSON: <code>direction</code> (&minus;1..+1), <code>magnitude</code>,
-          <code>confidence</code>, <code>macro_impact</code>, <code>catalysts</code>.
-          Long articles split into up to 3 chunks, combined confidence-weighted.</p>
-        <h4>Graded against 199 hand labels</h4>
+          <code>confidence</code>, <code>risk</code>, <code>macro_impact</code>,
+          <code>catalysts</code>. Long articles split into up to 3 chunks, combined
+          confidence-weighted &mdash; except <code>risk</code>, which takes the <b>max</b>: one
+          paragraph naming a shock makes the article risky, and averaging dilutes the warning.</p>
+        <h4>Graded against 199 hand labels &mdash; re-graded 4 Aug with risk asked directly</h4>
         <dl class="kv">
-          <dt>relevance precision</dt><dd>44% &mdash; flag-everything scores 41%</dd>
-          <dt>direction accuracy</dt><dd>25% &mdash; <b>always saying &ldquo;no view&rdquo; scores 86%</b></dd>
-          <dt>risk recall</dt><dd>45% &mdash; misses 11 of 20 shock items</dd>
-          <dt>calibration</dt><dd>44% &rarr; 5% &rarr; 16% &rarr; 83% &mdash; not monotonic</dd>
+          <dt>relevance precision</dt><dd>42.6% &mdash; flags 136 items to find 58</dd>
+          <dt>direction accuracy</dt><dd>37.0% &mdash; <b>always saying &ldquo;no view&rdquo; still scores 86%</b></dd>
+          <dt>risk recall</dt><dd>70.0% &mdash; misses 6 of 20 shock items</dd>
+          <dt>weighted error</dt><dd>177 &mdash; the metric that prices a miss at &times;8</dd>
+          <dt>calibration</dt><dd>46.8% &rarr; 12.5% &rarr; 34.1% &rarr; 80.0% &mdash; still not monotonic</dd>
         </dl>
-        <div class="flag"><b>The schema has no risk field.</b> Risk is inferred from
-          <code>abs(direction) &gt; 0.3 or magnitude &gt; 0.5</code>, so every prompt that improves
-          direction trades away risk detection. The metric weighted 8&times; is measured through a
-          proxy two other objectives fight over.</div>
-        <div class="flag good"><b>Model question settled.</b> Sonnet 5 was graded on the same labels;
-          its weighted error landed inside the 1.3% run-to-run noise floor. A prompt change
-          (<code>theta</code>, 195 vs 233) beat a 4&times;-cost model upgrade.</div>
+        <div class="flag good"><b>The schema now has a risk field.</b> It was inferred from
+          <code>abs(direction) &gt; 0.3 or magnitude &gt; 0.5</code> &mdash; a proxy built from two
+          fields answering different questions, so a shock of unclear direction scored zero on the
+          metric weighted 8&times;. Asked directly since 4 Aug.</div>
+        <div class="flag good"><b>Model and prompt questions both settled.</b> Sonnet 5 landed inside
+          the 1.3% run-to-run noise floor, so the model stays Haiku. Re-graded with risk measured
+          honestly, <code>theta</code> returns 30.0% risk recall against a 45% floor &mdash; so the
+          prompt stays <code>current</code> too.</div>
+        <div class="flag warn"><b>Read the numbers above as a new baseline, not an improvement.</b>
+          The grader changed and every variant's shared key block now asks for risk, which moved the
+          other fields too. <code>current</code>'s 233&rarr;177 is the measurement becoming honest,
+          not the scorer getting better.</div>
+        <div class="flag"><b>Still open: calibration.</b> Stated confidence does not track accuracy,
+          and item confidence is the weight in <code>direction &times; confidence</code> aggregation
+          &mdash; so the corpus is weighted by a noisy number. <code>theta</code> was markedly better
+          here (rising to 97.1%), which is the one reason to revisit it.</div>
       </div>
     </div>
 
@@ -334,35 +347,47 @@
       </div>
     </div>
 
-    <div class="link dead"><i></i><span>&#9660; 100% of cycles stop here &#9660;</span><i></i></div>
+    <div class="link"><i></i><span>&#9660; reopened 4 Aug &mdash; the condor path no longer stops here &#9660;</span><i></i></div>
 
     <!-- 6 -->
-    <div class="node blocked" id="n6">
+    <div class="node" id="n6">
       <button class="nbtn" aria-expanded="false" aria-controls="d6">
         <span class="num">06</span>
         <span class="name">Gate the trade</span>
-        <span class="chip c-stop">blocking</span>
+        <span class="chip c-ok">reordered 4 Aug</span>
         <span class="caret">&rsaquo;</span>
-        <span class="io"><b>in</b> 1 prediction <span>&rarr;</span> <b>out</b> 0 candidates,
-          every cycle, always</span>
-        <span class="bar"><i style="width:0%"></i></span>
+        <span class="io"><b>in</b> 1 prediction <span>&rarr;</span> <b>out</b> 0 candidates to date
+          &mdash; the condor path is now reached but untested</span>
+        <span class="bar"><i style="width:50%"></i></span>
       </button>
       <div class="detail" id="d6">
-        <h4>Four gates, in this order</h4>
+        <h4>Reordered 4 August &mdash; tails first, direction scoped to the vertical</h4>
         <dl class="kv">
-          <dt>1. confidence</dt><dd><code>&lt; 0.65 &rarr; return []</code> &mdash;
-            <b>exits here every cycle</b>. Confidence has never exceeded 0.42.</dd>
-          <dt>2. tails</dt><dd>never reached. Would pass: <b>18 of 18 cycles</b> clear the 55% cap.</dd>
-          <dt>3. verticals</dt><dd>never reached</dd>
-          <dt>4. iron condor</dt><dd>never reached</dd>
+          <dt>1. tails</dt><dd><code>_sides_allowed()</code> &mdash; the real gate. <b>0 of 37
+            cycles</b> blocked; both tails have stayed inside the 55% cap throughout.</dd>
+          <dt>2. build</dt><dd>verticals are <b>always constructed</b>, because a condor is
+            assembled from one of each</dd>
+          <dt>3. offer verticals</dt><dd>only when <code>confidence &ge; 0.40</code> &mdash; the
+            directional trade, gated on a directional question</dd>
+          <dt>4. offer condor</dt><dd>whenever both tails are quiet, <b>regardless of
+            confidence</b></dd>
+          <dt>5. price</dt><dd><code>min_edge_score</code>, POP, RoR, liquidity &mdash; now the
+            binding constraints, and untested</dd>
         </dl>
-        <div class="flag"><b>The contradiction.</b> The iron condor is the instrument for
-          &ldquo;no directional view, both tails quiet&rdquo;. The code builds it. The confidence
-          gate &mdash; which runs first &mdash; rejects the trade for having no directional view.
-          The scanner declines condors on precisely the grounds that make a condor correct.</div>
-        <div class="flag warn"><b>And the question is unanswerable.</b> 188 of 199 labelled items
-          carry no directional sign. The gate asks how sure the model is of a direction the inputs
-          do not contain. No model fixes that &mdash; Sonnet was tried.</div>
+        <div class="flag good"><b>The contradiction is resolved.</b> The iron condor is the
+          instrument for &ldquo;no directional view, both tails quiet&rdquo;, and the gate that ran
+          first used to reject it for having no directional view. A vertical is short one tail and
+          long a view, so uncertainty disqualifies it; a condor is short both tails and holds no
+          view, so the same uncertainty is its precondition.</div>
+        <div class="flag"><b>The unanswerable question is still unanswerable &mdash; it just no
+          longer blocks everything.</b> 188 of 199 labelled items carry no directional sign, so the
+          gate asks how sure the model is of a direction the inputs do not contain. That is now
+          scoped to the trade that actually needs a direction, rather than standing in front of the
+          one that does not.</div>
+        <div class="flag warn"><b>Not yet observed.</b> All nine cycles of 4 August would have
+          reached the condor path under this ordering, where none did before. Whether a condor then
+          <em>prices</em> through the delta, POP, RoR and liquidity filters has never once been
+          tested. First chance: 5 August, 06:55 PDT.</div>
         <p>Fix: move the directional check so it filters verticals only, leaving condors to the tail
           gate, the edge threshold and the new premium-richness terms.</p>
       </div>
@@ -378,7 +403,7 @@
         <span class="chip c-stop">0 signal trades</span>
         <span class="caret">&rsaquo;</span>
         <span class="io"><b>signal arm</b> 0 ever <span>&middot;</span> <b>baseline arm</b> 1/day,
-          3 open, 0 closed</span>
+          5 open, 0 closed</span>
         <span class="bar"><i style="width:8%"></i></span>
       </button>
       <div class="detail" id="d7">
@@ -390,13 +415,21 @@
         </dl>
         <h4>Exits</h4>
         <p>Close at 2&times; the credit received, or after 4 days, whichever comes first. Marked
-          against the live chain every cycle.</p>
+          against a chain spanning the open expiries &mdash; its own fetch since 4 Aug, separate
+          from the scan chain.</p>
+        <div class="flag good"><b>Marking was broken from the start, and silently.</b> The scan chain
+          spans <code>dte_min..dte_max</code> from <em>today</em>, so a position left it within days
+          of opening and <code>mark_spread()</code> returned <code>None</code>.
+          <code>manage()</code> skips an unmarkable position <em>before</em> testing the exits &mdash;
+          so it was not merely unpriced, it was <b>unclosable</b>. The 4-day time exit never fired
+          once. Fixed 4 Aug.</div>
         <div class="flag warn"><b>The arms are not comparable.</b> Baseline sells 5-wide at 9%
           credit-to-width with no pricing floor; the signal arm would sell 25-wide requiring
           &ge;20%. A P&amp;L difference between them would not isolate the sentiment gate.</div>
-        <div class="flag"><b>No realised P&amp;L exists.</b> Three baseline positions open,
-          +$0.55 unrealised, zero closed. Every number in this pipeline is an input to a decision,
-          not a result.</div>
+        <div class="flag"><b>No realised P&amp;L exists.</b> Five baseline positions open, zero
+          closed, in eight days. Three are past their hold and should close on the first in-session
+          cycle after the fix &mdash; the first realised numbers this project will have produced.
+          Everything in this pipeline is still an input to a decision, not a result.</div>
       </div>
     </div>
 

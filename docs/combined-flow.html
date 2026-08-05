@@ -156,7 +156,11 @@
           <span class="meta">6 sources &middot; ~700 items/day &middot; Haiku</span></button>
           <div class="detail" id="s1">
             <p>News, macro, social, YouTube, econ calendar, 15 curated X accounts. Each item scored
-              for direction, magnitude, confidence.</p>
+              for direction, magnitude, confidence and &mdash; since 4 August &mdash;
+              <code>risk</code>, asked directly rather than inferred from the other two.</p>
+            <div class="flag good"><b>Risk recall 45% &rarr; 70% once measured honestly.</b> The
+              rows also record which prompt produced them, so a future A/B is attributable instead of
+              being a week of mixed corpus nobody can separate.</div>
             <div class="flag warn"><b>79% of the volume is being cut on 13 Aug.</b> Social and
               YouTube produced one actionable item in 107 labelled.</div>
           </div></div>
@@ -215,9 +219,11 @@
           <div class="detail" id="p2">
             <p>Composite vote decides bull put, bear call, or &mdash; when votes fail to clear
               &mdash; an iron condor.</p>
-            <div class="flag good"><b>Sopana already solved the condor problem.</b> No directional
-              conviction produces a condor rather than standing aside. The scanner builds condors but
-              gates them out first; this is the pattern it should copy.</div>
+            <div class="flag good"><b>Sopana already solved the condor problem &mdash; and the
+              scanner has now copied it.</b> No directional conviction produces a condor rather than
+              standing aside. As of 4 August the scanner's directional gate filters verticals only,
+              so its condor path is reached on the same reasoning: both systems now treat &ldquo;no
+              view, both tails quiet&rdquo; as a setup rather than a disqualification.</div>
             <dl class="kv"><dt>skew vote</dt><dd>inactive until ~18 Aug &mdash; needs 20 days of history</dd></dl>
           </div></div>
 
@@ -316,7 +322,7 @@
         <tr><td class="n">5</td><td>Signal maturity &mdash; skew vote active</td><td class="n">sopana</td><td class="n">~18 Aug</td></tr>
         <tr><td class="n">6</td><td>Operational resilience &mdash; Lambda burn-in</td><td class="n">sopana</td><td class="n">from 3 Aug</td></tr>
         <tr><td class="n">7</td><td>Capital &amp; risk sizing</td><td class="n">sopana</td><td class="n">BP &gt; account</td></tr>
-        <tr><td class="n">8</td><td>Scanner reliability &mdash; no silent death</td><td class="n">integration</td><td class="n">~5.6% abort</td></tr>
+        <tr><td class="n">8</td><td>Scanner reliability &mdash; no silent death</td><td class="n">integration</td><td class="n">abort fixed 3 Aug; 1 API-hang timeout 4 Aug, capped</td></tr>
         <tr><td class="n">9</td><td>Veto calibration &mdash; 2 weeks logged</td><td class="n">integration</td><td class="n">not started</td></tr>
         <tr><td class="n">10</td><td>Veto failure mode &mdash; fail open, staleness bound</td><td class="n">integration</td><td class="n">not designed</td></tr>
       </tbody>

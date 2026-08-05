@@ -189,7 +189,7 @@
   </header>
 
   <dl class="strip">
-    <div class="cell"><dt>Deployed</dt><dd class="ok">r50 &middot; f13dd1c &middot; zip</dd></div>
+    <div class="cell"><dt>Deployed</dt><dd class="ok">r58 &middot; 96e7fba &middot; zip</dd></div>
     <div class="cell"><dt>AWS identity</dt><dd class="ok">spx-deployer</dd></div>
     <div class="cell"><dt>Root keys</dt><dd class="ok">none</dd></div>
     <div class="cell"><dt>Alarms</dt><dd class="ok">both OK</dd></div>
@@ -795,9 +795,11 @@
           spreads.
         </p>
         <p>
-          The deeper finding is that no prompt can fix this. Risk recall reads 45 / 45 / 20 / 15
-          across the four runs because <code>SCORE_SCHEMA</code> <b>has no risk field</b> — the grader
-          infers it from <code>abs(direction) &gt; 0.3 or magnitude &gt; 0.5</code>, so every prompt
+          <em>The reasoning as it stood on 3 August, kept because 4 August tested it and it was
+          wrong.</em> The deeper finding is that no prompt can fix this. Risk recall reads
+          45 / 45 / 20 / 15 across the four runs because <code>SCORE_SCHEMA</code>
+          <b>has no risk field</b> — the grader infers it from
+          <code>abs(direction) &gt; 0.3 or magnitude &gt; 0.5</code>, so every prompt
           that improves direction trades away risk detection. The most heavily weighted metric is
           measured through a proxy two other objectives are fighting over. A prediction that
           <code>theta</code>'s &ldquo;high magnitude even at direction 0&rdquo; line would open the
@@ -1047,8 +1049,8 @@
   </section>
 
   <footer>
-    <span>Regenerated 3 August 2026</span>
-    <span>Deployed <code>r50-gf13dd1c</code> on <code>spx-scanner-zip</code> &middot; master <code>f3d5711</code></span>
+    <span>Regenerated 4 August 2026, evening</span>
+    <span>Deployed <code>r58-g96e7fba</code> on <code>spx-scanner-zip</code> &middot; master <code>cc4fbeb</code></span>
     <span>Source: <code>docs/tracker.html</code></span>
     <span>Data: Lightsail Postgres, CloudWatch, deployed Lambda configuration</span>
   </footer>
