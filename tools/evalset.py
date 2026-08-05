@@ -93,6 +93,20 @@ def cmd_sample(args) -> None:
 
 
 # ------------------------------------------------------------------- grade --
+RISK_FLAG_THRESHOLD = 0.5
+
+
+def _flags_risk(pred) -> bool:
+    """Did the scorer call this item risky?
+
+    Prefers the explicit `risk` field; falls back to the pre-risk-field proxy so
+    a variant that does not return one can still be graded on the same axis.
+    """
+    if len(pred) > 3 and pred[3] is not None:
+        return pred[3] >= RISK_FLAG_THRESHOLD
+    return abs(pred[0]) > 0.3 or pred[1] > 0.5
+
+
 def _bucket(value: float) -> int:
     if value < -NEUTRAL_BAND:
         return -1
@@ -155,7 +169,12 @@ def cmd_grade(args) -> None:
             except (TypeError, ValueError):
                 preds.append(None)
                 continue
-            preds.append((direction, magnitude, confidence))
+            risk = out.get("risk")
+            try:
+                risk = None if risk is None else max(0.0, min(1.0, float(risk)))
+            except (TypeError, ValueError):
+                risk = None
+            preds.append((direction, magnitude, confidence, risk))
 
         _report(name, labelled, preds)
 
@@ -176,8 +195,17 @@ def _report(name: str, labelled: list[dict], preds: list) -> None:
     dir_hits = sum(1 for r, p in relevant if _bucket(p[0]) == r["label_direction"])
 
     # Risk recall: the expensive error for a premium seller is missing a shock.
+    #
+    # Read the scorer's own `risk` field when it returns one. The old rule --
+    # |direction| > 0.3 or magnitude > 0.5 -- was a proxy assembled from two
+    # fields answering different questions, so an item could only register as
+    # risky by also committing to a direction or a large expected move. The case
+    # that actually ruins a premium seller, a shock whose direction is unclear,
+    # scored zero on it. Fall back to the proxy for prompts that predate the
+    # field, so old and new variants stay comparable in one run.
     risky = [(r, p) for r, p in pairs if r.get("label_risk")]
-    risk_caught = sum(1 for r, p in risky if abs(p[0]) > 0.3 or p[1] > 0.5)
+    risk_caught = sum(1 for r, p in risky if _flags_risk(p))
+    explicit = sum(1 for _, p in pairs if len(p) > 3 and p[3] is not None)
 
     scored = [p[0] for _, p in pairs]
     bear = sum(1 for d in scored if d < -NEUTRAL_BAND)
@@ -191,7 +219,13 @@ def _report(name: str, labelled: list[dict], preds: list) -> None:
     print(f"  relevance precision {rate(tp, tp + fp)}   <- of what it flags, how much matters")
     print(f"  relevance recall    {rate(tp, tp + fn)}   <- of what matters, how much it flags")
     print(f"  direction accuracy  {rate(dir_hits, len(relevant))}   (on relevant items only)")
+    source = (
+        "explicit risk field" if explicit == len(pairs)
+        else "proxy (no risk field returned)" if explicit == 0
+        else f"mixed: {explicit}/{len(pairs)} explicit"
+    )
     print(f"  RISK recall         {rate(risk_caught, len(risky))}   <- misses here cost real money")
+    print(f"                      via {source}")
     print(f"  bear:bull ratio     {bear}:{bull}"
           f"   ({bear / max(1, bull):.1f} : 1)   labelled {sum(1 for r,_ in pairs if r['label_direction'] == -1)}"
           f":{sum(1 for r,_ in pairs if r['label_direction'] == 1)}")

@@ -250,7 +250,7 @@
   <div class="headline">
     <div class="top">
       <span class="date">late Sept 2026</span>
-      <span class="cap">earliest combined go-live &middot; assessed 3 Aug, market close</span>
+      <span class="cap">earliest combined go-live &middot; assessed 4 Aug, market close</span>
     </div>
     <p>
       Unchanged from Sopana&rsquo;s own estimate, and that is the point: <strong>joining the two
@@ -343,6 +343,42 @@
       arm has never traded.
     </p>
 
+    <div class="note">
+      <p>
+        <strong>Update, 4 August &mdash; half of this moved, and it was the less interesting half.</strong>
+        The gate was found to be a fixed threshold on a number whose scale changed under it: the
+        weighted-mean aggregator reported 0.54&ndash;0.59, synthesis reports 0.30&ndash;0.42, and 0.65
+        was never re-derived when the swap happened. It has been recalibrated to <strong>0.40</strong>,
+        the 75th percentile of the synthesis distribution.
+      </p>
+      <p>
+        That unblocked the signal arm, but it did not touch the ordering &mdash; the threshold was
+        never the defect. <strong>The ordering is now fixed too.</strong> Verticals are still
+        <em>constructed</em> unconditionally, because a condor is assembled from one of each, but
+        they are only <em>offered</em> when confidence clears the gate. The condor no longer passes
+        through the directional check at all.
+      </p>
+    </div>
+
+<pre><code>def _candidates(self, chain, prediction):
+    ...
+    put_ok, call_ok = self._sides_allowed(prediction)   # &larr; tails decide first
+    verticals = [...]                                    # &larr; always BUILT
+
+    if prediction["confidence"] &gt;= self.s.confidence_gate:
+        results += verticals                             # &larr; only the vertical is gated
+    if put_ok and call_ok and allow_iron_condor:
+        results += self._condors(verticals)              # &larr; reached on its own merits</code></pre>
+
+    <div class="note">
+      <p>
+        What decides a condor now is <code>_sides_allowed()</code>, <code>min_edge_score</code> and
+        the pricing filters &mdash; none of which ask which way the market is going. A vertical is
+        short one tail and long a view, so &ldquo;not sure which way&rdquo; disqualifies it. A condor
+        is short both tails and holds no view, so the same uncertainty is its precondition.
+      </p>
+    </div>
+
 <pre><code>def _candidates(self, chain, prediction):
     ...
     if prediction["confidence"] &lt; self.s.confidence_gate:
@@ -371,11 +407,11 @@
     <div class="scroll"><table>
       <thead><tr><th>Gate</th><th>Asks</th><th>Fires?</th><th>Keep</th></tr></thead>
       <tbody>
-        <tr><td><code>confidence_gate</code> 0.65</td><td>How sure are we of the direction</td><td class="no">blocks 100% of cycles</td><td class="no">No &mdash; directional vestige</td></tr>
-        <tr><td><code>_sides_allowed</code> tails</td><td>Is either tail fat</td><td class="yes">0 of 28 cycles blocked</td><td class="yes">Yes &mdash; the real gate</td></tr>
-        <tr><td><code>min_edge_score</code> 0.05</td><td>Is this spread worth selling</td><td class="num">never reached</td><td class="yes">Yes</td></tr>
-        <tr><td><code>min_pop</code> / <code>min_credit_to_width</code></td><td>Is it priced acceptably</td><td class="num">never reached</td><td class="yes">Yes</td></tr>
-        <tr><td>IV/RV, VIX term structure</td><td>Is premium rich, is the regime sane</td><td class="num">live 3 Aug, reading only</td><td class="yes">Yes &mdash; as an <em>edge input</em>, not a gate</td></tr>
+        <tr><td><code>confidence_gate</code> <s>0.65</s> 0.40</td><td>How sure are we of the direction</td><td class="yes">verticals only, since 4 Aug</td><td class="yes">Yes &mdash; scoped to the directional trade</td></tr>
+        <tr><td><code>_sides_allowed</code> tails</td><td>Is either tail fat</td><td class="yes">0 of 37 cycles blocked</td><td class="yes">Yes &mdash; the real gate</td></tr>
+        <tr><td><code>min_edge_score</code> 0.05</td><td>Is this spread worth selling</td><td class="yes">now reachable</td><td class="yes">Yes</td></tr>
+        <tr><td><code>min_pop</code> / <code>min_credit_to_width</code></td><td>Is it priced acceptably</td><td class="yes">now reachable</td><td class="yes">Yes</td></tr>
+        <tr><td>IV/RV, VIX term structure</td><td>Is premium rich, is the regime sane</td><td class="yes">in the edge score, 4 Aug</td><td class="yes">Yes &mdash; as an <em>edge input</em>, not a gate</td></tr>
       </tbody>
     </table></div>
   </section>
@@ -429,16 +465,63 @@
         <div class="check"><b>Closed 3 Aug</b><span>ten market-hours cycles, <code>Regime:</code> on every one, and the abort printed a full thread dump &mdash; which named the cause rather than merely capturing it.</span></div>
       </div>
 
-      <div class="step crit">
+      <div class="step now">
+        <span class="date">Tue 4 Aug</span>
+        <span class="what">Recalibrate the gate to the scale the aggregator actually reports</span>
+        <span class="tag t-scan">scanner</span>
+        <div class="body">
+          Not the planned step, but it came first because it is smaller and it was mismeasurement
+          rather than design. <code>confidence_gate</code> was set for the weighted-mean aggregator
+          (0.54&ndash;0.59, grazing 0.65 twice in 139 predictions) and never re-derived when synthesis
+          replaced it (0.30&ndash;0.42 over 41). Moved to <b>0.40</b>, the synthesis 75th percentile,
+          so the gate keeps its intended meaning &mdash; trade the upper quartile of conviction &mdash;
+          on the scale in use.
+          <br><br>
+          Provisional, and deliberately so: 41 observations from seven sessions of a single calm,
+          contango, IV-under-RV regime. Re-derive once a wider regime range has banked.
+        </div>
+        <div class="check"><b>Check</b><span>at least one cycle produces <code>num_candidates &gt; 0</code>, and a first <code>arm='model'</code> row appears. Neither has ever happened. If the arm still does not trade at 0.40, the blocker is downstream &mdash; edge, POP, RoR or liquidity &mdash; and that is a separate investigation.</span></div>
+      </div>
+
+      <div class="step now">
+        <span class="date">Tue 4 Aug</span>
+        <span class="what">Give marking its own chain, so positions can close</span>
+        <span class="tag t-scan">scanner</span>
+        <div class="body">
+          Found while reviewing the session: the once-per-cycle chain spans
+          <code>dte_min..dte_max</code> <em>from today</em>, so a position drops out of it days after
+          opening and <code>mark_spread()</code> returns <code>None</code>. <code>manage()</code>
+          skips an unmarkable position <em>before</em> testing the exits, making it unclosable &mdash;
+          zero closed rows and zero realised P&amp;L in eight days, with three positions sitting past
+          their 4-day hold.
+          <br><br>
+          Marking now fetches its own chain spanning the open expiries. The scan chain is deliberately
+          left narrow: <code>atm_iv()</code> averages across every expiry it is given, so widening it
+          would have moved the regime level that the synthesis prompt and IV/RV read from.
+        </div>
+        <div class="check"><b>Check</b><span>positions 1&ndash;3 close on <code>time</code> at the first in-session cycle after deploy, writing the first realised P&amp;L the project has ever recorded.</span></div>
+      </div>
+
+      <div class="step now">
         <span class="date">Tue 4 Aug</span>
         <span class="what">Retire the confidence gate; let the condor through</span>
         <span class="tag t-scan">scanner</span>
         <div class="body">
-          Move the directional check so it filters <em>verticals</em> only, leaving the condor path to
-          the tail gate and edge threshold. Add the premium-richness condition from &sect;02 in its place.
-          This is the change that makes the signal arm capable of firing at all.
+          Done. The directional check now filters <em>verticals</em> only; the condor is decided by
+          the tail gate, <code>min_edge_score</code> and the pricing filters. Premium richness ships
+          alongside it as an edge <em>input</em>: IV/RV below 1 lowers the score rather than vetoing
+          the trade, so an unusually good structure can still sell into thin premium.
+          <br><br>
+          Weighted at 0.15, today's 0.85&ndash;0.90 ratio costs ~0.02 of edge against a 0.05
+          threshold &mdash; enough to demand a better structure, not enough to refuse one. The ratio
+          is clamped to 0.5&ndash;1.5 first, so a bad quote tilts the ranking rather than owning it.
+          <br><br>
+          Still open, and deliberately deferred: expressing the gate as a <em>percentile of recent
+          predictions</em> rather than an absolute number. A fixed threshold silently closed once
+          when the aggregator changed under it and nothing alarmed &mdash; a gate that blocks every
+          cycle is indistinguishable in the logs from a market that never qualifies.
         </div>
-        <div class="check"><b>Check</b><span>at least one cycle produces <code>num_candidates &gt; 0</code>. It never has.</span></div>
+        <div class="check"><b>Check</b><span>a cycle logs <code>num_candidates &gt; 0</code> with confidence <em>below</em> the directional gate, proving the condor is reached on its own merits. All nine cycles of today's session would now reach that path, where none did before &mdash; both tails sat 22&ndash;40% against the 55% cap while confidence never cleared 0.42. Whether a condor then prices through the delta, POP, RoR and liquidity filters is untested, and is now the open question.</span></div>
       </div>
 
       <div class="step crit">
@@ -504,23 +587,41 @@
           unattributable. <code>SCORE_SCHEMA</code> has no risk field, so the metric weighted 8&times;
           is inferred from a proxy two other objectives fight over. Both are small; both gate the
           <code>theta</code> switch.
+          <br><br>
+          <b>Shipped, and the switch it was gating does not happen.</b> Both instruments landed:
+          <code>item_scores</code> now records the prompt variant that actually ran, and
+          <code>risk</code> is asked directly. Re-graded on the same 199 labels,
+          <code>theta</code> returns <b>30.0% risk recall</b> against the 45% floor, missing 14 of 20
+          labelled shocks. Its weighted-error edge over <code>current</code> is 168 to 177 &mdash; nine
+          points, bought with a 40-point deficit on the metric priced at &times;8.
+          <code>SCORING_PROMPT</code> stays <code>current</code>.
+          <br><br>
+          The hypothesis this step was built on is <b>falsified</b>. The claim was that the proxy was
+          why <code>theta</code> looked bad on risk. Asked directly, it still only reaches 30%: the
+          conservatism suppresses risk detection genuinely, not as an artifact. The proxy was a real
+          defect and worth removing; it was not <code>theta</code>'s excuse.
         </div>
-        <div class="check"><b>Check</b><span>weighted error &lt; 233, risk recall &ge; 45%, bear:bull inside 2.5:1. Fail any one and stay on <code>current</code>.</span></div>
+        <div class="check"><b>Closed 4 Aug</b><span>weighted error 168 &check;, bear:bull 1.6:1 &check;, risk recall 30.0% &cross;. Fail any one and stay &mdash; so, stay. Note the re-graded numbers are not comparable to the earlier four runs: the grader changed <em>and</em> every variant's shared key block now asks for risk, which moved the other fields too. Only <code>current</code> vs <code>theta</code> under today's identical conditions carries the decision.</span></div>
       </div>
     </div>
 
     <div class="week">
       <div class="week-label">Week of 10 August &mdash; make the scanner emit something Sopana can eat</div>
 
-      <div class="step auto">
-        <span class="date">~Mon 11 Aug</span>
+      <div class="step now">
+        <span class="date">not needed</span>
         <span class="what">First clean read on the scoring prompt switch</span>
         <span class="tag t-scan">scanner</span>
         <div class="body">
           <code>recent_scores()</code> reads a 7-day lookback, so for a week after switching the
           synthesis sees a blend of old- and new-prompt scores. Judge nothing before this date.
+          <br><br>
+          <b>Moot &mdash; the switch did not happen.</b> <code>theta</code> failed its risk-recall
+          gate on 4 Aug, so the corpus stays on one prompt and never becomes mixed. This step exists
+          only to be re-armed when a variant does pass; <code>item_scores.prompt</code> now makes the
+          blend visible rather than something to be waited out blindly.
         </div>
-        <div class="check"><b>Check</b><span>synthesis confidence and per-side tails re-read on a corpus scored entirely under one prompt.</span></div>
+        <div class="check"><b>Re-arm when</b><span>a variant clears all four gates. Then this wait is real, and <code>GROUP BY prompt</code> on <code>item_scores</code> tells you when the lookback is clean instead of counting days.</span></div>
       </div>
 
       <div class="step crit">

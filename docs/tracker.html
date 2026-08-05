@@ -178,10 +178,13 @@
     <h1>Open investigations, running experiments, and what to watch next</h1>
     <p class="standfirst">
       Everything currently unresolved in the pipeline, each with the condition that would make you
-      act on it. Regenerated 3 August 2026, evening, from the live database, CloudWatch and the deployed
-      configuration. Since the 30 July edition: the eval set is labelled and the scoring-model
-      question is closed, a native heap abort was found in the collectors, the price/vol regime is
-      now measured, and the confidence gate was found to make the iron condor unreachable.
+      act on it. Regenerated 4 August 2026, evening, from the live database, CloudWatch and the deployed
+      configuration. Since the 3 August edition: the ZIP ran its first full live session cleanly,
+      the confidence gate was found to be measuring on a scale that changed underneath it and has
+      been recalibrated <em>and then rescoped</em> so the iron condor is no longer rejected for
+      having no directional view, the paper tracker was found unable to mark &mdash; or close &mdash;
+      any position more than a few days old, and the scoring prompt question was settled against
+      <code>theta</code> once risk could be measured rather than inferred.
     </p>
   </header>
 
@@ -190,15 +193,15 @@
     <div class="cell"><dt>AWS identity</dt><dd class="ok">spx-deployer</dd></div>
     <div class="cell"><dt>Root keys</dt><dd class="ok">none</dd></div>
     <div class="cell"><dt>Alarms</dt><dd class="ok">both OK</dd></div>
-    <div class="cell"><dt>X spend, 31 Jul close</dt><dd class="warn">176 / 260</dd></div>
-    <div class="cell"><dt>Open paper</dt><dd class="warn">3 baseline, 0 signal</dd></div>
+    <div class="cell"><dt>X spend, 4 Aug close</dt><dd class="warn">188 / 260</dd></div>
+    <div class="cell"><dt>Open paper</dt><dd class="warn">5 baseline, 0 signal</dd></div>
   </dl>
 
   <!-- ============ LEAD ============ -->
   <section>
     <div class="sec-head">
       <h2>The question everything else is subordinate to</h2>
-      <span class="sec-note">sharpened today — one explanation eliminated</span>
+      <span class="sec-note">answered today — the gate was reading a scale that had moved</span>
     </div>
 
     <div class="lead">
@@ -245,7 +248,44 @@
         direction that the inputs do not contain. No scorer and no model fixes that &mdash; Sonnet 5
         was tried and its weighted error landed inside the 1.3% run-to-run noise floor.
       </p>
-      <div class="trigger"><b>Next</b><span>retire the gate rather than lower it. See the item below: it runs before the tail gate and makes the iron condor &mdash; the trade for exactly this situation &mdash; unreachable.</span></div>
+      <p>
+        <strong>4 August &mdash; a third explanation, and this one is measurable.</strong> The gate is
+        a fixed threshold on a number whose <em>scale changed underneath it</em>. Split the 180
+        predictions on the day the synthesis aggregator replaced the weighted mean and they are
+        plainly two different distributions:
+      </p>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Aggregator</th><th>Window</th><th>n</th><th>Confidence range</th><th>Mean</th><th>Cleared 0.65</th></tr></thead>
+          <tbody>
+            <tr><td>weighted mean</td><td>24&ndash;28 Jul</td><td class="num">139</td><td class="num">0.30&ndash;0.658</td><td class="num">0.56</td><td class="num">2 (1.4%)</td></tr>
+            <tr><td>synthesis</td><td>29 Jul&ndash;4 Aug</td><td class="num">41</td><td class="num">0.30&ndash;0.42</td><td class="num">0.37</td><td class="num was">0</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        The mean aggregator sat in a compressed band and grazed the gate twice in 139 predictions
+        &mdash; 0.65 was <em>already</em> a near-dead threshold, which is why no signal trade had ever
+        opened even before the swap. Synthesis then reported genuinely differentiated but
+        systematically lower conviction and the gate became unreachable outright. Nothing re-derived
+        the threshold when the scale moved, and nothing alarmed: a gate that blocks every cycle looks
+        identical in the logs to a market that never qualifies.
+      </p>
+      <p>
+        <strong>Recalibrated to 0.40</strong> &mdash; the 75th percentile of the synthesis
+        distribution, so the gate keeps its intended meaning (trade the upper quartile of conviction)
+        on the scale now in use. Against the 41 cycles on record it admits 15, and against today's
+        session 5 of 9. Provisional: 41 observations across seven sessions of one calm,
+        contango, IV-under-RV regime.
+      </p>
+      <p>
+        This does not retire the gate, and the item below still stands: at 0.40 the directional check
+        still runs <em>before</em> <code>_sides_allowed()</code>, so the condor is reachable on ~37% of
+        cycles instead of 0% rather than being decided on its merits. Nor does it touch the deeper
+        finding above &mdash; the inputs still mostly carry no directional sign. What it fixes is the
+        gate being the binding constraint, which it should never have been.
+      </p>
+      <div class="trigger"><b>Close condition</b><span>a cycle logging <code>num_candidates &gt; 0</code>, and a first <code>arm='model'</code> row in <code>paper_positions</code>. Neither has ever occurred. If the arm still does not trade at 0.40, the blocker is downstream — edge, POP, RoR or liquidity — and is a different investigation.</span></div>
     </div>
   </section>
 
@@ -261,9 +301,27 @@
       <article class="item sev-risk">
         <div class="item-top">
           <h3>The confidence gate makes the iron condor unreachable</h3>
-          <span class="pill p-risk">blocks 100% of cycles</span>
-          <span class="when">found 2 Aug</span>
+          <span class="pill p-watch">fixed 4 Aug</span>
+          <span class="when">found 2 Aug &middot; fixed 4 Aug</span>
         </div>
+        <p>
+          <strong>Fixed, and by reordering rather than by lowering.</strong> The earlier
+          recalibration to 0.40 only changed how often the wrong question got asked. The gate now
+          scopes to the directional trade: verticals are still <em>constructed</em> unconditionally,
+          because a condor is assembled from one of each, but they are only <em>offered</em> when
+          confidence clears. The condor no longer passes through the directional check at all &mdash;
+          it is decided by <code>_sides_allowed()</code>, <code>min_edge_score</code> and the pricing
+          filters, none of which ask which way the market is going.
+        </p>
+        <p>
+          Premium richness shipped in the same change, as an edge <em>input</em> rather than the
+          second veto it was tempting to make it. IV/RV below 1 lowers the score; it does not refuse
+          the trade. At weight 0.15 today's 0.85&ndash;0.90 costs ~0.02 of edge against a 0.05
+          threshold, and the ratio is clamped to 0.5&ndash;1.5 so one bad quote cannot own the
+          ranking. The discipline is the lesson from this very item: a hard floor on a number with
+          days of history is how the confidence gate came to block every cycle for a fortnight.
+        </p>
+        <p class="was">The original finding, kept because it is what the fix was aimed at:</p>
         <p>
           <code>_candidates()</code> checks directional confidence and returns an empty list
           <em>before</em> it ever consults <code>_sides_allowed()</code> or builds a condor:
@@ -293,7 +351,112 @@
           cycles &mdash; downside 36&ndash;48%, upside 20&ndash;32%, against a 55% cap, zero breaches.
           Every prediction on record already says no adverse move is detected.
         </p>
-        <div class="trigger"><b>Act</b><span>move the directional check so it filters verticals only, leaving condors to the tail gate, <code>min_edge_score</code> and the new premium-richness terms. The close condition is simple and has never once been met: a cycle logging <code>num_candidates &gt; 0</code>.</span></div>
+        <div class="trigger"><b>Closes when</b><span>a cycle logs <code>num_candidates &gt; 0</code> with confidence <em>below</em> the gate — the condor reached on its own merits. Every cycle of today's session would now reach that path, where none did before: both tails sat 22&ndash;40% against the 55% cap while confidence never cleared 0.42. Whether a condor then <em>prices</em> through the delta, POP, RoR and liquidity filters is the open question, and it is the right one to be left with.</span></div>
+      </article>
+
+      <article class="item sev-risk">
+        <div class="item-top">
+          <h3>No paper position could be marked, or closed, after it aged a few days</h3>
+          <span class="pill p-risk">fixed 4 Aug &middot; 0 closes in 8 days</span>
+          <span class="when">found 4 Aug</span>
+        </div>
+        <p>
+          The chain is fetched once per cycle over <code>dte_min..dte_max</code> measured
+          <em>from today</em> — a 20-to-25-day window that slides forward daily. A position is opened
+          inside that window and then falls out of it within days, so its legs are absent from every
+          later chain and <code>mark_spread()</code> returns <code>None</code>:
+        </p>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Position</th><th>Opened</th><th>Expiry</th><th>Last marked</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr><td class="num">1</td><td>28 Jul</td><td>21 Aug</td><td class="was">31 Jul</td><td class="was">open, 7d past its 4d hold</td></tr>
+              <tr><td class="num">2</td><td>30 Jul</td><td>21 Aug</td><td class="was">31 Jul</td><td class="was">open, 5d past its 4d hold</td></tr>
+              <tr><td class="num">3</td><td>31 Jul</td><td>20 Aug</td><td class="was">31 Jul</td><td class="was">open, 4d past its 4d hold</td></tr>
+              <tr><td class="num">4</td><td>3 Aug</td><td>28 Aug</td><td class="now">3 Aug</td><td>open, still inside the window</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          The severe part is second-order. <code>manage()</code> hits <code>continue</code> on an
+          unmarkable position <em>before</em> it evaluates the exits, so such a position is not merely
+          unpriced &mdash; it is <strong>unclosable</strong>. The 4-day time exit never fired, the stop
+          never fired, and <code>paper_positions</code> contains <strong>zero closed rows and zero
+          realised P&amp;L</strong> in eight days of trading. The control arm has been accumulating
+          positions it can never score, which quietly empties the one measurement the whole project
+          is built to produce.
+        </p>
+        <p>
+          Fixed by giving marking its own chain spanning the open positions' expiries, rather than
+          widening the scan chain &mdash; <code>atm_iv()</code> averages across every expiry it is
+          handed, so folding in nearer-dated contracts would have shifted the regime level that the
+          synthesis prompt and the IV/RV ratio read from. Costs one extra chain request per cycle,
+          and only while something sits outside the scan window.
+        </p>
+        <div class="trigger"><b>Watch</b><span>positions 1&ndash;3 should close on <code>time</code> at the next in-session cycle after deploy, writing the first realised P&amp;L rows. If they do not, marking is failing for a second reason and the fallback path is hiding it.</span></div>
+      </article>
+
+      <article class="item sev-risk">
+        <div class="item-top">
+          <h3>One hung API call spends the entire cycle budget</h3>
+          <span class="pill p-risk">fixed 4 Aug &middot; 1 lost cycle</span>
+          <span class="when">found 4 Aug</span>
+        </div>
+        <p>
+          The 15:55 PDT cycle ran for the full 600&nbsp;s and returned
+          <code>Status: timeout</code> having logged only collection. The automatic retry, on
+          identical code and environment, finished in <strong>127&nbsp;s</strong>. The cause is a
+          default nobody set:
+        </p>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Limit</th><th>Value</th><th>Effect</th></tr></thead>
+            <tbody>
+              <tr><td>Anthropic SDK read timeout</td><td class="num was">600 s</td><td class="was">one request can outlive the cycle</td></tr>
+              <tr><td>Lambda function timeout</td><td class="num">600 s</td><td>identical, so nothing degrades &mdash; it just dies</td></tr>
+              <tr><td>Typical Haiku scoring call</td><td class="num">2&ndash;5 s</td><td>the 600 s was never a considered figure</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Scoring now uses <strong>30&nbsp;s</strong> and synthesis <strong>120&nbsp;s</strong> &mdash;
+          separated because synthesis is one Opus call over 40 stories at ~15&nbsp;s, and sharing the
+          scorer's budget would cut off the cycle's single most valuable request. The SDK's own two
+          retries still fit inside a cycle.
+        </p>
+        <p>
+          Worth stating plainly: <strong>this was not caused by the deploy it followed.</strong> It
+          landed one minute after <code>r55</code> went live, which is exactly the coincidence that
+          invites a wrong conclusion &mdash; but <code>r55</code> changed the gate value, the marking
+          chain and two deploy scripts, none of which the scoring path touches, and the retry
+          succeeded on that same code. It is the only timeout in 48 hours across both functions.
+        </p>
+        <div class="trigger"><b>Watch</b><span>a second timeout would falsify the diagnosis, since a per-request cap now bounds it. Cycle duration should stay in the 110&ndash;160 s band it has held all week.</span></div>
+      </article>
+
+      <article class="item sev-new">
+        <div class="item-top">
+          <h3><code>sync-env.ps1</code> wrote settings to the function that was retired</h3>
+          <span class="pill p-new">found while shipping the gate</span>
+          <span class="when">found 4 Aug</span>
+        </div>
+        <p>
+          The script pushed <code>.env</code> to <code>$FuncName</code>, which
+          <code>common.ps1</code> still defines as <code>spx-scanner</code> &mdash; the container that
+          the ZIP replaced on 3 August. EventBridge invokes <code>spx-scanner-zip</code>. Any setting
+          changed since the switch would have reported success and never reached a running cycle.
+          <code>Test-LambdaExists</code> made it quieter still: it took no parameter and always tested
+          <code>$FuncName</code>, so <code>build-zip.ps1</code>'s existing
+          <code>Test-LambdaExists $ZipFuncName</code> guard was silently checking the wrong function.
+        </p>
+        <p>
+          Both fixed: the helper now takes a name, and <code>sync-env.ps1</code> defaults to the ZIP.
+          The rest of <code>deploy/</code> still resolves <code>$FuncName</code> to the retired
+          container &mdash; <code>invoke.ps1</code>, <code>alarms.ps1</code> and
+          <code>schedule.ps1</code> among them. The live alarms and schedules happen to point at the
+          ZIP because they were repointed by hand, so the scripts and the account now disagree.
+        </p>
+        <div class="trigger"><b>Act</b><span>split the name in <code>common.ps1</code> — <code>$FuncName</code> for whatever is live, a separate one for the container path — and re-run <code>alarms.ps1</code> and <code>schedule.ps1</code> to confirm they reproduce what is actually deployed rather than diverging from it a second time.</span></div>
       </article>
 
       <article class="item sev-new">
@@ -548,24 +711,34 @@
       <article class="item sev-run">
         <div class="item-top">
           <h3>Model versus mechanical premium selling</h3>
-          <span class="pill p-run">running</span>
-          <span class="when">first close: ~1 Aug</span>
+          <span class="pill p-run">running &middot; still one-armed</span>
+          <span class="when">first close: none yet</span>
         </div>
         <p>
           The baseline arm sells a ~0.15-delta put spread daily and ignores the model entirely; the
-          signal arm trades only when confidence clears 65% and edge beats 0.05. The comparison is the
-          point of the system, and it still has only one arm in it.
+          signal arm trades only when confidence clears the gate and edge beats 0.05. The comparison is
+          the point of the system, and it still has only one arm in it.
         </p>
         <div class="table-scroll">
           <table>
             <thead><tr><th>#</th><th>Arm</th><th>Spread</th><th>Expiry</th><th>Credit</th><th>Stop</th><th>Opened</th></tr></thead>
             <tbody>
+              <tr><td class="num">5</td><td>baseline</td><td class="num">7375 / 7370 put</td><td class="num">25 Aug</td><td class="num">$0.45</td><td class="num">$0.90</td><td class="num">4 Aug 06:58</td></tr>
+              <tr><td class="num">4</td><td>baseline</td><td class="num">7215 / 7210 put</td><td class="num">28 Aug</td><td class="num">$0.45</td><td class="num">$0.90</td><td class="num">3 Aug 06:58</td></tr>
+              <tr><td class="num">3</td><td>baseline</td><td class="num">7060 / 7055 put</td><td class="num">20 Aug</td><td class="num">$0.45</td><td class="num">$0.90</td><td class="num">31 Jul 06:57</td></tr>
               <tr><td class="num">2</td><td>baseline</td><td class="num">7045 / 7040 put</td><td class="num">21 Aug</td><td class="num">$0.45</td><td class="num">$0.90</td><td class="num">30 Jul 13:57</td></tr>
               <tr><td class="num">1</td><td>baseline</td><td class="num">7060 / 7055 put</td><td class="num">21 Aug</td><td class="num">$0.45</td><td class="num">$0.90</td><td class="num">28 Jul 22:58</td></tr>
             </tbody>
           </table>
         </div>
-        <div class="trigger"><b>Reads out</b><span>positions close on a 4-day hold or a 2× credit stop, so #1 resolves around 1 Aug and #2 around 3 Aug.</span></div>
+        <p>
+          <strong>Both blockers were structural, and both were addressed on 4 August.</strong> The
+          signal arm could not trade because the gate was reading a stale scale; the baseline arm
+          could not <em>close</em>, because an aged position cannot be marked. So the experiment has
+          produced five entries, zero exits and no P&amp;L at all &mdash; it has not been running,
+          only accumulating. Treat 4 August as the true start date.
+        </p>
+        <div class="trigger"><b>Reads out</b><span>positions close on a 4-day hold or a 2× credit stop. #1&ndash;#3 are already past their hold and should close on the first in-session cycle after deploy; that is also the check that the marking fix works end to end.</span></div>
       </article>
 
       <article class="item sev-run">
@@ -585,7 +758,7 @@
       <article class="item sev-run">
         <div class="item-top">
           <h3>Per-item scoring model, Haiku against the alternatives</h3>
-          <span class="pill p-run">answered</span>
+          <span class="pill p-run">answered &middot; prompt settled 4 Aug</span>
           <span class="when">199 of 200 labelled, 1 Aug</span>
         </div>
         <p>
@@ -630,8 +803,53 @@
           <code>theta</code>'s &ldquo;high magnitude even at direction 0&rdquo; line would open the
           second path was tested and <em>falsified</em> — risk recall fell rather than rose.
         </p>
-        <div class="trigger"><b>Switch when</b><span>all four hold on a re-grade against the same 199 labels: (1) <code>item_scores</code> records the prompt variant, not just the model — today <code>save_score()</code> stores <code>model</code> only, so a production A/B would be unattributable; (2) an explicit <code>risk</code> field exists in <code>SCORE_SCHEMA</code> and is scored directly rather than inferred; (3) weighted error below 233 — <code>current</code>'s measured baseline, not 236; (4) risk recall at or above 45%, i.e. no regression on the expensive metric, and bear:bull inside ~2.5:1. Fail any one and stay on <code>current</code>.</span></div>
-        <div class="trigger"><b>Timeline</b><span>4 Aug — ship prompt attribution + the risk field, re-grade (~15 min, ~$0.35), decide against the four gates above. If they pass, switch <code>SCORING_PROMPT</code> the same day. Effect is <em>not</em> immediate: <code>recent_scores()</code> reads a 7-day lookback, so synthesis sees a mix of old- and new-prompt scores until ~11 Aug. Judge nothing before then. First clean read: 11 Aug.</span></div>
+
+        <h4 style="margin:1.1rem 0 .4rem;font-size:.95rem">Re-graded 4 August, with risk asked directly</h4>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Run</th><th>weighted err</th><th>direction</th><th>precision</th><th>recall</th><th>RISK recall</th><th>bear:bull</th></tr></thead>
+            <tbody>
+              <tr><td class="num"><b>current</b> (incumbent)</td><td class="num now">177</td><td class="num">37.0%</td><td class="num">42.6%</td><td class="num">71.6%</td><td class="num now">70.0%</td><td class="num now">1.3 : 1</td></tr>
+              <tr><td class="num"><b>theta</b></td><td class="num now">168</td><td class="num now">65.4%</td><td class="num now">53.3%</td><td class="num was">39.5%</td><td class="num was">30.0%</td><td class="num now">1.6 : 1</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          <strong>Verdict: stay on <code>current</code>.</strong> Gate 4 is the one that binds —
+          <code>theta</code> returns 30.0% risk recall against a 45% floor, missing 14 of 20 labelled
+          risk items. Its weighted-error edge is 168 against 177: real, but nine points, and bought
+          with a 40-point deficit on the metric priced at &times;8. The rule was &ldquo;fail any one
+          and stay&rdquo;, and this is what that rule is for.
+        </p>
+        <p>
+          <strong>The central hypothesis is falsified.</strong> The claim above was that the proxy was
+          <em>why</em> <code>theta</code> looked bad on risk — that every prompt improving direction
+          necessarily traded away risk detection, because risk was being read off direction and
+          magnitude. Asked the question directly, <code>theta</code> still only reaches 30%. Its
+          conservatism suppresses risk detection genuinely, not as a measurement artifact. The proxy
+          was a real defect and worth removing; it was not <code>theta</code>'s excuse.
+        </p>
+        <p>
+          <strong>These numbers do not compare to the four runs above, and should not be read as an
+          improvement.</strong> Two things changed at once: the grader now reads an explicit field,
+          and the shared <code>_KEYS</code> block asks every variant for <code>risk</code>, which moved
+          behaviour on the other fields too — <code>current</code>'s direction accuracy went
+          22.2%&rarr;37.0% and its relevance recall 87.7%&rarr;71.6%. So <code>current</code>'s
+          233&rarr;177 is not the scorer getting better; it is the measurement becoming honest, on a
+          slightly different prompt. The only clean comparison is <code>current</code> against
+          <code>theta</code> under identical conditions today, and that is the one the verdict rests on.
+        </p>
+        <p>
+          One observation worth carrying forward: <code>theta</code>'s stated confidence tracks
+          accuracy far better than <code>current</code>'s. Rising 55.6 &rarr; 18.8 &rarr; 50.0 &rarr;
+          <b>97.1%</b> across the confidence bands, against <code>current</code>'s non-monotonic
+          46.8 &rarr; 12.5 &rarr; 34.1 &rarr; 80.0. This is <em>item-level</em> confidence, not the
+          synthesis confidence the trade gate reads, so it does not bear on that gate directly — but
+          item confidence is the weight in <code>direction &times; confidence</code> aggregation, so
+          <code>current</code> is weighting its own scores with a noisy number.
+        </p>
+        <div class="trigger"><b>Settled 4 Aug</b><span>gates (1) and (2) shipped; (3) passed at 168; (4) <b>failed</b> at 30.0% risk recall. <code>SCORING_PROMPT</code> stays <code>current</code> and the 7-day lookback contamination never starts, so there is nothing to wait until 11 Aug for. The corpus stays on one prompt.</span></div>
+        <div class="trigger"><b>Next</b><span>the question is no longer &ldquo;which of these two&rdquo;. <code>current</code> flags 136 items to find 58 (42.6% precision) while <code>theta</code> flags 60 to find 32 and misses 14 shocks. A variant is needed that keeps <code>theta</code>'s direction accuracy and calibration <em>without</em> its across-the-board conservatism — most plausibly by separating the &ldquo;is this relevant at all&rdquo; judgement from the &ldquo;is this dangerous&rdquo; one, which are now visibly in tension inside a single prompt. Grade it on the same 199 labels against <code>current</code>'s 177 / 70.0%.</span></div>
       </article>
 
     </div>
@@ -781,6 +999,16 @@
       <span class="sec-note">28–30 July &middot; outlined items closed today &middot; one reopened 31 Jul: &ldquo;zero warnings or errors across a full day&rdquo; was falsified by two native aborts, now tracked above</span>
     </div>
     <div class="settled-grid">
+      <div class="settled-item today">Condor no longer gated on a directional view; premium richness joins the edge score</div>
+      <div class="settled-item today"><code>risk</code> asked directly &mdash; the &times;8 metric is no longer a proxy</div>
+      <div class="settled-item today"><code>item_scores</code> records the prompt that ran, not the one configured</div>
+      <div class="settled-item today">Prompt question settled: <code>theta</code> fails risk recall 30% &lt; 45%, stay on <code>current</code></div>
+      <div class="settled-item today">Anthropic SDK's 600 s default timeout equalled the whole cycle budget</div>
+      <div class="settled-item today">ZIP ran its first full live session &mdash; 9 cycles, no errors, 387 MB peak</div>
+      <div class="settled-item today">Confidence gate recalibrated 0.65 &rarr; 0.40 for the synthesis scale</div>
+      <div class="settled-item today">Marking now uses its own chain; aged positions are markable and closable again</div>
+      <div class="settled-item today"><code>sync-env.ps1</code> was writing settings to the retired container</div>
+      <div class="settled-item today"><code>Test-LambdaExists</code> ignored its argument &mdash; guards tested the wrong function</div>
       <div class="settled-item today">Deploy moved to a 32.6 MB ZIP; the 433 MB base layer was never needed</div>
       <div class="settled-item today">250 MB claim that justified the container was untested &mdash; real payload 95.6 MB</div>
       <div class="settled-item today">Scheduler role could invoke only the old function &mdash; caught before repointing</div>

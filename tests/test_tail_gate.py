@@ -90,10 +90,28 @@ def test_both_tails_fat_blocks_everything():
     assert _strategy()._candidates(_chain(), _prediction(down=0.9, up=0.9)) == []
 
 
-def test_confidence_gate_still_applies():
-    assert _strategy()._candidates(
-        _chain(), _prediction(confidence=0.2, down=0.1, up=0.1)
-    ) == []
+def test_confidence_gate_excludes_verticals_but_not_condors():
+    # The gate asks which way the market is going. That disqualifies a vertical,
+    # which is long a view; it is the PRECONDITION for a condor, which is not.
+    got = _strategy()._candidates(_chain(), _prediction(confidence=0.2, down=0.1, up=0.1))
+    kinds = _kinds(got)
+    assert "PUT_CREDIT_SPREAD" not in kinds
+    assert "CALL_CREDIT_SPREAD" not in kinds
+    assert "IRON_CONDOR" in kinds
+
+
+def test_confidence_gate_still_admits_verticals_when_cleared():
+    kinds = _kinds(_strategy()._candidates(
+        _chain(), _prediction(confidence=0.8, down=0.1, up=0.1)
+    ))
+    assert "PUT_CREDIT_SPREAD" in kinds or "CALL_CREDIT_SPREAD" in kinds
+
+
+def test_a_fat_tail_still_blocks_the_condor_at_low_confidence():
+    # The tail gate, not the directional gate, is what should stop a condor.
+    assert "IRON_CONDOR" not in _kinds(_strategy()._candidates(
+        _chain(), _prediction(confidence=0.2, down=0.9, up=0.1)
+    ))
 
 
 def test_tail_cap_is_configurable():
@@ -171,3 +189,58 @@ def test_condor_can_be_disabled():
 def test_no_condor_when_only_one_side_is_open():
     got = _strategy()._candidates(_chain(), _prediction(down=0.9, up=0.2))
     assert "IRON_CONDOR" not in _kinds(got)
+
+
+# ------------------------------------------------- premium richness as edge --
+def _pred_with_ratio(ratio, **kw):
+    pred = _prediction(confidence=0.8, down=0.1, up=0.1, **kw)
+    if ratio is not None:
+        pred["market_context"]["iv_rv_ratio"] = ratio
+    return pred
+
+
+def _best_edge(strategy, pred):
+    got = strategy._candidates(_chain(), pred)
+    return max(c["edge"] for c in got) if got else None
+
+
+def test_rich_premium_scores_above_thin_premium():
+    s = _strategy()
+    thin = _best_edge(s, _pred_with_ratio(0.85))
+    rich = _best_edge(s, _pred_with_ratio(1.20))
+    assert thin is not None and rich is not None
+    assert rich > thin
+
+
+def test_premium_richness_does_not_veto_a_trade():
+    # The whole point of routing it through edge: thin premium must still be
+    # tradeable on a good enough structure. min_edge_score stays the decider.
+    assert _strategy()._candidates(_chain(), _pred_with_ratio(0.60)) != []
+
+
+def test_missing_or_unusable_ratio_is_neutral():
+    s = _strategy()
+    baseline = _best_edge(s, _pred_with_ratio(None))
+    for bad in ("nonsense", None, 0, -1):
+        pred = _pred_with_ratio(1.0)
+        pred["market_context"]["iv_rv_ratio"] = bad
+        assert _best_edge(s, pred) == baseline
+
+
+def test_extreme_ratio_is_clamped():
+    s = _strategy()
+    high = _best_edge(s, _pred_with_ratio(1.5))
+    absurd = _best_edge(s, _pred_with_ratio(50.0))
+    assert high == absurd
+
+
+def test_premium_weight_is_configurable():
+    off = _strategy(premium_weight=0.0)
+    assert _best_edge(off, _pred_with_ratio(0.85)) == _best_edge(off, _pred_with_ratio(1.20))
+
+
+def test_condor_edge_also_carries_premium_richness():
+    def condor_edge(ratio):
+        got = _strategy()._candidates(_chain(), _pred_with_ratio(ratio))
+        return max(c["edge"] for c in got if c["strategy"] == "IRON_CONDOR")
+    assert condor_edge(1.20) > condor_edge(0.85)

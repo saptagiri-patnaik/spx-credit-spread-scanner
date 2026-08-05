@@ -144,7 +144,20 @@ class Settings(BaseSettings):
     horizon_days: int = 6            # 5-7 day prediction window
     dte_min: int = 20
     dte_max: int = 25
-    confidence_gate: float = 0.65
+    # Calibrated against the SYNTHESIS aggregator, not the mean one. This is a
+    # threshold on a number whose scale changed under it: the mean aggregator
+    # reported 0.54-0.59 and grazed 0.65 twice in 180 predictions, so 0.65 was
+    # already a near-dead gate. Synthesis reports genuinely differentiated -- and
+    # systematically lower -- conviction, 0.30-0.42 over its first 41 cycles, and
+    # 0.65 became unreachable outright: the model arm has never opened a position.
+    # 0.40 is that distribution's 75th percentile, so the gate keeps its intended
+    # meaning (trade the upper quartile of conviction) on the new scale.
+    #
+    # Provisional: 41 observations across seven sessions of one calm, contango,
+    # IV-under-RV regime. Re-derive it once a wider regime range has banked --
+    # and see the roadmap for making the gate a percentile so that a future
+    # aggregator swap cannot silently close it again.
+    confidence_gate: float = 0.40
     # Confidence scale calibration. `direction` is a weighted *average* of item scores,
     # so it realistically lands ~0.2-0.5; treat this magnitude as full conviction so the
     # gate is actually reachable. Raise it to make the gate stricter (fewer trades).
@@ -183,6 +196,13 @@ class Settings(BaseSettings):
     allow_iron_condor: bool = True       # sell both wings when both tails are quiet
     min_edge_score: float = 0.05         # only recommend a trade above this edge
     align_weight: float = 0.15           # weight of directional agreement in edge
+    # Weight on premium richness (IV/RV) in the edge score. Deliberately an edge
+    # INPUT and not a gate: IV/RV has only days of history, and a hard floor on a
+    # number that thin is how confidence_gate came to block every cycle for a
+    # fortnight. At 0.15 a ratio of 0.85 costs ~0.02 of edge against a 0.05
+    # threshold -- enough to demand a better structure, not enough to veto one.
+    # The ratio is clamped to 0.5..1.5 before weighting.
+    premium_weight: float = 0.15
 
     # --- Price/vol regime -------------------------------------------------
     # These answer the question the strategy actually turns on -- is premium rich,
@@ -232,6 +252,13 @@ class Settings(BaseSettings):
     # rather than assuming the expensive one wins.
     anthropic_model: str = "claude-haiku-4-5"
     anthropic_max_tokens: int = 512
+    # Per-request timeout. The SDK defaults to a 600s read timeout, which is
+    # exactly the Lambda budget -- so one hung scoring call consumes the whole
+    # cycle and the invocation times out having done no useful work. That is not
+    # hypothetical: it happened at 15:55 PDT on 4 Aug 2026, the retry on identical
+    # code succeeded in 127s. A Haiku call on one chunk normally takes 2-5s, so
+    # 30s is ~6x headroom; the SDK's own 2 retries still fit inside a cycle.
+    anthropic_timeout_seconds: float = 30.0
 
     # --- Aggregation ---
     # "mean"      weighted average over every scored item. Cannot compose
@@ -257,6 +284,12 @@ class Settings(BaseSettings):
     # of its weight after a day and 20% after seven. 0 disables decay.
     synthesis_recency_half_life_hours: float = 72.0
     synthesis_max_tokens: int = 2048
+    # Its own budget, well above anthropic_timeout_seconds: this is one Opus call
+    # reasoning over 40 stories and it measures ~15s in production, where a Haiku
+    # scoring call is 2-5s. Sharing the scorer's 30s would cut off the cycle's
+    # single most valuable request. Still far below the 600s Lambda budget, which
+    # is the point -- see anthropic_timeout_seconds.
+    synthesis_timeout_seconds: float = 120.0
 
     # --- Paper trading (measures whether the suggestions actually pay) ---
     paper_trading_enabled: bool = True

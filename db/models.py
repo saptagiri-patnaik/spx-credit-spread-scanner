@@ -61,9 +61,18 @@ class ItemScore(Base):
     direction: Mapped[float] = mapped_column(Float)   # -1 bearish .. +1 bullish
     magnitude: Mapped[float] = mapped_column(Float)   # 0..1 expected move size
     confidence: Mapped[float] = mapped_column(Float)  # 0..1
+    # 0..1 chance this raises the odds of a LARGE adverse move, either way.
+    # Nullable because every row written before 4 Aug 2026 predates the field --
+    # those rows are not "risk 0", they are unmeasured, and a default of 0 would
+    # make them indistinguishable from items positively judged safe.
+    risk: Mapped[float | None] = mapped_column(Float, nullable=True)
     macro_impact: Mapped[str | None] = mapped_column(String(20), nullable=True)  # risk-on/off/neutral
     catalysts: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     model: Mapped[str] = mapped_column(String(80))
+    # Which named variant from analysis/prompts.py produced this row. Without it a
+    # production A/B is unattributable: the model is recorded but the prompt is at
+    # least as large a lever, and SCORING_PROMPT can change between any two cycles.
+    prompt: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
     scored_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     item = relationship("Item", back_populates="scores")
