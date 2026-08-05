@@ -37,6 +37,9 @@ class Repository:
     _ADDED_COLUMNS = (
         ("item_scores", "risk", "DOUBLE PRECISION"),
         ("item_scores", "prompt", "VARCHAR(40)"),
+        ("spread_suggestions", "premium_edge", "DOUBLE PRECISION"),
+        ("spread_suggestions", "call_short_strike", "DOUBLE PRECISION"),
+        ("spread_suggestions", "call_long_strike", "DOUBLE PRECISION"),
     )
 
     def init_db(self) -> None:

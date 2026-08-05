@@ -102,7 +102,15 @@ class Prediction(Base):
 
 
 class SpreadSuggestion(Base):
-    """A suggested vertical credit spread tied to a prediction."""
+    """A suggested credit spread -- vertical or iron condor -- tied to a prediction.
+
+    Every key `OptionsStrategy` puts in a spread dict must exist here as a column:
+    `save_prediction` splats the dict straight into this constructor, so a field
+    added to the strategy and not to this model raises TypeError at the write. That
+    is a market-hours-only failure -- outside RTH the pipeline defers prediction and
+    never reaches the write -- so it can pass a full night of green cycles before it
+    fires. See `tests/test_spread_persistence.py`, which pins the two together.
+    """
 
     __tablename__ = "spread_suggestions"
 
@@ -115,6 +123,11 @@ class SpreadSuggestion(Base):
     strategy: Mapped[str] = mapped_column(String(40))
     short_strike: Mapped[float] = mapped_column(Float)
     long_strike: Mapped[float] = mapped_column(Float)
+    # Iron condors carry a second wing; null for single verticals. Mirrors the pair
+    # on PaperPosition -- a condor that can be opened as a position but not recorded
+    # as the suggestion behind it leaves the entry unattributable.
+    call_short_strike: Mapped[float | None] = mapped_column(Float, nullable=True)
+    call_long_strike: Mapped[float | None] = mapped_column(Float, nullable=True)
     expiration: Mapped[str] = mapped_column(String(20))
     dte: Mapped[int] = mapped_column(Integer)
     width: Mapped[float] = mapped_column(Float)
@@ -125,6 +138,11 @@ class SpreadSuggestion(Base):
     expected_move: Mapped[float] = mapped_column(Float)
     ror: Mapped[float] = mapped_column(Float, default=0.0)          # credit / max_loss
     edge: Mapped[float] = mapped_column(Float, default=0.0)         # ranking score
+    # The premium-richness term folded into `edge` (IV/RV based). Stored separately
+    # because edge is a blend: without its components you cannot tell later whether
+    # a trade was taken for rich premium or for a wide buffer. Nullable -- rows
+    # written before 5 Aug 2026 predate the field and are unmeasured, not zero.
+    premium_edge: Mapped[float | None] = mapped_column(Float, nullable=True)
     buffer: Mapped[float] = mapped_column(Float, default=0.0)       # short-strike distance in expected moves
     breakeven: Mapped[float | None] = mapped_column(Float, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
