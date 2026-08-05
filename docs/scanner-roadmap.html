@@ -239,8 +239,8 @@
     <h1>The scanner&rsquo;s own record: eleven days from first commit to a reachable trade path</h1>
     <p class="standfirst">
       Everything the fundamental half has shipped, decided and deferred, in date order, with what
-      closed each item. Current through 5 August 2026, midday, at build
-      <code>r61-g135419c</code>.
+      closed each item. Current through 5 August 2026, after the close, at build
+      <code>r67-g0faee85</code>.
     </p>
   </header>
 
@@ -260,14 +260,16 @@
   </div>
 
   <dl class="strip">
-    <div><dt>Deployed</dt><dd class="ok">r61 &middot; 135419c</dd></div>
+    <div><dt>Deployed</dt><dd class="ok">r67 &middot; 0faee85</dd></div>
     <div><dt>Live since</dt><dd>29 Jul, Lambda</dd></div>
     <div><dt>Signal trades</dt><dd class="no">0, all time</dd></div>
-    <div><dt>Baseline</dt><dd class="warn">5 open, 0 closed</dd></div>
-    <div><dt>Tail gate</dt><dd class="ok">0 / 37 blocked</dd></div>
-    <div><dt>Confidence</dt><dd>0.32&ndash;0.42</dd></div>
-    <div><dt>Clean-day clock</dt><dd class="no">0 / 10, reset 5 Aug</dd></div>
-    <div><dt>X spend, 4 Aug</dt><dd class="warn">188 / 260</dd></div>
+    <div><dt>Baseline</dt><dd class="warn">3 open, 3 closed</dd></div>
+    <div><dt>Baseline P&amp;L</dt><dd class="ok">+$1.25 realised</dd></div>
+    <div><dt>Tail gate</dt><dd class="ok">0 / 45 blocked</dd></div>
+    <div><dt>Confidence</dt><dd>0.38&ndash;0.50</dd></div>
+    <div><dt>Best edge, 5 Aug</dt><dd class="warn">0.012&ndash;0.040</dd></div>
+    <div><dt>Clean-day clock</dt><dd class="no">0 / 10, restarts 6 Aug</dd></div>
+    <div><dt>X spend, 5 Aug</dt><dd class="warn">226 / 260</dd></div>
   </dl>
 
   <!-- ================================================ where it stands === -->
@@ -304,6 +306,20 @@
         0.05 threshold</b>. So the sentence above is now true, roughly three hours later than it
         claimed, and the funnel still ends in zero for a reason nobody has tested yet.
       </p>
+      <p>
+        <b>5 Aug, after the close &mdash; the reason is now half-known.</b> Seven candidates across
+        the session, every edge between 0.012 and 0.040, none clearing 0.05. The shortfall is
+        largely one measured input: <code>premium_edge</code> ran &minus;0.028 to &minus;0.033 all
+        day on IV/RV of 0.78&ndash;0.83. <strong>The funnel ends in zero because premium was cheap,
+        not because a threshold is miscalibrated</strong> &mdash; the first time that sentence has
+        been supported by a number rather than asserted.
+      </p>
+      <p>
+        A second thing surfaced that nobody was looking for: <strong>every candidate all day was a
+        call spread, against a model that said UP eight times.</strong> Both tails were open and the
+        ranking favoured puts, so the put side is being filtered out before it can compete. That is
+        an open question, not a finding, and <code>r67</code> ships the counters to settle it.
+      </p>
     </div>
 
     <div class="note good">
@@ -315,6 +331,134 @@
         scanner&rsquo;s product. Everything downstream has been reshaped around that.
       </p>
     </div>
+  </section>
+
+  <!-- ============================================== the experiment ====== -->
+  <section>
+    <div class="sec-head">
+      <h2>The experiment: the dumb rule against the model</h2>
+      <span class="sec-note">standings as of 5 Aug 2026, close</span>
+    </div>
+
+    <p class="lede">
+      The whole project reduces to one question, and it is not &ldquo;did the model make
+      money&rdquo;. It is <strong>did reading the news beat selling premium without reading
+      it</strong>. Two arms run side by side in the same simulator, against the same chain, with the
+      same exits, so the difference between them is the model and nothing else.
+    </p>
+
+    <div class="note stop">
+      <p>
+        <strong>After eight trading days there is a control group and no treatment group.</strong>
+        The baseline has opened six positions. The signal arm has opened <b>zero, all time</b>
+        &mdash; it has never once cleared all three gates. The experiment cannot answer its question
+        yet, and every additional day accumulates evidence only for the arm that ignores the model.
+      </p>
+      <p>
+        This is not a malfunction. Refusing to trade is a designed outcome. But &ldquo;the gate is
+        correctly conservative&rdquo; and &ldquo;the gate is set where nothing can pass&rdquo; look
+        identical from outside, and nothing currently distinguishes them.
+      </p>
+    </div>
+
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th>&nbsp;</th><th>Baseline &mdash; the dumb rule</th><th>Signal &mdash; the model</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><b>Decides by</b></td>
+            <td>nothing. Sentiment, direction, confidence and edge are all ignored.</td>
+            <td>all three gates: market open, <code>confidence &ge; 0.40</code>, <code>edge &ge; 0.05</code>.</td>
+          </tr>
+          <tr>
+            <td><b>Structure</b></td>
+            <td>put credit spread, always. <code>paper_baseline_side = "put"</code> &mdash; an
+                embedded upward-drift assumption, switchable to <code>"call"</code> to test the
+                other.</td>
+            <td>whatever ranks first by edge &mdash; put spread, call spread or iron condor.</td>
+          </tr>
+          <tr>
+            <td><b>Strike</b></td>
+            <td>nearest to <b>0.15 short delta</b> (<code>paper_baseline_delta</code>).</td>
+            <td>the ranked winner, within the 0.10&ndash;0.30 delta band (capped to 0.20 on event risk).</td>
+          </tr>
+          <tr>
+            <td><b>Cadence</b></td>
+            <td>one position per day, first cycle that finds a chain.</td>
+            <td>every cycle that clears the gates, to <code>paper_max_open = 5</code> concurrent.</td>
+          </tr>
+          <tr>
+            <td><b>Exits</b> <span class="chip c-next">shared</span></td>
+            <td colspan="2">identical for both arms: close at <b>4 days</b>
+                (<code>paper_hold_days</code>), or if the mark reaches <b>2&times; the credit</b>
+                (<code>paper_stop_multiple</code>) &mdash; risking 1&times; credit to make 1&times;.</td>
+          </tr>
+          <tr>
+            <td><b>Opened</b></td>
+            <td class="num">6</td>
+            <td class="num">0</td>
+          </tr>
+          <tr>
+            <td><b>Closed / realised</b></td>
+            <td class="num">3 &middot; +$1.25</td>
+            <td class="num">0 &middot; &mdash;</td>
+          </tr>
+          <tr>
+            <td><b>Open / unrealised</b></td>
+            <td class="num">3 &middot; +$0.40</td>
+            <td class="num">0 &middot; &mdash;</td>
+          </tr>
+          <tr>
+            <td><b>Win rate</b></td>
+            <td class="num">3 / 3</td>
+            <td>n/a</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="note warn">
+      <p>
+        <strong>The +$1.25 is flattered, and by a known amount of extra time.</strong> All three
+        closures fired on the time rule, but none was held for four days: positions 1, 2 and 3 ran
+        <b>7.7, 6.0 and 5.0 days</b>. They became unmarkable on 31 July when the scan window slid
+        past their expiries, and could not close until the marking chain was fixed on 4 August.
+      </p>
+      <p>
+        A credit spread held past its intended exit collects more theta, so the control arm&rsquo;s
+        only three data points each earned 1&ndash;3.7 extra days of decay that the rule does not
+        grant. <b>Treat +$1.25 as an upper bound on the dumb rule, not a measurement of it.</b>
+        Positions 4, 5 and 6 are the first that will close on the rule as written.
+      </p>
+    </div>
+
+    <div class="note">
+      <p>
+        <b>Also worth holding lightly:</b> six positions is not a sample, all six are the same
+        structure at the same delta in a single rising, low-volatility regime, and a
+        <b>3/3 win rate is exactly what a 0.15-delta credit spread should produce</b> &mdash; roughly
+        85% of them win by construction. The number that decides this is expectancy, not win rate,
+        because this book wins often and loses large by design.
+      </p>
+    </div>
+
+    <div class="note good">
+      <p>
+        <strong>What would settle it.</strong> The signal arm needs to open positions at all, which
+        needs an edge above 0.05 &mdash; and 5 August showed the shortfall is mostly
+        <code>premium_edge</code> tracking a cheap-options regime. So the first honest read comes
+        when IV/RV crosses 1.0 and stays there for a session or two. Until then the standing
+        instruction holds: <b>do not lower <code>min_edge_score</code> to manufacture a treatment
+        group.</b> An arm that fires because its bar was moved measures the bar, not the model.
+      </p>
+    </div>
+
+    <p class="lede">
+      Reproduce these numbers with <code>python -m tools.paper_report</code>, which splits both arms
+      and reports expectancy, win rate and average win against average loss.
+    </p>
   </section>
 
   <!-- ==================================================== the log ======= -->
@@ -1100,6 +1244,115 @@
           </p>
         </div>
         <div class="check"><b>Watch</b><span>whether best edge clusters just under 0.05 across a full session. If it does, <code>min_edge_score</code> is the next threshold with the confidence gate&rsquo;s problem &mdash; a number set before the distribution it judges was known.</span></div>
+      </div>
+
+      <div class="entry key">
+        <span class="rail">5 Aug</span>
+        <span class="kicker">The full session, and the number that explains all of it</span>
+        <div class="body">
+          <p>
+            Eight predictions after the fix, <b>every one UP</b>, direction +0.15 to +0.30,
+            confidence 0.38&ndash;0.50. Seven produced a candidate; the eighth (conf 0.38) fell under
+            the 0.40 confidence gate and built nothing. <b>Not one of the seven cleared
+            <code>min_edge_score</code>:</b> edges ran 0.012, 0.025, 0.030, 0.033, 0.039, 0.040 and
+            0.014 against a 0.05 threshold.
+          </p>
+          <p>
+            The 4 August entry asked whether best edge would cluster just under 0.05 across a full
+            session. <strong>It did &mdash; and the reason is now measurable rather than
+            speculative.</strong> <code>premium_edge</code> sat at <b>&minus;0.028 to &minus;0.033</b>
+            every cycle, because IV/RV ran <b>0.78&ndash;0.83</b>: options were priced for less
+            movement than SPX had actually delivered. That penalty alone is roughly the entire
+            shortfall on five of the seven cycles.
+          </p>
+          <p>
+            So the threshold is not obviously wrong. On a day with IV/RV near 1.0 most of these
+            clear on the same structures. What the session measured is a <em>regime</em>, not a
+            miscalibration &mdash; which is exactly what the 3 August decision to make premium an
+            edge input rather than a gate was designed to let happen.
+          </p>
+        </div>
+        <div class="check"><b>Revises</b><span>the 4 Aug watch item. Best edge did cluster under 0.05, but attributable to a measured input, so <code>min_edge_score</code> does <em>not</em> yet have the confidence gate&rsquo;s problem. Re-ask when IV/RV crosses 1.0 and edges still fail.</span></div>
+      </div>
+
+      <div class="entry open">
+        <span class="rail">5 Aug</span>
+        <span class="kicker">A bullish read produced seven bearish structures, and nothing recorded why<span class="chip c-open">open</span></span>
+        <div class="body">
+          <p>
+            Every one of the seven candidates was a <b>call credit spread</b> &mdash; the structure
+            that profits if the index does not rise &mdash; while the model called UP eight times
+            running. The three ranked alternatives in each cycle were call spreads too. With spot at
+            7734, no strike below it appeared anywhere in the scan.
+          </p>
+          <p>
+            That is not the tail gate: it logged <code>DOWN 37% UP 22% (cap 55%) -&gt; both sides
+            open</code> on every cycle, and <code>trend_side_block</code> is still 0. Nor is it the
+            ranking. The alignment term was <em>favouring</em> puts &mdash; at direction +0.20 and
+            confidence 0.42 it adds about +0.013 to a put spread and &minus;0.013 to a call, a 0.025
+            head start &mdash; and the put side still never appeared.
+          </p>
+          <p>
+            <strong>So the put side is not losing the ranking; it is being eliminated before ranking
+            happens.</strong> The suspected mechanism is the credit-to-width floor: richer put IV
+            flattens the delta profile, so at equal delta a fixed-width put spread collects less
+            than the same-width call spread. Today&rsquo;s calls cleared
+            <code>min_credit_to_width = 0.20</code> at 22&ndash;25%, barely. A put spread collecting
+            slightly less is rejected outright, and the directional view never gets consulted.
+          </p>
+          <p>
+            Unproven. Only the winning candidate is persisted, so the losing side leaves no trace at
+            all &mdash; which is why this is an instrumentation entry and not a fix.
+          </p>
+        </div>
+        <div class="check"><b>Settles when</b><span>one market-hours session runs under <code>r67</code>. If <code>put.ror_floor</code> dominates the tally, the floor becomes side-aware or widths flex on the put side. If it is <code>put.delta_band</code> or <code>put.buffer</code>, the cause is the event-risk delta cap and the answer is a different one. <b>Change no threshold until that line has been read.</b></span></div>
+      </div>
+
+      <div class="entry win">
+        <span class="rail">5 Aug</span>
+        <span class="kicker">Rejection accounting &mdash; count why each side lost, not just which one won<span class="chip c-done">shipped</span></span>
+        <div class="body">
+          <p>
+            A tally keyed <code>side.reason</code> threaded through the whole candidate path, with a
+            counter at every point a candidate can die: <code>side_blocked</code>,
+            <code>delta_band</code>, <code>buffer</code>, <code>short_illiquid</code>,
+            <code>width</code>, <code>long_illiquid</code>, <code>no_credit</code>,
+            <code>ror_floor</code>, <code>pop_floor</code>, <code>no_eligible_short</code> and
+            <code>confidence_gate</code>. The scan line now also splits the surviving count by side.
+          </p>
+          <p>
+            Strikes on the wrong side of spot are skipped <em>without</em> counting &mdash; both
+            expiry maps carry ITM and OTM strikes, so counting them would bury the signal in chain
+            shape. And <code>confidence_gate</code> is counted per side, so a low-confidence cycle
+            stays distinguishable from one where the pricing filters emptied the book.
+          </p>
+          <p>
+            Seven tests pin it, one of which was rewritten after it failed: the first version
+            asserted <code>ror_floor</code> would be zero when the confidence gate fired, but both
+            legitimately co-occur because the filters run per pairing. The replacement asserts the
+            exact identity instead &mdash; the same chain above the gate offers precisely the
+            verticals that were withheld below it.
+          </p>
+        </div>
+        <div class="check"><b>Not yet observed</b><span>the new line cannot render outside RTH, because <code>run_once</code> defers the whole scan. First real output is the 06:55 PT cycle on 6 August. 262 tests pass and the packaged artifact is byte-identical to the working tree, but that is the extent of the verification.</span></div>
+      </div>
+
+      <div class="entry">
+        <span class="rail">5 Aug</span>
+        <span class="kicker">The tally moved below the trade decision, because Discord truncates</span>
+        <div class="body">
+          <p>
+            The formatted block is one string: the log takes it whole, and
+            <code>notifier.py</code> caps the Discord body at <b>2000 characters</b> and cuts the
+            rest. A synthesis rationale already runs to roughly 1500. The tally as first written sat
+            near the top and pushed <code>Timing</code> and <code>Build</code> off the end of the
+            alert &mdash; trading the trade decision for a diagnostic.
+          </p>
+          <p>
+            Shipped in the bad order as <code>r66</code> and corrected in <code>r67</code> before the
+            next open, which is the only reason it is a footnote rather than a second outage entry.
+          </p>
+        </div>
       </div>
 
       <div class="entry stop">

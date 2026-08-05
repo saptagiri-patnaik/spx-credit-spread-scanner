@@ -189,12 +189,13 @@
   </header>
 
   <dl class="strip">
-    <div class="cell"><dt>Deployed</dt><dd class="ok">r58 &middot; 96e7fba &middot; zip</dd></div>
+    <div class="cell"><dt>Deployed</dt><dd class="ok">r67 &middot; 0faee85 &middot; zip</dd></div>
     <div class="cell"><dt>AWS identity</dt><dd class="ok">spx-deployer</dd></div>
     <div class="cell"><dt>Root keys</dt><dd class="ok">none</dd></div>
     <div class="cell"><dt>Alarms</dt><dd class="ok">both OK</dd></div>
-    <div class="cell"><dt>X spend, 4 Aug close</dt><dd class="warn">188 / 260</dd></div>
-    <div class="cell"><dt>Open paper</dt><dd class="warn">5 baseline, 0 signal</dd></div>
+    <div class="cell"><dt>X spend, 5 Aug close</dt><dd class="warn">226 / 260</dd></div>
+    <div class="cell"><dt>Open paper</dt><dd class="warn">3 baseline, 0 signal</dd></div>
+    <div class="cell"><dt>Realised P&amp;L</dt><dd class="ok">+$1.25, baseline only</dd></div>
   </dl>
 
   <!-- ============ LEAD ============ -->
@@ -297,6 +298,43 @@
     </div>
 
     <div class="items">
+
+      <article class="item sev-risk">
+        <div class="item-top">
+          <h3>The put side never reaches the ranking, and a bullish read sells calls</h3>
+          <span class="pill p-watch">instrumented 5 Aug</span>
+          <span class="when">found 5 Aug &middot; settles 6 Aug</span>
+        </div>
+        <p>
+          Across all seven candidates on 5 August, <strong>every structure was a call credit
+          spread</strong> &mdash; the trade that profits if the index does not rise &mdash; while the
+          model called UP on all eight cycles. The three ranked alternatives per cycle were calls
+          too. With spot at 7734, no strike below it appeared anywhere in the scan.
+        </p>
+        <p>
+          Three explanations are already ruled out. It is not the tail gate, which logged
+          <code>DOWN 37% UP 22% (cap 55%) -&gt; both sides open</code> every cycle. It is not
+          <code>trend_side_block</code>, still 0. And it is not the ranking: the alignment term
+          <em>favours</em> puts here, adding about +0.013 to a put spread and &minus;0.013 to a call
+          at direction +0.20 and confidence 0.42 &mdash; a 0.025 head start the put side never
+          used.
+        </p>
+        <p>
+          <strong>So the put side is being eliminated before ranking, not losing it.</strong> The
+          suspected mechanism is <code>min_credit_to_width = 0.20</code> interacting with put skew:
+          richer put IV flattens the delta profile, so at equal short delta a fixed-width put spread
+          collects less than the same-width call spread. The day's calls cleared the floor at
+          22&ndash;25%, barely &mdash; a put spread collecting slightly less is rejected outright and
+          the directional view is never consulted. On any normal-skew day that would mean a bullish
+          read can only ever be expressed as a bearish structure.
+        </p>
+        <p>
+          Unproven, and deliberately not acted on. Only the winning candidate is persisted, so the
+          losing side leaves no trace. <code>r67</code> adds a per-side rejection tally
+          (<code>side.reason</code>) covering every filter, printed on the scan line.
+        </p>
+        <div class="trigger"><b>Settles</b><span>first market-hours session under <code>r67</code>, 6 Aug 06:55 PT. <code>put.ror_floor</code> dominant &rarr; the floor becomes side-aware or widths flex on the put side. <code>put.delta_band</code> or <code>put.buffer</code> dominant &rarr; the cause is the event-risk delta cap and the fix is different. <b>No threshold moves until that line is read.</b></span></div>
+      </article>
 
       <article class="item sev-risk">
         <div class="item-top">
@@ -712,20 +750,23 @@
         <div class="item-top">
           <h3>Model versus mechanical premium selling</h3>
           <span class="pill p-run">running &middot; still one-armed</span>
-          <span class="when">first close: none yet</span>
+          <span class="when">first closes: 5 Aug</span>
         </div>
         <p>
           The baseline arm sells a ~0.15-delta put spread daily and ignores the model entirely; the
           signal arm trades only when confidence clears the gate and edge beats 0.05. The comparison is
-          the point of the system, and it still has only one arm in it.
+          the point of the system, and it still has only one arm in it. Full specification of both
+          arms, and the standing rule against lowering a threshold to manufacture a treatment group,
+          is in the scanner roadmap.
         </p>
         <div class="table-scroll">
           <table>
             <thead><tr><th>#</th><th>Arm</th><th>Spread</th><th>Expiry</th><th>Credit</th><th>Stop</th><th>Opened</th></tr></thead>
             <tbody>
+              <tr><td class="num">6</td><td>baseline</td><td class="num">7480 / 7475 put</td><td class="num">26 Aug</td><td class="num">$0.50</td><td class="num">$1.00</td><td class="num">5 Aug 07:46</td></tr>
               <tr><td class="num">5</td><td>baseline</td><td class="num">7375 / 7370 put</td><td class="num">25 Aug</td><td class="num">$0.45</td><td class="num">$0.90</td><td class="num">4 Aug 06:58</td></tr>
               <tr><td class="num">4</td><td>baseline</td><td class="num">7215 / 7210 put</td><td class="num">28 Aug</td><td class="num">$0.45</td><td class="num">$0.90</td><td class="num">3 Aug 06:58</td></tr>
-              <tr><td class="num">3</td><td>baseline</td><td class="num">7060 / 7055 put</td><td class="num">20 Aug</td><td class="num">$0.45</td><td class="num">$0.90</td><td class="num">31 Jul 06:57</td></tr>
+              <tr><td class="num">3</td><td>baseline</td><td class="num">7125 / 7120 put</td><td class="num">20 Aug</td><td class="num">$0.45</td><td class="num">$0.90</td><td class="num">31 Jul 06:57</td></tr>
               <tr><td class="num">2</td><td>baseline</td><td class="num">7045 / 7040 put</td><td class="num">21 Aug</td><td class="num">$0.45</td><td class="num">$0.90</td><td class="num">30 Jul 13:57</td></tr>
               <tr><td class="num">1</td><td>baseline</td><td class="num">7060 / 7055 put</td><td class="num">21 Aug</td><td class="num">$0.45</td><td class="num">$0.90</td><td class="num">28 Jul 22:58</td></tr>
             </tbody>
@@ -734,11 +775,25 @@
         <p>
           <strong>Both blockers were structural, and both were addressed on 4 August.</strong> The
           signal arm could not trade because the gate was reading a stale scale; the baseline arm
-          could not <em>close</em>, because an aged position cannot be marked. So the experiment has
-          produced five entries, zero exits and no P&amp;L at all &mdash; it has not been running,
-          only accumulating. Treat 4 August as the true start date.
+          could not <em>close</em>, because an aged position cannot be marked. Treat 4 August as the
+          true start date.
         </p>
-        <div class="trigger"><b>Reads out</b><span>positions close on a 4-day hold or a 2× credit stop. #1&ndash;#3 are already past their hold and should close on the first in-session cycle after deploy; that is also the check that the marking fix works end to end.</span></div>
+        <p>
+          <b>5 Aug &mdash; the first exits, and they arrived contaminated.</b> Positions 1, 2 and 3
+          all closed on the time rule at 07:46 PT for <b>+$0.43, +$0.42 and +$0.40</b>, confirming
+          the marking fix works end to end. But none was held for the four days the rule specifies
+          &mdash; they ran <b>7.7, 6.0 and 5.0 days</b>, because the close could not fire until the
+          fix shipped. Extra days on a credit spread are extra theta collected, so <b>+$1.25 is an
+          upper bound on the dumb rule, not a measurement of it</b>. Positions 4&ndash;6 are the
+          first that will exit on the rule as written.
+        </p>
+        <p>
+          The signal arm remains at <b>zero positions, all time</b>. On 5 August it produced seven
+          candidates and every one failed <code>min_edge_score</code>, mostly on a
+          <code>premium_edge</code> penalty of &minus;0.03 tracking cheap options
+          (IV/RV 0.78&ndash;0.83).
+        </p>
+        <div class="trigger"><b>Reads out</b><span>positions 4&ndash;6 close on a clean 4-day hold or a 2× credit stop &mdash; the first uncontaminated baseline data points. The signal arm reads out only when IV/RV crosses 1.0; lowering <code>min_edge_score</code> to force entries would measure the bar, not the model.</span></div>
       </article>
 
       <article class="item sev-run">
