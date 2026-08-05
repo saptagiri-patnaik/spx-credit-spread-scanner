@@ -410,16 +410,6 @@ class Pipeline:
             f"scanned {scan['num_candidates']} verticals "
             f"({scan.get('num_puts', 0)} put / {scan.get('num_calls', 0)} call)"
         )
-        # A side that never reaches the ranking is invisible in the result, so the
-        # reject tally is what distinguishes "the put side lost" from "the put side
-        # was filtered out before it could compete". Descending, so the dominant
-        # reason reads first.
-        rejects = scan.get("rejects") or {}
-        if rejects:
-            top = sorted(rejects.items(), key=lambda kv: kv[1], reverse=True)[:8]
-            lines.append(
-                "Rejected  : " + ", ".join(f"{k} {v}" for k, v in top)
-            )
         if best:
             tag = ">>> RECOMMENDED <<<" if scan["recommended"] else "best candidate (not triggered)"
             lines.append(f"BEST SPREAD [{tag}]: {best['strategy']} on {best['underlying']}")
@@ -445,6 +435,18 @@ class Pipeline:
         else:
             lines.append("BEST SPREAD: none.")
         lines.append(f"Timing    : {scan['reason']}")
+        # A side that never reaches the ranking is invisible in the result, so this
+        # distinguishes "the put side lost" from "the put side was filtered out
+        # before it could compete". Descending, so the dominant reason reads first.
+        #
+        # Deliberately last but for the build stamp: Discord hard-truncates the
+        # body at 2000 chars and a long synthesis rationale can approach that, so
+        # this sits where an overflow costs a diagnostic rather than the trade
+        # decision above it. The log keeps the whole string either way.
+        rejects = scan.get("rejects") or {}
+        if rejects:
+            top = sorted(rejects.items(), key=lambda kv: kv[1], reverse=True)[:8]
+            lines.append("Rejected  : " + ", ".join(f"{k} {v}" for k, v in top))
         # Rides along on every alert: when a message looks wrong, the first question
         # is which build produced it. In the label column rather than the header
         # because the header would then overflow the 56-char rules, and the whole
