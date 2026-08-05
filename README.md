@@ -51,18 +51,32 @@ alerts/      Telegram / Discord, gated on market-hours + confidence + edge
 db/          Postgres: items, scores, predictions, spreads, API budget
 ```
 
-**Direction → spread side:** bullish sells a put credit spread, bearish sells a call credit
-spread, neutral trades nothing.
+**Which side gets sold:** a credit spread is short a *tail*, not short a direction. Selling
+puts is safe when a sharp move down is unlikely; selling calls is safe when a sharp move up
+is unlikely. So the side is chosen from the per-tail risk estimates — each tail under
+`max_tail_risk` (0.55) is eligible, and both can be open at once. Direction still enters, but
+as a *ranking* term rather than a veto: it tilts the edge score toward the side that agrees
+with the read. When the aggregator supplies no tail estimates, this falls back to the older
+rule (bullish → put spread, bearish → call spread, neutral → nothing).
 
 **Edge score** for each candidate vertical:
 
 ```
 ev_ratio = POP · RoR − (1 − POP)
-edge     = ev_ratio  +  0.15 · directional_agreement · confidence  +  0.05 · min(buffer, 2)
+premium  = 0.15 · (clamp(IV/RV, 0.5, 1.5) − 1)
+edge     = ev_ratio  +  0.15 · directional_agreement · confidence
+                     +  0.05 · min(buffer, 2)  +  premium
 ```
 
-**Three gates before a trade is recommended** — market open, `confidence ≥ 0.65`,
-and `edge ≥ 0.05`. Any one failing downgrades the alert to an outlook.
+`premium` is what the market is paying for vol relative to what the index has recently
+delivered. Above 1.0 it rewards the candidate; below 1.0 it penalises it. It is deliberately
+an edge term and not a threshold — see [Known issues](#known-issues-and-open-questions).
+
+**Three gates before a trade is recommended** — market open, `confidence ≥ 0.40`
+(`confidence_gate`), and `edge ≥ 0.05` (`min_edge_score`). Any one failing downgrades the
+alert to an outlook. The confidence gate was originally 0.65; at that level it blocked every
+cycle for a fortnight without anyone being able to tell whether the bar or the signal was
+wrong, so it was lowered. `min_edge_score` is now the gate that does the deciding.
 
 ## Setup
 
@@ -272,19 +286,25 @@ the `±0.12` label threshold, `min_edge_score` — all priors, none fitted to an
 plausible, not empirical. Note they can't simply be *learned*: a 6-day horizon yields ~52
 independent observations a year against ~17 free parameters.
 
-**2a. The per-item scorer reads tone, not index impact.** On a 60-item paired sample the
-shipped prompt scored **83% of everything bearish** (5.6:1 bear:bull) — matching the 82%
-seen across the full corpus. Financial headlines use words like *plunge* and *crisis* for
-routine moves in single assets, and an 8B model treats that as bearish for the S&P 500.
-This is the likeliest reason every prediction so far has been DOWN. See
-`analysis/prompts.py` for variants and the measured failure of the obvious fix.
+**2a. The per-item scorer used to read tone, not index impact — largely fixed.** The original
+prompt scored **83% of everything bearish** (5.6:1 bear:bull) on a 60-item paired sample.
+Financial headlines use words like *plunge* and *crisis* for routine moves in single assets,
+and an 8B model treated that as bearish for the S&P 500. Under the old mean aggregator this
+produced **136 DOWN labels out of 137**. The current prompt scores 36% bearish / 42% bullish
+(n=1,227), and under the synthesis aggregator the last 51 predictions run 23 NEUTRAL / 20 UP
+/ 8 DOWN. The skew is gone; whether the *new* balance is any more predictive is still
+unmeasured — see issue 1. `analysis/prompts.py` keeps the variants and the measured failure
+of the obvious fix.
 
-**2b. Confidence barely varies.** Across 101 comparable predictions it spanned 0.550–0.657,
-with the interquartile range just 0.015 wide. Two of its four terms are constants in
-practice: `coverage` saturates at 1.0 on every cycle (it divides item count by 20 while the
-corpus runs to thousands), and `event_risk` has been true 100% of the time. So no threshold
-discriminates — moving the gate from 0.60 to 0.54 takes the trade rate from 7% to 100%
-with nothing selective in between.
+**2b. Confidence varies, but into a narrower band than the gate assumes.** The old
+measurement — 101 predictions spanning 0.550–0.657, interquartile range 0.015 wide — was
+taken under the mean aggregator. Synthesis moved the whole distribution down: 51 predictions
+spanning **0.300–0.500, mean 0.376**, i.e. a live range that straddles the 0.40 gate closely
+enough that small drift flips cycles between "trade" and "outlook". Two of the four terms are
+still effectively constants: `coverage` saturates at 1.0 on every cycle (it divides item count
+by 20 while the corpus runs to thousands), and `event_risk` has been true 100% of the time.
+The gate is doing less work than it appears to; `min_edge_score` is what actually refuses
+trades in practice.
 
 **3. Missing market data is silently treated as neutral.** When the Schwab token is stale,
 `trend_score` falls back to `0.0` and the blend still applies it at 15% weight, shrinking
