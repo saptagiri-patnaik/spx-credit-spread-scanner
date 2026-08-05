@@ -137,3 +137,82 @@ def test_no_spread_when_neutral():
     pred = {"direction": 0.0, "label": "NEUTRAL", "confidence": 0.9, "event_risk": False}
     assert strat.build(_put_chain(), pred) is None
     assert strat.scan(_put_chain(), pred, now=_OPEN)["best"] is None
+
+
+# --- rejection accounting -------------------------------------------------
+# Only the winning candidate is persisted, so a scan returning nothing but call
+# spreads reads the same whether the put side ranked lower or was never built.
+# These pin the tally that tells them apart.
+
+
+def test_scan_splits_candidate_count_by_side():
+    strat = OptionsStrategy(_settings(), _Log())
+    result = strat.scan(_put_chain(), _BULLISH, now=_OPEN)
+    assert result["num_puts"] >= 1
+    assert result["num_calls"] == 0
+    assert result["num_puts"] + result["num_calls"] == result["num_candidates"]
+
+
+def test_blocked_side_is_attributed():
+    """A bullish read leaves the call side unbuilt; the tally should say so."""
+    strat = OptionsStrategy(_settings(), _Log())
+    rejects = strat.scan(_put_chain(), _BULLISH, now=_OPEN)["rejects"]
+    assert rejects.get("call.side_blocked") == 1
+    assert "put.side_blocked" not in rejects
+
+
+def test_tail_risk_block_is_attributed_to_the_right_side():
+    strat = OptionsStrategy(_settings(), _Log())
+    pred = {
+        **_BULLISH,
+        "market_context": {"downside_risk": 0.9, "upside_risk": 0.1},
+    }
+    rejects = strat.scan(_put_chain(), pred, now=_OPEN)["rejects"]
+    assert rejects.get("put.side_blocked") == 1      # downside above the 0.55 cap
+
+
+def test_ror_floor_rejections_are_counted_per_side():
+    """The suspected cause of an empty put side: credit/width misses the floor."""
+    settings = _settings()
+    settings.min_credit_to_width = 0.95      # nothing can clear this
+    strat = OptionsStrategy(settings, _Log())
+    result = strat.scan(_put_chain(), _BULLISH, now=_OPEN)
+    assert result["best"] is None
+    assert result["rejects"].get("put.ror_floor", 0) > 0
+
+
+def test_confidence_gate_rejection_is_distinct_from_an_empty_book():
+    """Priced, then withheld on confidence - not the same as nothing to price.
+
+    A vertical can only be counted against the confidence gate if it survived
+    every pricing filter first, so a non-zero count here proves the book was
+    non-empty. Other reasons appear alongside it, since the filters run per
+    pairing and reject a different subset.
+    """
+    strat = OptionsStrategy(_settings(), _Log())
+    below = {"direction": 0.5, "label": "UP", "confidence": 0.40, "event_risk": False}
+    rejects = strat.scan(_put_chain(), below, now=_OPEN)["rejects"]
+    assert rejects.get("put.confidence_gate", 0) > 0
+
+    # Same chain above the gate: those verticals are offered instead of withheld,
+    # and the count disappears rather than merely shrinking.
+    cleared = strat.scan(_put_chain(), _BULLISH, now=_OPEN)
+    assert "put.confidence_gate" not in cleared["rejects"]
+    assert cleared["num_puts"] == rejects["put.confidence_gate"]
+
+
+def test_delta_band_rejections_are_counted():
+    settings = _settings()
+    settings.short_delta_min = 0.40          # excludes every short leg in the chain
+    settings.short_delta_max = 0.45
+    strat = OptionsStrategy(settings, _Log())
+    result = strat.scan(_put_chain(), _BULLISH, now=_OPEN)
+    assert result["best"] is None
+    assert result["rejects"].get("put.delta_band", 0) > 0
+    assert result["rejects"].get("put.no_eligible_short") == 1
+
+
+def test_build_still_works_without_a_reject_tally():
+    """build() takes the same path but passes no dict; it must not blow up."""
+    strat = OptionsStrategy(_settings(), _Log())
+    assert strat.build(_put_chain(), _BULLISH) is not None

@@ -74,6 +74,17 @@ class OptionsStrategy:
         """Read a setting, tolerating lightweight test doubles that omit newer knobs."""
         return getattr(self.s, name, default)
 
+    @staticmethod
+    def _reject(rejects: dict, side: str, reason: str, n: int = 1) -> None:
+        """Tally why a candidate was discarded, keyed `side.reason`.
+
+        Only the winner is persisted, so without this the losing side leaves no
+        trace: a scan that returns nothing but call spreads looks identical
+        whether the put side ranked lower or was never constructed at all. The
+        counts answer that, and cost one dict increment per rejection.
+        """
+        rejects[f"{side}.{reason}"] = rejects.get(f"{side}.{reason}", 0) + n
+
     # --- public API -------------------------------------------------------
     def scan(self, chain: dict | None, prediction: dict, now: dt.datetime | None = None) -> dict:
         """Rank all verticals and decide whether *now* is the right time to trade."""
@@ -81,7 +92,8 @@ class OptionsStrategy:
         market_open = (not self._cfg("require_market_hours", True)) or is_market_hours(
             now, self._cfg("market_tz", "America/New_York")
         )
-        candidates = self._candidates(chain, prediction)
+        rejects: dict[str, int] = {}
+        candidates = self._candidates(chain, prediction, rejects)
         best = candidates[0] if candidates else None
         min_edge = self._cfg("min_edge_score", 0.05)
 
@@ -111,6 +123,9 @@ class OptionsStrategy:
             "best": best,
             "alternatives": candidates[1:4],
             "num_candidates": len(candidates),
+            "num_puts": sum(1 for c in candidates if c["strategy"] == "PUT_CREDIT_SPREAD"),
+            "num_calls": sum(1 for c in candidates if c["strategy"] == "CALL_CREDIT_SPREAD"),
+            "rejects": rejects,
         }
 
     def build(self, chain: dict | None, prediction: dict) -> dict | None:
@@ -191,13 +206,21 @@ class OptionsStrategy:
         ratio = max(0.5, min(1.5, ratio))
         return self._cfg("premium_weight", 0.15) * (ratio - 1.0)
 
-    def _candidates(self, chain: dict | None, prediction: dict) -> list[dict]:
+    def _candidates(
+        self, chain: dict | None, prediction: dict, rejects: dict | None = None
+    ) -> list[dict]:
+        if rejects is None:
+            rejects = {}
         if not chain:
             return []
         price = self._underlying_price(chain)
         if not price:
             return []
         put_ok, call_ok = self._sides_allowed(prediction)
+        if not put_ok:
+            self._reject(rejects, "put", "side_blocked")
+        if not call_ok:
+            self._reject(rejects, "call", "side_blocked")
         if not (put_ok or call_ok):
             return []
 
@@ -207,9 +230,13 @@ class OptionsStrategy:
         # one of each. Whether they are OFFERED is a separate question, below.
         verticals: list[dict] = []
         if put_ok:
-            verticals += self._verticals(chain, prediction, price, premium, want_puts=True)
+            verticals += self._verticals(
+                chain, prediction, price, premium, want_puts=True, rejects=rejects
+            )
         if call_ok:
-            verticals += self._verticals(chain, prediction, price, premium, want_puts=False)
+            verticals += self._verticals(
+                chain, prediction, price, premium, want_puts=False, rejects=rejects
+            )
 
         results: list[dict] = []
 
@@ -223,6 +250,13 @@ class OptionsStrategy:
         # filters, none of which ask which way the market is going.
         if float(prediction["confidence"]) >= self.s.confidence_gate:
             results += verticals
+        elif verticals:
+            # Constructed and priced, then withheld on confidence alone. Counted
+            # per side so a low-confidence cycle is distinguishable from one where
+            # the pricing filters emptied the book.
+            for v in verticals:
+                side = "put" if v["strategy"] == "PUT_CREDIT_SPREAD" else "call"
+                self._reject(rejects, side, "confidence_gate")
         if put_ok and call_ok and self._cfg("allow_iron_condor", True):
             results += self._condors(verticals, premium)
 
@@ -230,10 +264,20 @@ class OptionsStrategy:
         return results
 
     def _verticals(
-        self, chain: dict, prediction: dict, price: float, premium: float, want_puts: bool
+        self,
+        chain: dict,
+        prediction: dict,
+        price: float,
+        premium: float,
+        want_puts: bool,
+        rejects: dict | None = None,
     ) -> list[dict]:
+        if rejects is None:
+            rejects = {}
+        side = "put" if want_puts else "call"
         exp_map = chain.get("putExpDateMap" if want_puts else "callExpDateMap", {})
         if not exp_map:
+            self._reject(rejects, side, "no_chain")
             return []
 
         delta_min = self._cfg("short_delta_min", 0.10)
@@ -271,18 +315,25 @@ class OptionsStrategy:
             for o in options:
                 strike = self._strike(o)
                 d = self._delta(o)
-                if d is None or not (delta_min <= d <= delta_max):
-                    continue
+                # Strike on the wrong side of spot is chain shape, not a rejection:
+                # both maps carry ITM and OTM strikes. Skip without counting.
                 if want_puts and not strike < price:
                     continue
                 if not want_puts and not strike > price:
                     continue
+                if d is None or not (delta_min <= d <= delta_max):
+                    self._reject(rejects, side, "delta_band")
+                    continue
                 buffer = (price - strike) / move if want_puts else (strike - price) / move
                 if buffer < min_buffer:
+                    self._reject(rejects, side, "buffer")
                     continue
                 if self._rel_bid_ask(o) > max_rel_ba:
+                    self._reject(rejects, side, "short_illiquid")
                     continue
                 shorts.append((o, strike, d, buffer))
+            if not shorts:
+                self._reject(rejects, side, "no_eligible_short")
 
             # pair each short with every valid long leg (scans all widths)
             for short, ss, sd, buffer in shorts:
@@ -291,24 +342,36 @@ class OptionsStrategy:
                     continue
                 for lo in options:
                     ls = self._strike(lo)
+                    # Long leg must sit beyond the short; anything else is not a
+                    # candidate pairing at all, so it is not counted as rejected.
                     if want_puts and not ls < ss:
                         continue
                     if not want_puts and not ls > ss:
                         continue
                     width = abs(ss - ls)
                     if width < min_width or width > max_width:
+                        self._reject(rejects, side, "width")
                         continue
                     if self._rel_bid_ask(lo) > max_rel_ba:
+                        self._reject(rejects, side, "long_illiquid")
                         continue
                     credit = short_mid - self._mid(lo)
                     max_loss = width - credit
                     if credit <= 0 or max_loss <= 0:
+                        self._reject(rejects, side, "no_credit")
                         continue
                     ror = credit / max_loss
                     if ror < min_ror:
+                        # The suspected reason the put side empties on a skewed
+                        # tape: at equal delta the richer put IV flattens the
+                        # delta profile, so a fixed-width put spread collects
+                        # less than the same-width call spread and misses the
+                        # credit-to-width floor before ranking ever runs.
+                        self._reject(rejects, side, "ror_floor")
                         continue
                     pop = 1.0 - sd  # delta ~ prob short expires ITM
                     if pop < min_pop:
+                        self._reject(rejects, side, "pop_floor")
                         continue
                     ev_ratio = pop * ror - (1.0 - pop)
                     align = direction if want_puts else -direction

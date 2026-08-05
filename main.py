@@ -407,8 +407,19 @@ class Pipeline:
         lines.append("-" * 56)
         lines.append(
             f"Market    : {'OPEN' if scan['market_open'] else 'CLOSED'}  |  "
-            f"scanned {scan['num_candidates']} verticals"
+            f"scanned {scan['num_candidates']} verticals "
+            f"({scan.get('num_puts', 0)} put / {scan.get('num_calls', 0)} call)"
         )
+        # A side that never reaches the ranking is invisible in the result, so the
+        # reject tally is what distinguishes "the put side lost" from "the put side
+        # was filtered out before it could compete". Descending, so the dominant
+        # reason reads first.
+        rejects = scan.get("rejects") or {}
+        if rejects:
+            top = sorted(rejects.items(), key=lambda kv: kv[1], reverse=True)[:8]
+            lines.append(
+                "Rejected  : " + ", ".join(f"{k} {v}" for k, v in top)
+            )
         if best:
             tag = ">>> RECOMMENDED <<<" if scan["recommended"] else "best candidate (not triggered)"
             lines.append(f"BEST SPREAD [{tag}]: {best['strategy']} on {best['underlying']}")
