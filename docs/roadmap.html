@@ -177,7 +177,6 @@
   td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
   td.yes { color: var(--done); font-weight: 600; }
   td.no { color: var(--block); font-weight: 600; }
-  td.part { color: var(--active); font-weight: 600; }
 
   code {
     font-family: var(--mono); font-size: .85em; background: var(--sunken);
@@ -246,9 +245,9 @@
       never placed a trade. This is the ordered path to joining them, with the check that closes
       each step. Dates are earliest-possible and assume nothing slips.
       <br><br>
-      Revised 5 August, midday, after the first in-market session on <code>r58-g96e7fba</code>
-      failed on a schema gap and was fixed in production. &sect;00 is what that cost;
-      &sect;01 is what the day before settled.
+      Revised 5 August, midday. &sect;00 is what 4 August settled. The scanner lost three cycles
+      to a write-path defect on the 5th &mdash; recorded in the scanner&rsquo;s own log, not here,
+      but it reset Gate&nbsp;8&rsquo;s clean-day clock, which is the one date below that moved.
     </p>
   </header>
 
@@ -278,77 +277,7 @@
   <!-- =================================================== today ========= -->
   <section>
     <div class="sec-head">
-      <h2><span class="n">00</span> What 5 August broke</h2>
-    </div>
-    <p class="lede">
-      Yesterday&rsquo;s entry closed with a prediction: &ldquo;tomorrow&rsquo;s open is the first session
-      in which any of this can be observed rather than reasoned about.&rdquo; It was observed. Every
-      cycle that produced a spread candidate died on the database write, and the scanner spent the
-      first two and a half hours of the session unable to record a suggestion.
-    </p>
-
-    <div class="scroll"><table>
-      <thead><tr><th>Cycle (PT)</th><th>Attempts</th><th>Outcome</th></tr></thead>
-      <tbody>
-        <tr><td>06:10</td><td class="num">1</td><td class="yes">Clean &mdash; pre-open, prediction deferred, never reached the write</td></tr>
-        <tr><td>06:55</td><td class="num">3</td><td class="no">All failed &mdash; first in-market cycle since the deploy</td></tr>
-        <tr><td>07:40</td><td class="num">2</td><td class="part">Failed, then a retry saved a prediction &mdash; because it found no candidate</td></tr>
-        <tr><td>08:25</td><td class="num">3</td><td class="no">All failed</td></tr>
-        <tr><td>08:54</td><td class="num">1</td><td class="yes">Clean on <code>r61-g135419c</code> &mdash; prediction 189, suggestion 3, <code>premium_edge</code> written</td></tr>
-      </tbody>
-    </table></div>
-
-    <div class="note stop">
-      <p>
-        <strong>The defect.</strong> <code>save_prediction</code> does
-        <code>SpreadSuggestion(prediction_id=&hellip;, **sp)</code>, so the strategy&rsquo;s output dict
-        <em>is</em> that table&rsquo;s schema. <code>r58</code> added <code>premium_edge</code> to both
-        spread dicts and the <code>risk</code>/<code>prompt</code> columns to <code>item_scores</code>,
-        but never the matching column on <code>spread_suggestions</code>. Every write with a candidate
-        raised <code>TypeError: 'premium_edge' is an invalid keyword argument</code>.
-      </p>
-      <p>
-        <strong>Why twenty green cycles preceded it.</strong> The deploy landed at 17:38 PT, after the
-        close. Outside RTH <code>run_once</code> defers prediction and never reaches the write, so the
-        entire overnight run exercised collection, scoring, synthesis and the regime read on code that
-        could not save a prediction. <b>Deploying after the close buys no confidence in anything
-        downstream of the market-hours branch</b> &mdash; the green cycles were not evidence, and were
-        read as evidence here yesterday.
-      </p>
-      <p>
-        <strong>A second gap was hiding behind the first.</strong> Condors have carried four strikes
-        since <code>1a76def</code> and <code>PaperPosition</code> has columns for them, but
-        <code>SpreadSuggestion</code> did not. The declarative constructor reports only the first bad
-        keyword, so fixing <code>premium_edge</code> alone would have shipped a second outage on the
-        first condor to clear its gates. Both are fixed;
-        <code>tests/test_spread_persistence.py</code> now pins every emitted key to a mapped column,
-        with no database and no market hours required.
-      </p>
-    </div>
-
-    <div class="note warn">
-      <p>
-        <strong>Cost, and the part that is not recoverable.</strong> Seven failed invocations, each
-        having already paid for collection, per-item scoring and a full Opus-5 synthesis before
-        reaching the write. Retries were left at two attempts deliberately &mdash; they rescued the
-        hung-API cycle on 4 Aug, and a schema bug is simply the case where retrying cannot help.
-        <b>Gate&nbsp;8&rsquo;s clean-day clock resets</b>: 5 Aug is a lost-cycle day, so the count
-        restarts 6 Aug and the gate moves from ~18 Aug to <b>~20 Aug</b>.
-      </p>
-      <p>
-        <strong>What the recovered cycle showed.</strong> Direction UP +0.18, confidence 45%, tail risk
-        34% down / 19% up, 26 verticals scanned, best edge <b>0.04 against a 0.05 threshold</b> &mdash;
-        so no trade, on the merits rather than on a crash. That is the first honest read the strategy
-        question has produced, and it says the same thing &sect;01 does: the blockers were
-        instrumentation, and what is left is untested.
-      </p>
-    </div>
-  </section>
-
-  <!-- ================================================= yesterday ======= -->
-  <section>
-    <div class="sec-head">
-      <h2><span class="n">01</span> What 4 August settled</h2>
+      <h2><span class="n">00</span> What 4 August settled</h2>
     </div>
     <p class="lede">
       Four changes shipped and one experiment concluded. Two of the three things that had kept the
@@ -416,11 +345,10 @@
         instrumentation, so what is left is the strategy question, untested.
       </p>
       <p>
-        <b>Resolved 5 Aug, and not the way this paragraph expected.</b> The session did not observe the
-        strategy; it observed that none of the day's work could be written down. Everything above still
-        holds &mdash; the four changes are correct and the falsified claim stands &mdash; but
-        &ldquo;shipped&rdquo; had been taken to mean &ldquo;shipped and exercised,&rdquo; and after the
-        close those are not the same thing. See &sect;00.
+        <b>Resolved 5 Aug, later than this expected.</b> The open did not observe the strategy at
+        first &mdash; a write-path defect in the same deploy meant nothing could be recorded until
+        midday. One cycle then reached the pricing filters and declined on them. Everything above
+        still holds; the detail is in the scanner&rsquo;s own log.
       </p>
     </div>
   </section>
@@ -428,7 +356,7 @@
   <!-- =============================================== reconciliation ==== -->
   <section>
     <div class="sec-head">
-      <h2><span class="n">02</span> What you actually have</h2>
+      <h2><span class="n">01</span> What you actually have</h2>
     </div>
     <p class="lede">
       The confusion is real and it has a cause: these are two separate codebases, on two separate
@@ -491,7 +419,7 @@
   <!-- ================================================== the blocker ==== -->
   <section>
     <div class="sec-head">
-      <h2><span class="n">03</span> The one-line contradiction blocking the scanner</h2>
+      <h2><span class="n">02</span> The one-line contradiction blocking the scanner</h2>
     </div>
     <p class="lede">
       Worth fixing first because it is small, it is provably wrong, and it is the reason the signal
@@ -574,7 +502,7 @@
   <!-- ==================================================== roadmap ===== -->
   <section>
     <div class="sec-head">
-      <h2><span class="n">04</span> Sequence</h2>
+      <h2><span class="n">03</span> Sequence</h2>
     </div>
     <p class="lede">
       One change at a time, each with the check that closes it. Tags: <span class="tag t-scan">scanner</span>
@@ -783,30 +711,6 @@
         </div>
         <div class="check"><b>Closed 4 Aug</b><span>weighted error 168 &check;, bear:bull 1.6:1 &check;, risk recall 30.0% &cross;. Fail any one and stay &mdash; so, stay. Note the re-graded numbers are not comparable to the earlier four runs: the grader changed <em>and</em> every variant's shared key block now asks for risk, which moved the other fields too. Only <code>current</code> vs <code>theta</code> under today's identical conditions carries the decision.</span></div>
       </div>
-
-      <div class="step now">
-        <span class="date">Wed 5 Aug</span>
-        <span class="what">Unplanned &mdash; restore the write path <code>r58</code> broke</span>
-        <span class="tag t-scan">scanner</span>
-        <div class="body">
-          Not on any plan. The first in-market cycle after yesterday's deploy failed on
-          <code>save_prediction</code>, and so did every subsequent cycle that found a candidate:
-          <code>r58</code> started emitting <code>premium_edge</code> from the strategy without adding
-          the column the ORM splats it into. Three scheduled cycles lost, seven invocations that had
-          already paid for synthesis before reaching the write.
-          <br><br>
-          Fixed by adding the three columns the strategy already writes &mdash;
-          <code>premium_edge</code> plus the two condor wings that were the same bug one keyword
-          further on &mdash; with an idempotent <code>ALTER</code> in <code>_ADDED_COLUMNS</code>,
-          since <code>create_all</code> leaves a live schema untouched.
-          <br><br>
-          <b>The regression test is the actual deliverable.</b>
-          <code>tests/test_spread_persistence.py</code> constructs the ORM object from real strategy
-          output for all three candidate kinds, so the next field added to a spread dict fails on the
-          laptop in half a second instead of at 06:55 in front of the market.
-        </div>
-        <div class="check"><b>Closed 5 Aug</b><span><code>r61-g135419c</code> deployed 08:50 PT, schema migrated 08:51, and a manual cycle at 08:54 wrote prediction 189 with suggestion 3 carrying <code>premium_edge=-0.028</code>. Best edge 0.04 against the 0.05 threshold, so no trade &mdash; declined on the merits, which is the first time that sentence has been true. Costs Gate&nbsp;8 its clean-day clock.</span></div>
-      </div>
     </div>
 
     <div class="week">
@@ -923,7 +827,7 @@
   <!-- ============================================= combined gates ==== -->
   <section>
     <div class="sec-head">
-      <h2><span class="n">05</span> Combined go-live checklist</h2>
+      <h2><span class="n">04</span> Combined go-live checklist</h2>
     </div>
     <p class="lede">
       Sopana&rsquo;s seven, unchanged &mdash; it owns execution and its gates are the right ones.
@@ -963,13 +867,12 @@
         has watched run is a hypothesis.
       </p>
       <p>
-        <strong>Reset 5 Aug, on its second day.</strong> Three scheduled cycles were lost to the
-        <code>premium_edge</code> schema gap (&sect;00), so the count restarts <b>6 Aug</b> and the
-        gate moves to ~20 Aug. Worth noting what the gate did and did not catch: it was written for
-        the heap abort, and the thing that actually took the scanner down was a schema mismatch that
-        no amount of watching the previous night would have revealed. <b>The gate measures lost
-        cycles, which is right &mdash; it just cannot start counting until the code has been
-        exercised in the branch that matters.</b>
+        <strong>Reset 5 Aug, on its second day.</strong> Three scheduled cycles were lost to a
+        write-path defect &mdash; the scanner&rsquo;s log carries the post-mortem &mdash; so the count
+        restarts <b>6 Aug</b> and the gate moves to ~20 Aug. The gate caught the right thing for the
+        wrong reason: it was written for the heap abort, and what actually cost the cycles was a
+        schema mismatch. <b>It measures lost cycles, which is correct; it simply cannot start
+        counting until the code has been exercised in the branch that matters.</b>
       </p>
     </div>
 
@@ -987,7 +890,7 @@
   <!-- ================================================ the date ======== -->
   <section>
     <div class="sec-head">
-      <h2><span class="n">06</span> What actually moves the date</h2>
+      <h2><span class="n">05</span> What actually moves the date</h2>
     </div>
     <p class="lede">
       Four of the ten gates are now pure waiting &mdash; Gate&nbsp;8 joined them on 3 Aug, when the
@@ -1044,7 +947,7 @@
   <!-- ================================================== principles ==== -->
   <section>
     <div class="sec-head">
-      <h2><span class="n">07</span> Rules this sequence obeys</h2>
+      <h2><span class="n">06</span> Rules this sequence obeys</h2>
     </div>
 
     <div class="note warn">
@@ -1135,12 +1038,12 @@
   <!-- ================================================ decision log ==== -->
   <section>
     <div class="sec-head">
-      <h2><span class="n">08</span> Decision log &mdash; Sopana</h2>
+      <h2><span class="n">07</span> Decision log &mdash; Sopana</h2>
     </div>
     <p class="lede">
       Dated record of every decision that changed the strategy, the roadmap or a rule, with the
       evidence behind it. <strong>Check this before re-litigating anything.</strong> Scanner
-      decisions are dated in place in &sect;01 and &sect;04 and are not duplicated here.
+      decisions are dated in place in &sect;00 and &sect;03 and are not duplicated here.
     </p>
 
     <div class="scroll"><table>
