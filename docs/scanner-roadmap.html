@@ -1,0 +1,1419 @@
+<title>SPX Scanner — Roadmap &amp; Progress Log</title>
+<style>
+  :root {
+    color-scheme: light dark;
+
+    /* A cool paper with a faint blue bias toward the ink accent, so the greys
+       read as chosen. Deliberately unlike the three companion documents —
+       the combined roadmap is violet, the operational tracker teal on warm
+       paper, the pipeline flow amber on graphite. This one is a logbook. */
+    --ground:    #EEF0F3;
+    --surface:   #FFFFFF;
+    --sunken:    #E3E7EC;
+    --hair:      #D2D8DF;
+    --hair-firm: #ADB6C1;
+    --ink:       #14181D;
+    --ink-2:     #414A55;
+    --muted:     #6B7580;
+
+    --accent:    #26456F;
+    --accent-bg: #E2E9F2;
+
+    --done:      #2C6A4F;
+    --done-bg:   #E1EEE8;
+    --active:    #8A5B12;
+    --active-bg: #F6EFDD;
+    --block:     #9E3A2E;
+    --block-bg:  #F7E5E2;
+
+    --shadow: 0 1px 2px rgba(20,24,29,.05), 0 8px 20px -14px rgba(20,24,29,.3);
+
+    --sans:  system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --serif: Charter, "Bitstream Charter", "Iowan Old Style", Georgia, serif;
+    --mono:  ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground:#10141A; --surface:#191E25; --sunken:#141920;
+      --hair:#2A313A; --hair-firm:#3E4854;
+      --ink:#E9ECF0; --ink-2:#B2BAC4; --muted:#828C97;
+      --accent:#8FB2DC; --accent-bg:#1B2735;
+      --done:#6EBB96; --done-bg:#14271E;
+      --active:#DCA84F; --active-bg:#2B2113;
+      --block:#E07C6C; --block-bg:#2D1917;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 20px -14px rgba(0,0,0,.8);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground:#10141A; --surface:#191E25; --sunken:#141920;
+    --hair:#2A313A; --hair-firm:#3E4854;
+    --ink:#E9ECF0; --ink-2:#B2BAC4; --muted:#828C97;
+    --accent:#8FB2DC; --accent-bg:#1B2735;
+    --done:#6EBB96; --done-bg:#14271E;
+    --active:#DCA84F; --active-bg:#2B2113;
+    --block:#E07C6C; --block-bg:#2D1917;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 20px -14px rgba(0,0,0,.8);
+  }
+  :root[data-theme="light"] {
+    --ground:#EEF0F3; --surface:#FFFFFF; --sunken:#E3E7EC;
+    --hair:#D2D8DF; --hair-firm:#ADB6C1;
+    --ink:#14181D; --ink-2:#414A55; --muted:#6B7580;
+    --accent:#26456F; --accent-bg:#E2E9F2;
+    --done:#2C6A4F; --done-bg:#E1EEE8;
+    --active:#8A5B12; --active-bg:#F6EFDD;
+    --block:#9E3A2E; --block-bg:#F7E5E2;
+    --shadow: 0 1px 2px rgba(20,24,29,.05), 0 8px 20px -14px rgba(20,24,29,.3);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: var(--serif); font-size: 16.5px; line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap {
+    max-width: 62rem; margin: 0 auto;
+    padding: clamp(1.5rem,4vw,3.25rem) clamp(1rem,4vw,2.25rem) 5rem;
+    display: flex; flex-direction: column; gap: 3rem;
+  }
+
+  /* Sans headings over a serif body: the inversion suits a record that is
+     read in passages but scanned by its headings. */
+  h1, h2, h3, .eyebrow, .rail, .chip, .phase, th, .kicker, .note b, .note strong {
+    font-family: var(--sans);
+  }
+
+  header { display: flex; flex-direction: column; gap: .55rem; }
+  .eyebrow {
+    font-family: var(--mono); font-size: .68rem; letter-spacing: .17em;
+    text-transform: uppercase; color: var(--accent); font-weight: 700;
+  }
+  h1 {
+    margin: 0; font-size: clamp(1.8rem,4.4vw,2.6rem); font-weight: 760;
+    letter-spacing: -.028em; line-height: 1.08; text-wrap: balance;
+  }
+  .standfirst { color: var(--ink-2); margin: .3rem 0 0; max-width: 44rem; }
+
+  .scope {
+    border-left: 3px solid var(--accent); background: var(--accent-bg);
+    padding: .85rem 1.05rem; border-radius: 0 3px 3px 0;
+    font-size: .92rem; color: var(--ink-2); max-width: 46rem;
+  }
+  .scope strong { color: var(--ink); }
+  .scope p { margin: 0 0 .5rem; }
+  .scope p:last-child { margin-bottom: 0; }
+
+  /* status strip */
+  .strip {
+    display: grid; gap: 1px; background: var(--hair);
+    border: 1px solid var(--hair); border-radius: 4px; overflow: hidden;
+    grid-template-columns: repeat(auto-fit, minmax(9.5rem,1fr));
+  }
+  .strip > div { background: var(--surface); padding: .75rem .9rem; }
+  .strip dt {
+    font-family: var(--mono); font-size: .6rem; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--muted); font-weight: 700;
+  }
+  .strip dd {
+    margin: .25rem 0 0; font-family: var(--mono); font-size: .95rem;
+    font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ink-2);
+  }
+  .strip dd.ok { color: var(--done); }
+  .strip dd.warn { color: var(--active); }
+  .strip dd.no { color: var(--block); }
+
+  section { display: flex; flex-direction: column; gap: 1.25rem; }
+  .sec-head {
+    display: flex; align-items: baseline; gap: .9rem; flex-wrap: wrap;
+    border-bottom: 1px solid var(--hair-firm); padding-bottom: .5rem;
+  }
+  h2 { margin: 0; font-size: 1.42rem; font-weight: 720; letter-spacing: -.02em; text-wrap: balance; }
+  .sec-note { color: var(--muted); font-size: .84rem; margin-left: auto; font-family: var(--mono); }
+  .lede { color: var(--ink-2); margin: 0; max-width: 46rem; }
+
+  /* the dated rail — the structural device of the whole document */
+  .phase {
+    display: flex; align-items: baseline; gap: .8rem; flex-wrap: wrap;
+    margin-top: .6rem; padding-bottom: .35rem;
+  }
+  .phase .n {
+    font-family: var(--mono); font-size: .68rem; letter-spacing: .13em;
+    text-transform: uppercase; color: var(--accent); font-weight: 700;
+    border: 1px solid var(--accent); border-radius: 2px; padding: .12rem .42rem;
+  }
+  .phase h3 { margin: 0; font-size: 1.02rem; font-weight: 700; letter-spacing: -.01em; }
+
+  .log { display: flex; flex-direction: column; gap: .55rem; }
+  .entry {
+    background: var(--surface); border: 1px solid var(--hair); border-radius: 4px;
+    box-shadow: var(--shadow); border-left: 3px solid var(--hair-firm);
+    padding: .85rem 1.05rem;
+    display: grid; grid-template-columns: 5.4rem 1fr; gap: .15rem 1rem;
+  }
+  .entry.key { border-left-color: var(--accent); }
+  .entry.win { border-left-color: var(--done); }
+  .entry.open { border-left-color: var(--active); }
+  .entry.stop { border-left-color: var(--block); }
+  .rail {
+    grid-row: 1 / 3; font-family: var(--mono); font-size: .76rem; font-weight: 700;
+    font-variant-numeric: tabular-nums; color: var(--accent);
+    padding-top: .18rem; letter-spacing: .01em;
+  }
+  .entry .kicker { font-size: .97rem; font-weight: 690; letter-spacing: -.008em; line-height: 1.35; }
+  .entry .body { font-size: .9rem; color: var(--ink-2); margin-top: .3rem; }
+  .entry .body p { margin: 0 0 .55rem; }
+  .entry .body p:last-child { margin-bottom: 0; }
+  .entry .body ul { margin: .2rem 0 .55rem; padding-left: 1.1rem; }
+  .entry .body li { margin-bottom: .2rem; }
+  .entry .check {
+    margin-top: .55rem; padding: .5rem .65rem; background: var(--sunken);
+    border-radius: 2px; font-size: .85rem; display: flex; gap: .55rem; align-items: baseline;
+  }
+  .entry .check b {
+    font-family: var(--mono); font-size: .6rem; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--muted); flex: none; padding-top: .15rem;
+  }
+
+  .chip {
+    font-family: var(--mono); font-size: .58rem; font-weight: 700; letter-spacing: .09em;
+    text-transform: uppercase; padding: .13rem .4rem; border-radius: 2px;
+    white-space: nowrap; margin-left: .5rem; vertical-align: .12em;
+  }
+  .c-done { background: var(--done-bg); color: var(--done); border: 1px solid var(--done); }
+  .c-open { background: var(--active-bg); color: var(--active); border: 1px solid var(--active); }
+  .c-stop { background: var(--block-bg); color: var(--block); border: 1px solid var(--block); }
+  .c-next { background: var(--accent-bg); color: var(--accent); border: 1px solid var(--accent); }
+
+  /* callouts */
+  .note {
+    border-left: 3px solid var(--accent); background: var(--accent-bg);
+    padding: .9rem 1.1rem; border-radius: 0 3px 3px 0;
+    font-size: .92rem; color: var(--ink-2);
+  }
+  .note.warn { border-left-color: var(--active); background: var(--active-bg); }
+  .note.stop { border-left-color: var(--block); background: var(--block-bg); }
+  .note.good { border-left-color: var(--done); background: var(--done-bg); }
+  .note strong, .note b { color: var(--ink); }
+  .note p { margin: 0 0 .55rem; } .note p:last-child { margin-bottom: 0; }
+
+  /* tables */
+  .scroll { overflow-x: auto; border: 1px solid var(--hair); border-radius: 4px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-size: .87rem; min-width: 36rem; }
+  th, td { padding: .55rem .8rem; text-align: left; border-bottom: 1px solid var(--hair); vertical-align: top; }
+  thead th {
+    font-size: .62rem; letter-spacing: .11em; text-transform: uppercase;
+    color: var(--muted); font-weight: 700; background: var(--sunken); white-space: nowrap;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--accent); font-weight: 600; }
+  td.was { color: var(--muted); text-decoration: line-through; }
+  td.now { color: var(--done); font-weight: 600; }
+
+  code {
+    font-family: var(--mono); font-size: .85em; background: var(--sunken);
+    padding: .07em .32em; border-radius: 2px; border: 1px solid var(--hair);
+  }
+  .note code, .check code, .scope code, td code, .strip code { background: transparent; border: none; padding: 0; }
+
+  a { color: var(--accent); }
+  a:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  footer {
+    border-top: 1px solid var(--hair); padding-top: 1.1rem; color: var(--muted);
+    font-family: var(--mono); font-size: .72rem; display: flex; gap: 1.2rem; flex-wrap: wrap;
+  }
+
+  @media (max-width: 40rem) {
+    .entry { grid-template-columns: 1fr; }
+    .rail { grid-row: auto; padding-top: 0; }
+    .sec-note { margin-left: 0; width: 100%; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">SPX Scanner &middot; roadmap and progress log</div>
+    <h1>The scanner&rsquo;s own record: eleven days from first commit to a reachable trade path</h1>
+    <p class="standfirst">
+      Everything the fundamental half has shipped, decided and deferred, in date order, with what
+      closed each item. Current through 5 August 2026, midday, at build
+      <code>r61-g135419c</code>.
+    </p>
+  </header>
+
+  <div class="scope">
+    <p>
+      <strong>Scanner only.</strong> This document covers <code>spx-scanner-zip</code> and nothing
+      else. Items belonging to the technical half (<code>sopana-dte25</code>) or to the joint
+      go-live sequence live in the combined roadmap and are deliberately not restated here &mdash;
+      only the two places where the scanner hands something across are noted, and marked as such.
+    </p>
+    <p>
+      <strong>Append-only.</strong> Entries are dated and are not rewritten when they turn out
+      wrong; a superseded finding stays, with the correction beneath it. The 4 August prompt result
+      is the clearest example &mdash; the hypothesis that produced the work was falsified by the
+      work, and both are recorded.
+    </p>
+  </div>
+
+  <dl class="strip">
+    <div><dt>Deployed</dt><dd class="ok">r61 &middot; 135419c</dd></div>
+    <div><dt>Live since</dt><dd>29 Jul, Lambda</dd></div>
+    <div><dt>Signal trades</dt><dd class="no">0, all time</dd></div>
+    <div><dt>Baseline</dt><dd class="warn">5 open, 0 closed</dd></div>
+    <div><dt>Tail gate</dt><dd class="ok">0 / 37 blocked</dd></div>
+    <div><dt>Confidence</dt><dd>0.32&ndash;0.42</dd></div>
+    <div><dt>Clean-day clock</dt><dd class="no">0 / 10, reset 5 Aug</dd></div>
+    <div><dt>X spend, 4 Aug</dt><dd class="warn">188 / 260</dd></div>
+  </dl>
+
+  <!-- ================================================ where it stands === -->
+  <section>
+    <div class="sec-head">
+      <h2>Where it stands</h2>
+      <span class="sec-note">5 Aug 2026, midday</span>
+    </div>
+
+    <p class="lede">
+      The pipeline is a funnel that has always ended in zero. On 4 August the stage doing the
+      stopping moved &mdash; from a gate that refused to ask the question, to pricing filters that
+      have never been tested. Nothing has traded either way.
+    </p>
+
+    <div class="note">
+      <p>
+        <strong>Every blocker removed on 4 August was upstream of the decision, not the decision
+        itself.</strong> The confidence gate, the marking chain and the risk proxy were all
+        instrumentation defects: three separate ways the system could not observe what it was doing.
+        Removing them does not make the strategy work &mdash; it makes the strategy testable for the
+        first time.
+      </p>
+      <p>
+        What is left is the strategy question, untested. Whether a condor prices through the delta,
+        POP, RoR and liquidity filters has never once been observed. <strong>5 August is the first
+        session in which any of this can be watched rather than reasoned about.</strong>
+      </p>
+      <p>
+        <b>5 Aug, midday &mdash; the session answered a different question.</b> It was not the
+        strategy that got observed but the write path: every cycle that produced a candidate died
+        saving it, and the first two and a half hours of the session recorded nothing. Once fixed,
+        one cycle did reach the filters and declined on them &mdash; best edge <b>0.04 against the
+        0.05 threshold</b>. So the sentence above is now true, roughly three hours later than it
+        claimed, and the funnel still ends in zero for a reason nobody has tested yet.
+      </p>
+    </div>
+
+    <div class="note good">
+      <p>
+        <strong>The one durable finding, and it is not the one the project was built on.</strong>
+        199 hand-labelled items say the news corpus carries <b>hazard</b>, not direction: 188 of 199
+        had no directional sign at all, and 70 of the 81 judged relevant were still zero &mdash; but
+        20 flagged shock risk. The per-side tail estimates, not the direction number, are the
+        scanner&rsquo;s product. Everything downstream has been reshaped around that.
+      </p>
+    </div>
+  </section>
+
+  <!-- ==================================================== the log ======= -->
+  <section>
+    <div class="sec-head">
+      <h2>Progress log</h2>
+      <span class="sec-note">25 Jul &ndash; 5 Aug 2026</span>
+    </div>
+
+    <!-- ---------------------------------------------------------------- -->
+    <div class="phase">
+      <span class="n">Phase 1</span>
+      <h3>Build and public release &mdash; 25&ndash;27 July</h3>
+    </div>
+
+    <div class="log">
+      <div class="entry">
+        <span class="rail">25 Jul</span>
+        <span class="kicker">Initial commit &mdash; SPX sentiment and macro credit-spread scanner</span>
+        <div class="body">
+          <p>
+            Six collectors, item scoring, story clustering and Discord alerting, in one piece. Alerts
+            were made to render correctly and, more usefully, to <em>fail loudly</em> rather than
+            swallow a bad payload.
+          </p>
+        </div>
+      </div>
+
+      <div class="entry">
+        <span class="rail">25 Jul</span>
+        <span class="kicker">Prepared for public release: license, README, backtest</span>
+        <div class="body">
+          <p>Chat history excluded from the repo in the same pass.</p>
+        </div>
+      </div>
+
+      <div class="entry">
+        <span class="rail">26 Jul</span>
+        <span class="kicker">Database configuration documented, with a step-by-step setup guide</span>
+        <div class="body">
+          <p>Clone URL repointed at the renamed repository.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---------------------------------------------------------------- -->
+    <div class="phase">
+      <span class="n">Phase 2</span>
+      <h3>The measurement scaffolding &mdash; 28 July</h3>
+    </div>
+
+    <p class="lede">
+      One heavy day, thirteen commits. Everything that makes the scanner
+      <em>gradeable</em> rather than merely running landed here &mdash; and so did the tail gate,
+      whose reasoning took another week to reach the gate sitting above it.
+    </p>
+
+    <div class="log">
+      <div class="entry key">
+        <span class="rail">28 Jul</span>
+        <span class="kicker">Item-quality filter, prompt registry, and a labelled eval harness</span>
+        <div class="body">
+          <p>
+            <code>has_substance</code> drops anything under eight real words once cashtags,
+            @mentions and URLs are stripped, which kills <code>$SPY $QQQ</code> spam before it costs
+            a scoring call. The prompt registry makes variants nameable; the harness makes them
+            comparable.
+          </p>
+        </div>
+      </div>
+
+      <div class="entry">
+        <span class="rail">28 Jul</span>
+        <span class="kicker">Claude scoring backend behind the existing client interface</span>
+        <div class="body">
+          <p>
+            One call per item, chunked at 6,000 characters, returning strict JSON. The scorer that
+            produced each score is recorded from the start &mdash; the <em>prompt</em> that produced
+            it was not, and that gap cost a week in August.
+          </p>
+        </div>
+      </div>
+
+      <div class="entry">
+        <span class="rail">28 Jul</span>
+        <span class="kicker">Tier-2 synthesis aggregator, alongside the weighted mean</span>
+        <div class="body">
+          <p>
+            One Opus call over the top stories produces the view; the weighted mean stays as the
+            source of the sub-scores in each alert. Rationale formatting hardened, and the synthesis
+            model&rsquo;s answer surfaced verbatim rather than paraphrased.
+          </p>
+          <p>
+            This is the change whose scale shift silently closed the confidence gate. Nothing
+            re-derived the threshold when the aggregator underneath it was replaced.
+          </p>
+        </div>
+      </div>
+
+      <div class="entry">
+        <span class="rail">28 Jul</span>
+        <span class="kicker">Untitled social chatter kept out of story clustering</span>
+        <div class="body">
+          <p>
+            Retail posts with no title never become stories &mdash; they collapse into a single
+            aggregate tone number, so ~5,500 posts contribute one figure instead of flooding the
+            prompt.
+          </p>
+        </div>
+      </div>
+
+      <div class="entry">
+        <span class="rail">28 Jul</span>
+        <span class="kicker">Paper trading: two arms, a stop, and calibration metrics</span>
+        <div class="body">
+          <p>
+            Simulated positions with a 2&times;-credit stop and a 4-day time exit. A
+            <b>baseline</b> arm sells a ~0.15-delta put spread daily, ignoring the model entirely, as
+            the control the <b>signal</b> arm is measured against. Scoring runs every cycle;
+            market-hours mode defers only the prediction.
+          </p>
+        </div>
+      </div>
+
+      <div class="entry key">
+        <span class="rail">28 Jul</span>
+        <span class="kicker">Per-side tail-risk gate and iron condors</span>
+        <div class="body">
+          <p>
+            <code>_sides_allowed()</code> asks whether either tail is fat, and the condor is added as
+            the trade for &ldquo;no view, both tails quiet&rdquo;. Its docstring recorded the
+            argument at the time: <em>&ldquo;Blocking on a NEUTRAL label asked the wrong question
+            &mdash; flat with both tails quiet is the best setup a premium seller gets.&rdquo;</em>
+          </p>
+          <p>
+            The reasoning was correct and it was fixed one layer down. The confidence gate above it
+            was left alone, which is the defect that took until 4 August to find.
+          </p>
+        </div>
+      </div>
+
+      <div class="entry">
+        <span class="rail">28 Jul</span>
+        <span class="kicker">Trade signals routed to their own webhook; repeat alerts stopped</span>
+      </div>
+
+      <div class="entry">
+        <span class="rail">28 Jul</span>
+        <span class="kicker">First Lambda deployment: handler, container image, runbook</span>
+        <div class="body">
+          <p>
+            The container choice is the one that had to be undone on 3 August &mdash; recorded in the
+            tracker at the time as chosen for a limit the function was never near.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---------------------------------------------------------------- -->
+    <div class="phase">
+      <span class="n">Phase 3</span>
+      <h3>Onto Lambda, and fixing what the corpus was made of &mdash; 29&ndash;31 July</h3>
+    </div>
+
+    <div class="log">
+      <div class="entry win">
+        <span class="rail">29 Jul</span>
+        <span class="kicker">Scanner live on Lambda, on a schedule, with alarms<span class="chip c-done">closed</span></span>
+        <div class="body">
+          <p>
+            Deployment scripted and driven from VS Code, runbook rewritten around it. A version is
+            stamped on every log line and every alert, and the schedule anchored so a build is
+            identifiable from its output alone. Logs and alerts render in Pacific with AWS owning the
+            DST transition.
+          </p>
+          <p>
+            Alarms fire on failures and &mdash; the more valuable half &mdash; on <em>silence</em>.
+            The invoke CLI stopped timing out and colliding with itself.
+          </p>
+        </div>
+      </div>
+
+      <div class="entry">
+        <span class="rail">30 Jul</span>
+        <span class="kicker">Corpus widened where it can change a decision</span>
+        <div class="body">
+          <p>
+            X budget doubled and its window extended to the Asia open; the Fed whisperer and two
+            wires added to the query; futures and volatility chatter polled alongside SPX/SPY; news
+            sources that had gone dead without saying so revived. Curated X accounts reclassified as
+            <b>wire copy</b> rather than retail chatter, which is a weighting change as much as a
+            labelling one.
+          </p>
+          <p>
+            The budget rule set here still holds: spend it when it can change a decision, not to fill
+            a quota.
+          </p>
+        </div>
+      </div>
+
+      <div class="entry key">
+        <span class="rail">30 Jul</span>
+        <span class="kicker">Diversity cap &mdash; no source type may exceed 60% of the prompt</span>
+        <div class="body">
+          <p>
+            Macro had been taking <b>39 of 40</b> story slots. Since the cap shipped it sits at
+            exactly 24 of 40 in every cycle, which means the cap is saturated rather than slack
+            &mdash; and an identical mix five cycles running is what raised the next question, about
+            source weights.
+          </p>
+        </div>
+      </div>
+
+      <div class="entry key">
+        <span class="rail">30 Jul</span>
+        <span class="kicker">Recency decay &mdash; per-item weight halves every 72 hours</span>
+        <div class="body">
+          <p>
+            Before it, a 98-hour-old &ldquo;U.S. and Iran halt attacks&rdquo; outranked a 23-hour-old
+            &ldquo;attacks resume&rdquo; on the same conflict. The prompt had also been effectively
+            identical every 45 minutes; decay is what let it move.
+          </p>
+        </div>
+      </div>
+
+      <div class="entry win">
+        <span class="rail">30 Jul</span>
+        <span class="kicker">Deploys moved to a scoped IAM user, off the account root<span class="chip c-done">closed</span></span>
+        <div class="body">
+          <p><code>spx-deployer</code>, no root keys in use. The investigation tracker moved into the repo in the same pass.</p>
+        </div>
+      </div>
+
+      <div class="entry open">
+        <span class="rail">31 Jul</span>
+        <span class="kicker">Last day any paper position could be marked &mdash; unnoticed for four days</span>
+        <div class="body">
+          <p>
+            Not a change: a date that only became meaningful in hindsight. Positions 1, 2 and 3 were
+            marked for the last time on 31 July and then quietly became unmarkable, and therefore
+            unclosable, as the scan window slid forward past their expiries. Diagnosed 4 August.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---------------------------------------------------------------- -->
+    <div class="phase">
+      <span class="n">Phase 4</span>
+      <h3>Instrumenting what the strategy actually turns on &mdash; 2 August</h3>
+    </div>
+
+    <div class="log">
+      <div class="entry key">
+        <span class="rail">2 Aug</span>
+        <span class="kicker">Volatility regime measured for the first time</span>
+        <div class="body">
+          <p>
+            Nothing had measured the two questions a theta strategy turns on. Four measures now do,
+            all arithmetic on data already fetched:
+          </p>
+          <ul>
+            <li><b>IV / RV</b> &mdash; ATM implied against 20-day realised. Above 1, the market
+              charges more for a move than the index has delivered.</li>
+            <li><b>VIX / VIX3M</b> &mdash; above 1 is backwardation, historically a poor regime for
+              selling premium.</li>
+            <li><b>IV rank</b> &mdash; where today sits in its own trailing range. Needs ~20 daily
+              readings.</li>
+            <li><b>trend_score</b> &mdash; 5-day move, saturating at 3%, used to pick a <em>side</em>,
+              never to predict.</li>
+          </ul>
+          <p>
+            <code>trend_side_block</code> ships at <b>0</b>, deliberately. It is the only one of the
+            four that changes which trades may exist, and landing a behaviour change in the same
+            deploy as the instrumentation meant to judge it would leave no clean before-picture.
+          </p>
+        </div>
+      </div>
+
+      <div class="entry key">
+        <span class="rail">2 Aug</span>
+        <span class="kicker">199 hand labels graded &mdash; the corpus carries hazard, not direction</span>
+        <div class="body">
+          <p>
+            <b>188 of 199</b> items carried no directional sign at all, and 70 of the 81 judged
+            relevant were still zero &mdash; but 20 flagged shock risk. The confidence gate asks how
+            sure the model is of a direction the inputs do not contain. No scorer and no model fixes
+            that.
+          </p>
+          <p>
+            Tested rather than assumed: Sonnet 5 was run against Haiku and its weighted error landed
+            <em>inside</em> the 1.3% run-to-run noise floor. The model stays
+            <code>claude-haiku-4-5</code>.
+          </p>
+        </div>
+      </div>
+
+      <div class="entry stop">
+        <span class="rail">2 Aug</span>
+        <span class="kicker">The condor contradiction found</span>
+        <div class="body">
+          <p>
+            <code>_candidates()</code> checks directional confidence and returns an empty list
+            <em>before</em> it ever consults <code>_sides_allowed()</code> or builds a condor. A
+            vertical is short one tail and long a view, so &ldquo;not sure which way&rdquo;
+            disqualifies it; a condor is short both tails and holds no view, so the same uncertainty
+            is its <em>precondition</em>.
+          </p>
+          <p>
+            <strong>The scanner was declining condors on exactly the grounds that make a condor
+            correct.</strong> Fixed 4 August, by reordering rather than by lowering.
+          </p>
+        </div>
+      </div>
+
+      <div class="entry">
+        <span class="rail">2 Aug</span>
+        <span class="kicker">Diagnostics: a thread stack when the interpreter dies, and an alarm that means something</span>
+        <div class="body">
+          <p>
+            <code>faulthandler</code> prints a full thread dump on a native death, not just a glibc
+            line. The abort alarm was rescoped to fire when a <em>cycle is actually lost</em> rather
+            than when one abort fires, since EventBridge retries asynchronously and most aborts
+            recover.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---------------------------------------------------------------- -->
+    <div class="phase">
+      <span class="n">Phase 5</span>
+      <h3>The deploy path and the heap abort &mdash; 3 August</h3>
+    </div>
+
+    <div class="log">
+      <div class="entry win">
+        <span class="rail">3 Aug</span>
+        <span class="kicker">Native heap abort diagnosed and fixed<span class="chip c-done">fixed</span></span>
+        <div class="body">
+          <p>
+            Roughly one invocation in eighteen died with glibc&rsquo;s <code>double free or
+            corruption</code> and <code>Runtime.ExitError</code>. Not a Python exception &mdash; the
+            interpreter is killed outright, so <code>lambda_handler</code>&rsquo;s try/except never
+            ran and no traceback was written. It had been present since the Lambda cutover and went
+            unnoticed because the async retry always absorbed it.
+          </p>
+          <p>
+            The dump deployed the day before caught the fourth abort and named it: all eight fulltext
+            workers inside trafilatura, three of them in
+            <code>htmlprocessing.prune_unwanted_nodes</code> at the same instant, message
+            <code>corrupted double-linked list</code>.
+          </p>
+          <p>
+            <b>The leading suspect was wrong.</b> <code>psycopg2-binary</code>&rsquo;s bundled OpenSSL
+            was loaded &mdash; it appears in the extension-module list &mdash; but no thread was
+            executing in it. The earlier elimination of the shared parser had checked the right lock
+            and drawn a conclusion about the wrong operation: lxml does lock <em>parsing</em>, but
+            <code>prune_unwanted_nodes</code> mutates the tree afterwards, outside the lock, and all
+            eight threads share trafilatura&rsquo;s one module-level <code>HTML_PARSER</code> and so
+            libxml2&rsquo;s interned string dictionary.
+          </p>
+          <p>
+            Fixed with a module-level lock around <code>trafilatura.extract()</code>. The HTTP fetch
+            above it stays parallel &mdash; a 15 s timeout per article against tens of milliseconds of
+            parsing &mdash; so throughput is essentially unchanged. Five tests pin it: extraction never
+            overlaps, fetching still does, a failing document releases the lock.
+          </p>
+        </div>
+        <div class="check"><b>Closes when</b><span>ten consecutive trading days complete with no lost cycle. The lock reached production 3 Aug 18:55 PT, so <b>the count starts 4 Aug</b>. It stays a gate because a fix nobody has watched run is a hypothesis.</span></div>
+      </div>
+
+      <div class="entry win">
+        <span class="rail">3 Aug</span>
+        <span class="kicker">Deploy path rebuilt &mdash; ZIP instead of container<span class="chip c-done">closed</span></span>
+        <div class="body">
+          <p>
+            The container push had failed roughly thirty times on its 433 MB base layer and was
+            holding three commits out of production. A ZIP uploads <b>32.6 MB</b> instead, because AWS
+            supplies the runtime. New function <code>spx-scanner-zip</code>: same role, memory,
+            timeout and all 76 environment variables. The three <code>spx-scanner-grid-*</code>
+            schedules and both alarms now point at it; <code>spx-scanner</code> stays in place,
+            unscheduled, as rollback.
+          </p>
+          <p>
+            Two traps caught on the way. <code>spx-scheduler-role</code> could invoke only the old
+            function, so repointing without widening it would have failed every firing silently. And
+            <code>scheduler update-schedule</code> replaces the whole definition, so each
+            schedule&rsquo;s cron, timezone and one-attempt retry policy had to be echoed back rather
+            than defaulted away.
+          </p>
+        </div>
+        <div class="check"><b>Closed 3 Aug</b><span>a scheduled firing landed on <code>spx-scanner-zip</code> at 01:55 UTC running <code>r50-gf13dd1c</code>, with zero invocations on the old function since the cutover. Deploys are now <code>./deploy/build-zip.ps1 -Deploy</code>, about three minutes.</span></div>
+      </div>
+
+      <div class="entry key">
+        <span class="rail">3 Aug</span>
+        <span class="kicker">Decided: premium richness is an edge input, never a hard gate</span>
+        <div class="body">
+          <p>
+            IV/RV folds into <code>min_edge_score</code> so thin premium <em>lowers</em> the score
+            rather than vetoing the trade. It does not get its own threshold.
+          </p>
+          <p>
+            The reason is not hypothetical &mdash; it is the confidence gate.
+            <code>confidence_gate = 0.65</code> was a single unvalidated number placed in front of
+            everything, and it blocked 100% of cycles for a fortnight while nobody could tell whether
+            the bar or the signal was wrong. There were <b>four days</b> of IV/RV history. A hard
+            floor on that repeats the mistake with a fresher number: an arm that never fires, for a
+            new reason.
+          </p>
+        </div>
+        <div class="check"><b>Revisit when</b><span>~40 trading days of IV/RV exist and the distribution is known. A hard floor is defensible against a measured distribution; it is not defensible against four days.</span></div>
+      </div>
+
+      <div class="entry">
+        <span class="rail">3 Aug</span>
+        <span class="kicker">First full live session under the ZIP, and the first regime readings</span>
+        <div class="body">
+          <p>
+            Ten market-hours cycles, a <code>Regime:</code> line on every one, and the abort
+            diagnostic printed a full thread dump &mdash; naming the cause rather than merely
+            capturing it.
+          </p>
+          <ul>
+            <li><b>IV / RV 0.84&ndash;0.93</b> &mdash; below 1 all day: options priced <em>less</em>
+              movement than SPX delivered. That is the seller&rsquo;s edge running backwards, and
+              there was no way to see it before 2 August.</li>
+            <li><b>VIX / VIX3M 0.829&ndash;0.850</b> &mdash; contango, the normal seller-friendly
+              regime.</li>
+            <li><b>IV rank 1 / 20</b> &mdash; first reading banked, <code>iv 0.1085</code>.</li>
+            <li><b>trend_score +0.35</b> &mdash; mild uptrend, inside the (disabled) block threshold.</li>
+          </ul>
+          <p>
+            ATM IV sitting below VIX is the cross-check that the calculation is right: VIX prices the
+            whole skew including out-of-the-money puts, so an at-the-money strike should read lower.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---------------------------------------------------------------- -->
+    <div class="phase">
+      <span class="n">Phase 6</span>
+      <h3>Four fixes and a falsified hypothesis &mdash; 4 August</h3>
+    </div>
+
+    <p class="lede">
+      The day the scanner stopped being blocked by its own instrumentation. Two of the three things
+      keeping it from producing a single measurable trade were removed; the third turned out not to
+      be a measurement problem at all.
+    </p>
+
+    <div class="log">
+      <div class="entry win">
+        <span class="rail">4 Aug</span>
+        <span class="kicker">Confidence gate recalibrated, 0.65 &rarr; 0.40<span class="chip c-done">shipped</span></span>
+        <div class="body">
+          <p>
+            The gate was a fixed threshold on a number whose <em>scale changed underneath it</em>.
+            Split the 180 predictions on the day synthesis replaced the weighted mean and they are
+            plainly two distributions:
+          </p>
+          <div class="scroll">
+            <table>
+              <thead><tr><th>Aggregator</th><th>Window</th><th>n</th><th>Range</th><th>Mean</th><th>Cleared 0.65</th></tr></thead>
+              <tbody>
+                <tr><td>weighted mean</td><td>24&ndash;28 Jul</td><td class="num">139</td><td class="num">0.30&ndash;0.658</td><td class="num">0.56</td><td class="num">2 &middot; 1.4%</td></tr>
+                <tr><td>synthesis</td><td>29 Jul&ndash;4 Aug</td><td class="num">41</td><td class="num">0.30&ndash;0.42</td><td class="num">0.37</td><td class="was">0</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            0.65 was <em>already</em> a near-dead threshold under the mean aggregator, which is why no
+            signal trade had ever opened even before the swap. Synthesis then reported genuinely
+            differentiated but systematically lower conviction and the gate became unreachable
+            outright. Nothing alarmed: a gate that blocks every cycle looks identical in the logs to a
+            market that never qualifies.
+          </p>
+          <p>
+            <b>0.40 is the synthesis 75th percentile</b>, so the gate keeps its intended meaning
+            &mdash; trade the upper quartile of conviction &mdash; on the scale in use. Against the 41
+            cycles on record it admits 15; against 4 August&rsquo;s session, 5 of 9. Provisional, and
+            deliberately so: 41 observations from seven sessions of one calm, contango, IV-under-RV
+            regime.
+          </p>
+        </div>
+      </div>
+
+      <div class="entry win">
+        <span class="rail">4 Aug</span>
+        <span class="kicker">Directional gate rescoped to verticals &mdash; the condor is decided on its own merits<span class="chip c-done">shipped</span></span>
+        <div class="body">
+          <p>
+            The recalibration alone only changed how often the wrong question got asked. Verticals are
+            still <em>constructed</em> unconditionally, because a condor is assembled from one of
+            each, but they are only <em>offered</em> when confidence clears. The condor no longer
+            passes through the directional check at all &mdash; it is decided by
+            <code>_sides_allowed()</code>, <code>min_edge_score</code> and the pricing filters, none
+            of which ask which way the market is going.
+          </p>
+          <p>
+            The gate order now reads: tails first, build both verticals, offer verticals only above
+            0.40, offer the condor whenever both tails are quiet regardless of confidence, then price
+            it.
+          </p>
+        </div>
+        <div class="check"><b>Check</b><span>a cycle logs <code>num_candidates &gt; 0</code> with confidence <em>below</em> the directional gate. All nine cycles of 4 Aug would now reach that path, where none did before &mdash; both tails sat 22&ndash;40% against the 55% cap while confidence never cleared 0.42.</span></div>
+      </div>
+
+      <div class="entry win">
+        <span class="rail">4 Aug</span>
+        <span class="kicker">Premium richness wired into the edge score at weight 0.15<span class="chip c-done">shipped</span></span>
+        <div class="body">
+          <p>
+            IV/RV below 1 lowers <code>min_edge_score</code> rather than vetoing the trade, so an
+            unusually good structure can still sell into thin premium. Today&rsquo;s 0.85&ndash;0.90
+            ratio costs ~0.02 of edge against a 0.05 threshold &mdash; enough to demand a better
+            structure, not enough to refuse one. The ratio is clamped to 0.5&ndash;1.5 first, so a bad
+            quote tilts the ranking rather than owning it.
+          </p>
+          <p><code>PREMIUM_WEIGHT</code> is exposed in <code>.env</code>, with the other tunable thresholds.</p>
+        </div>
+      </div>
+
+      <div class="entry win">
+        <span class="rail">4 Aug</span>
+        <span class="kicker">Marking given its own chain, so positions can close<span class="chip c-done">shipped</span></span>
+        <div class="body">
+          <p>
+            The chain was fetched once per cycle over <code>dte_min..dte_max</code> measured
+            <em>from today</em> &mdash; a 20-to-25-day window sliding forward daily. A position opened
+            inside that window falls out of it within days, so its legs are absent from every later
+            chain and <code>mark_spread()</code> returns <code>None</code>.
+          </p>
+          <p>
+            The severe part is second-order. <code>manage()</code> hits <code>continue</code> on an
+            unmarkable position <em>before</em> it evaluates the exits, so such a position is not
+            merely unpriced &mdash; it is <strong>unclosable</strong>. The 4-day time exit never
+            fired, the stop never fired, and <code>paper_positions</code> held <b>zero closed rows and
+            zero realised P&amp;L</b> across eight days of trading, with three positions sitting past
+            their hold.
+          </p>
+          <div class="scroll">
+            <table>
+              <thead><tr><th>Position</th><th>Opened</th><th>Expiry</th><th>Last marked</th><th>Status at diagnosis</th></tr></thead>
+              <tbody>
+                <tr><td class="num">1</td><td>28 Jul</td><td>21 Aug</td><td class="was">31 Jul</td><td class="was">open, 7d past its 4d hold</td></tr>
+                <tr><td class="num">2</td><td>30 Jul</td><td>21 Aug</td><td class="was">31 Jul</td><td class="was">open, 5d past its 4d hold</td></tr>
+                <tr><td class="num">3</td><td>31 Jul</td><td>20 Aug</td><td class="was">31 Jul</td><td class="was">open, 4d past its 4d hold</td></tr>
+                <tr><td class="num">4</td><td>3 Aug</td><td>28 Aug</td><td class="now">3 Aug</td><td>open, still inside the window</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            Fixed by giving marking its own chain spanning the open expiries, <em>not</em> by widening
+            the scan chain &mdash; <code>atm_iv()</code> averages across every expiry it is handed, so
+            folding in nearer-dated contracts would have shifted the regime level that the synthesis
+            prompt and the IV/RV ratio read from. Costs one extra chain request per cycle, and only
+            while something sits outside the scan window.
+          </p>
+        </div>
+        <div class="check"><b>Check</b><span>positions 1&ndash;3 close on <code>time</code> at the first in-session cycle after deploy, writing the first realised P&amp;L this project has ever recorded. If they do not, marking is failing for a second reason and the fallback path is hiding it.</span></div>
+      </div>
+
+      <div class="entry win">
+        <span class="rail">4 Aug</span>
+        <span class="kicker">Risk asked directly, and prompt attribution added to every score<span class="chip c-done">shipped</span></span>
+        <div class="body">
+          <p>
+            <code>SCORE_SCHEMA</code> had no risk field. The metric weighted <b>&times;8</b> in the
+            grader was inferred from <code>abs(direction) &gt; 0.3 or magnitude &gt; 0.5</code> &mdash;
+            a proxy built from two fields answering different questions, so a shock of unclear
+            direction scored zero on the thing that matters most.
+          </p>
+          <p>
+            Asked directly, <code>current</code> returns <b>70.0% risk recall</b>, missing 6 of 20
+            shock items. Per-chunk combination takes the <b>max</b> rather than the
+            confidence-weighted mean: one paragraph naming a shock makes the article risky, and
+            averaging dilutes the warning.
+          </p>
+          <p>
+            <code>item_scores</code> now records the prompt variant that actually ran, so a production
+            A/B is attributable instead of a week of mixed corpus nobody can separate.
+          </p>
+        </div>
+      </div>
+
+      <div class="entry stop">
+        <span class="rail">4 Aug</span>
+        <span class="kicker">Prompt question settled &mdash; stay on <code>current</code>, and the hypothesis behind the work is falsified</span>
+        <div class="body">
+          <p>
+            Re-graded on the same 199 labels with risk measured rather than inferred,
+            <code>theta</code> returns <b>30.0% risk recall</b> against the 45% floor, missing 14 of
+            20 labelled shocks. Its weighted-error edge over <code>current</code> is 168 to 177
+            &mdash; nine points, bought with a 40-point deficit on the metric priced at &times;8.
+            Gates: weighted error &check;, bear:bull 1.6:1 &check;, risk recall &cross;. Fail one and
+            stay. So, stay.
+          </p>
+          <p>
+            <strong>The falsified claim is the most useful result of the day.</strong> The roadmap held
+            that the proxy was <em>why</em> <code>theta</code> scored badly on risk &mdash; that any
+            prompt improving direction must trade away a risk signal being read off direction. Asked
+            the question directly, <code>theta</code> still reaches only 30%. Its conservatism
+            suppresses risk detection genuinely. The proxy was a real defect and worth removing; it
+            was not <code>theta</code>&rsquo;s excuse, and removing it did not rescue the variant it
+            was blamed for.
+          </p>
+        </div>
+        <div class="check"><b>Read carefully</b><span>the re-graded numbers are not comparable to the earlier four runs. The grader changed <em>and</em> every variant&rsquo;s shared key block now asks for risk, which moved the other fields too. <code>current</code>&rsquo;s 233&rarr;177 is the measurement becoming honest, not the scorer improving. Only <code>current</code> vs <code>theta</code> under today&rsquo;s identical conditions carries the decision.</span></div>
+      </div>
+
+      <div class="entry win">
+        <span class="rail">4 Aug</span>
+        <span class="kicker">API request timeouts set: 30 s scoring, 120 s synthesis<span class="chip c-done">shipped</span></span>
+        <div class="body">
+          <p>
+            The 15:55 PDT cycle ran the full 600 s and returned <code>Status: timeout</code> having
+            logged only collection. The automatic retry, on identical code and environment, finished
+            in <b>127 s</b>. The cause was a default nobody set: the SDK read timeout of 600 s is
+            <em>identical</em> to the Lambda budget, so one hung request can outlive the cycle and
+            nothing degrades &mdash; it just dies. A typical Haiku scoring call takes 2&ndash;5 s.
+          </p>
+          <p>
+            Separated rather than shared because synthesis is one Opus call over 40 stories at ~15 s,
+            and putting it on the scorer&rsquo;s budget would cut off the cycle&rsquo;s single most
+            valuable request. The SDK&rsquo;s own two retries still fit inside a cycle.
+          </p>
+          <p>
+            Worth stating plainly: <b>this was not caused by the deploy it followed.</b> It landed one
+            minute after <code>r55</code> went live &mdash; exactly the coincidence that invites a
+            wrong conclusion &mdash; but <code>r55</code> changed the gate value, the marking chain and
+            two deploy scripts, none of which the scoring path touches, and the retry succeeded on
+            that same code.
+          </p>
+        </div>
+        <div class="check"><b>Watch</b><span>a second timeout would falsify the diagnosis, since a per-request cap now bounds it. Cycle duration should stay in the 110&ndash;160 s band it has held all week.</span></div>
+      </div>
+
+      <div class="entry open">
+        <span class="rail">4 Aug</span>
+        <span class="kicker"><code>sync-env.ps1</code> was writing settings to the retired function<span class="chip c-open">partly open</span></span>
+        <div class="body">
+          <p>
+            The script pushed <code>.env</code> to <code>$FuncName</code>, which
+            <code>common.ps1</code> still defines as <code>spx-scanner</code> &mdash; the container the
+            ZIP replaced on 3 August. EventBridge invokes <code>spx-scanner-zip</code>. Any setting
+            changed since the switch reported success and never reached a running cycle.
+          </p>
+          <p>
+            <code>Test-LambdaExists</code> made it quieter still: it took no parameter and always
+            tested <code>$FuncName</code>, so <code>build-zip.ps1</code>&rsquo;s existing
+            <code>Test-LambdaExists $ZipFuncName</code> guard was silently checking the wrong
+            function. Both are fixed &mdash; the helper takes a name, and <code>sync-env.ps1</code>
+            defaults to the ZIP.
+          </p>
+          <p>
+            <b>Still open:</b> the rest of <code>deploy/</code> resolves <code>$FuncName</code> to the
+            retired container &mdash; <code>invoke.ps1</code>, <code>alarms.ps1</code> and
+            <code>schedule.ps1</code> among them. The live alarms and schedules point at the ZIP only
+            because they were repointed by hand, so the scripts and the account now disagree.
+          </p>
+        </div>
+        <div class="check"><b>Act</b><span>split the name in <code>common.ps1</code> &mdash; <code>$FuncName</code> for whatever is live, a separate one for the container path &mdash; then re-run <code>alarms.ps1</code> and <code>schedule.ps1</code> to confirm they reproduce what is deployed rather than diverging a second time.</span></div>
+      </div>
+
+      <div class="entry">
+        <span class="rail">4 Aug</span>
+        <span class="kicker">Flow and architecture docs brought up to what shipped, not what was planned</span>
+      </div>
+    </div>
+
+    <!-- ---------------------------------------------------------------- -->
+    <div class="phase">
+      <span class="n">Phase 7</span>
+      <h3>The write path, and what a post-close deploy hides &mdash; 5 August</h3>
+    </div>
+
+    <p class="lede">
+      Yesterday shipped four correct changes and one of them could not be saved. The defect was in
+      production for fifteen hours and twenty consecutive cycles before anything noticed, because
+      every one of those cycles ran outside market hours.
+    </p>
+
+    <div class="log">
+      <div class="entry stop">
+        <span class="rail">5 Aug</span>
+        <span class="kicker">Every in-market cycle with a candidate died on the write<span class="chip c-stop">outage</span></span>
+        <div class="body">
+          <p>
+            <code>save_prediction</code> does
+            <code>SpreadSuggestion(prediction_id=&hellip;, **sp)</code>. The strategy&rsquo;s output
+            dict <em>is</em> that table&rsquo;s schema, whether or not anyone intended it to be.
+            <code>r58</code> began emitting <code>premium_edge</code> from both spread dicts and added
+            <code>risk</code> and <code>prompt</code> to <code>item_scores</code> &mdash; but never the
+            matching column on <code>spread_suggestions</code>. Every write carrying a candidate
+            raised <code>TypeError: 'premium_edge' is an invalid keyword argument</code>.
+          </p>
+          <ul>
+            <li><b>06:10</b> &mdash; clean; pre-open, so prediction deferred and the write never reached.</li>
+            <li><b>06:55</b> &mdash; three attempts, all failed. First in-market cycle since the deploy.</li>
+            <li><b>07:40</b> &mdash; failed, then a retry <em>succeeded</em>: it found no candidate, so
+              the loop that breaks had nothing to iterate. The failure was conditional on the scan
+              producing something, which is why it is not visible as a flat outage.</li>
+            <li><b>08:25</b> &mdash; three attempts, all failed.</li>
+          </ul>
+          <p>
+            Seven failed invocations, each having already paid for collection, per-item scoring and a
+            full Opus-5 synthesis before reaching the write. The <code>spx-scanner-errors</code> alarm
+            fired at 08:31 PT.
+          </p>
+        </div>
+        <div class="check"><b>Root cause</b><span>the ORM model and the strategy output drifted apart in <code>7d9e065</code>, and nothing in the test suite compared them. Not a deployment fault: the same code fails identically on a laptop, in market hours, with a candidate.</span></div>
+      </div>
+
+      <div class="entry key">
+        <span class="rail">5 Aug</span>
+        <span class="kicker">Why twenty green cycles preceded it &mdash; the lesson worth more than the fix</span>
+        <div class="body">
+          <p>
+            The deploy landed <b>17:38 PT, after the close</b>. Outside RTH <code>run_once</code>
+            defers prediction and returns before the write, so the entire overnight run exercised
+            collection, scoring, synthesis and the regime read on code that could not save a
+            prediction. Twenty consecutive clean cycles, none of which touched the broken line.
+          </p>
+          <p>
+            <strong>A post-close deploy buys no confidence in anything downstream of the market-hours
+            branch.</strong> Those green cycles were read as evidence yesterday &mdash; the combined
+            roadmap said so in as many words &mdash; and they were not evidence of anything except
+            that the deferral path works. The scanner has two materially different execution paths
+            and only one of them runs at night.
+          </p>
+        </div>
+        <div class="check"><b>Applies to</b><span>every future deploy that touches prediction, scanning, marking or paper trading. Either ship in market hours, or invoke once by hand against the live function before the next open and read the result.</span></div>
+      </div>
+
+      <div class="entry win">
+        <span class="rail">5 Aug</span>
+        <span class="kicker">Three columns, and the test that makes this class of bug fail on the laptop<span class="chip c-done">fixed</span></span>
+        <div class="body">
+          <p>
+            <code>premium_edge</code> added to <code>SpreadSuggestion</code>, plus
+            <code>call_short_strike</code> and <code>call_long_strike</code> &mdash; <b>the same bug
+            one keyword further on</b>. Condors have carried four strikes since <code>1a76def</code>
+            and <code>PaperPosition</code> has columns for them; the suggestion table never did. The
+            declarative constructor reports only the first bad keyword, so fixing
+            <code>premium_edge</code> alone would have shipped a second outage on the first condor to
+            clear its gates.
+          </p>
+          <p>
+            All three are nullable &mdash; rows written before today predate the fields and are
+            unmeasured, not zero &mdash; and all three go through <code>_ADDED_COLUMNS</code>, because
+            <code>create_all</code> only creates missing tables and leaves a live schema untouched.
+          </p>
+          <p>
+            <b>The regression test is the actual deliverable.</b>
+            <code>tests/test_spread_persistence.py</code> builds real strategy output for all three
+            candidate kinds and constructs the ORM object from it, with no database and no market
+            hours involved. Verified against the pre-fix model, where it fails &mdash; on
+            <code>call_short_strike</code>, which is how the second gap was confirmed rather than
+            guessed.
+          </p>
+        </div>
+        <div class="check"><b>Closed 5 Aug</b><span><code>r61-g135419c</code> deployed 08:50 PT, schema migrated 08:51 via <code>{"action":"setup"}</code>, manual cycle 08:54&ndash;08:56 clean. Prediction 189 and suggestion 3 are in Postgres with <code>premium_edge=-0.028</code>; older rows read <code>NULL</code>, as intended. 255 tests pass.</span></div>
+      </div>
+
+      <div class="entry open">
+        <span class="rail">5 Aug</span>
+        <span class="kicker">First cycle to reach the pricing filters &mdash; and it declined</span>
+        <div class="body">
+          <p>
+            The recovered cycle is the first observation the strategy question has ever produced.
+            Direction UP +0.18, confidence 45%, tail risk 34% down / 19% up, both sides open,
+            <b>26 verticals scanned</b>, best edge <b>0.04 against the 0.05 threshold</b>. No trade
+            &mdash; declined on the merits, not on a gate that refused to ask and not on a crash.
+          </p>
+          <p>
+            One observation is not a finding. But it points where the 4 August entries predicted it
+            would: past the gates that were removed, into the pricing filters that have never been
+            tested, with the margin small enough that it is a genuine question whether the threshold
+            or the market is wrong.
+          </p>
+        </div>
+        <div class="check"><b>Watch</b><span>whether best edge clusters just under 0.05 across a full session. If it does, <code>min_edge_score</code> is the next threshold with the confidence gate&rsquo;s problem &mdash; a number set before the distribution it judges was known.</span></div>
+      </div>
+
+      <div class="entry stop">
+        <span class="rail">5 Aug</span>
+        <span class="kicker">Clean-day clock reset on its second day<span class="chip c-stop">reset</span></span>
+        <div class="body">
+          <p>
+            Three scheduled cycles were lost, so 5 August is not a clean day. The count restarts
+            <b>6 August</b> and the gate moves from ~18 to <b>~20 August</b>. This is the one scanner
+            item on the combined go-live critical path, so the slip is recorded there too.
+          </p>
+          <p>
+            Worth naming what the gate did and did not catch. It was written for the heap abort
+            &mdash; a fix nobody had watched run &mdash; and it measures lost cycles, which is the
+            right thing to measure. What took the scanner down was a schema mismatch that no amount
+            of watching the previous night would have revealed, because the previous night never ran
+            the code. <b>The gate is sound; it just cannot start counting until the branch that
+            matters has been exercised.</b>
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================================================== forward ======= -->
+  <section>
+    <div class="sec-head">
+      <h2>What&rsquo;s next</h2>
+      <span class="sec-note">dates are earliest-possible</span>
+    </div>
+
+    <p class="lede">
+      One change at a time, each with the check that closes it. Two items cross the boundary to the
+      technical half; both are marked, and neither is restated from the combined roadmap.
+    </p>
+
+    <div class="log">
+      <div class="entry key">
+        <span class="rail">Wed<br>5 Aug</span>
+        <span class="kicker">First session under the reordered gate<span class="chip c-next">next</span></span>
+        <div class="body">
+          <p>
+            Three things become observable at 06:55 PDT that never have been. This is the first
+            session where the scanner can be watched rather than reasoned about.
+          </p>
+          <ul>
+            <li>A cycle logging <code>num_candidates &gt; 0</code> &mdash; has never happened.</li>
+            <li>A first <code>arm='model'</code> row in <code>paper_positions</code> &mdash; has never
+              happened.</li>
+            <li>Positions 1&ndash;3 closing on <code>time</code>, writing the first realised P&amp;L
+              the project has recorded.</li>
+          </ul>
+        </div>
+        <div class="check"><b>If it still does not trade</b><span>the blocker is downstream &mdash; edge score, POP, RoR or liquidity &mdash; and that is a separate investigation, not a regression of this one. Those filters are now the binding constraints and have never been tested.</span></div>
+      </div>
+
+      <div class="entry open">
+        <span class="rail">this<br>week</span>
+        <span class="kicker">Reconcile <code>deploy/</code> with the account</span>
+        <div class="body">
+          <p>
+            Split <code>$FuncName</code> in <code>common.ps1</code>, then re-run
+            <code>alarms.ps1</code> and <code>schedule.ps1</code>. Cheap, and it removes a class of
+            silent failure that has already happened once.
+          </p>
+        </div>
+      </div>
+
+      <div class="entry key">
+        <span class="rail">Wed<br>12 Aug</span>
+        <span class="kicker">Publish the hazard signal<span class="chip c-next">hands off</span></span>
+        <div class="body">
+          <p>
+            The scanner writes one row per cycle to a shared Postgres table:
+            <code>downside_risk</code>, <code>upside_risk</code>, an <code>event_risk</code> flag for
+            a high-impact print inside the DTE window, and <code>as_of</code> so a stale row can be
+            rejected. No RPC and no coupling beyond a shared read &mdash; either system keeps running
+            if the other stops.
+          </p>
+          <p>
+            This is the scanner&rsquo;s entire contribution to the combined system, and it is what the
+            199 labels say news is actually good for. What the consumer does with it is not this
+            document&rsquo;s scope.
+          </p>
+        </div>
+        <div class="check"><b>Check</b><span>the consumer logs the scanner&rsquo;s tails on every tick and behaves identically while ignoring them.</span></div>
+      </div>
+
+      <div class="entry key">
+        <span class="rail">Thu<br>13 Aug</span>
+        <span class="kicker">Drop StockTwits and Reddit; split the macro feeds</span>
+        <div class="body">
+          <p>
+            Social and YouTube are 54% of the corpus &mdash; 67% of everything scored &mdash; and
+            produced <b>one</b> actionable item in 107 labelled. Cutting them removes 79% of scoring
+            volume and lifts precision from 44% to 57%.
+          </p>
+          <p>
+            Macro grades 24% relevant only because BBC World, Al Jazeera and NPR World are general
+            news filed as macro. Every genuinely relevant macro item had a price channel; splitting
+            the feeds is what lets the weights follow the measurement.
+          </p>
+        </div>
+        <div class="check"><b>Check</b><span>relevance precision on a re-grade rises toward the 56.8% measured on the macro / news / econ subset alone.</span></div>
+      </div>
+
+      <div class="entry">
+        <span class="rail">~Thu<br>20 Aug</span>
+        <span class="kicker">Scanner reliability clears &mdash; 10 clean trading days</span>
+        <div class="body">
+          <p>
+            Pure waiting: ten consecutive trading days with no lost cycle. This is the one scanner
+            item on the combined go-live critical path, because a hazard source that dies silently
+            and leaves a three-hour-old flag behind is worse than no source at all.
+          </p>
+          <p>
+            <b>Was ~18 Aug, counting from 4 August.</b> The 5 August write-path outage lost three
+            scheduled cycles, so the count restarts 6 August and the date slips two trading days.
+          </p>
+        </div>
+      </div>
+
+      <div class="entry">
+        <span class="rail">~Mon<br>31 Aug</span>
+        <span class="kicker">IV rank becomes readable</span>
+        <div class="body">
+          <p>
+            Needs 20 trading days of daily ATM IV banked, and the clock started at deploy on 3 August,
+            not at the idea. Until then it returns <code>None</code> and premium richness runs on
+            IV/RV alone.
+          </p>
+        </div>
+        <div class="check"><b>Check</b><span><code>iv_rank</code> present in the <code>Regime:</code> line.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================================================== deferred ====== -->
+  <section>
+    <div class="sec-head">
+      <h2>Deferred, with the condition that re-arms it</h2>
+      <span class="sec-note">not forgotten &mdash; waiting on evidence</span>
+    </div>
+
+    <div class="log">
+      <div class="entry open">
+        <span class="rail">deferred</span>
+        <span class="kicker">Express the confidence gate as a percentile, not an absolute</span>
+        <div class="body">
+          <p>
+            A fixed threshold silently closed once when the aggregator changed under it, and nothing
+            alarmed &mdash; a gate that blocks every cycle is indistinguishable in the logs from a
+            market that never qualifies. A rolling percentile cannot fail that way.
+          </p>
+        </div>
+        <div class="check"><b>Re-arm when</b><span>a wider regime range has banked. The current 0.40 rests on 41 observations from one calm, contango, IV-under-RV regime.</span></div>
+      </div>
+
+      <div class="entry open">
+        <span class="rail">deferred</span>
+        <span class="kicker">A hard IV/RV floor</span>
+        <div class="body">
+          <p>
+            Cuts directly against the instinct to gate hard on a number currently reading
+            0.84&ndash;0.93. The discipline is to let the edge score price it rather than add a second
+            veto.
+          </p>
+        </div>
+        <div class="check"><b>Re-arm when</b><span>~40 trading days of IV/RV exist and the distribution is known.</span></div>
+      </div>
+
+      <div class="entry open">
+        <span class="rail">deferred</span>
+        <span class="kicker"><code>trend_side_block</code> as its own change</span>
+        <div class="body">
+          <p>
+            Shipped at 0 on 2 August so the instrumentation had a clean before-picture. It is the only
+            regime measure that changes which trades may exist.
+          </p>
+        </div>
+        <div class="check"><b>Re-arm when</b><span>a week of readings exists to judge it against.</span></div>
+      </div>
+
+      <div class="entry open">
+        <span class="rail">moot</span>
+        <span class="kicker">Waiting out the lookback after a scoring-prompt switch</span>
+        <div class="body">
+          <p>
+            <code>recent_scores()</code> reads a 7-day lookback, so for a week after any switch the
+            synthesis sees a blend of old- and new-prompt scores. Moot while the prompt stays
+            <code>current</code> &mdash; the corpus never becomes mixed.
+          </p>
+        </div>
+        <div class="check"><b>Re-arm when</b><span>a variant clears all four gates. Then <code>GROUP BY prompt</code> on <code>item_scores</code> tells you when the lookback is clean, instead of counting days blindly.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================================================== open ========== -->
+  <section>
+    <div class="sec-head">
+      <h2>Open questions</h2>
+      <span class="sec-note">unresolved, and each one would change something</span>
+    </div>
+
+    <div class="log">
+      <div class="entry stop">
+        <span class="rail">open</span>
+        <span class="kicker">Stated confidence does not track accuracy</span>
+        <div class="body">
+          <p>
+            Calibration reads 46.8% &rarr; 12.5% &rarr; 34.1% &rarr; 80.0% across confidence buckets
+            &mdash; not monotonic. Item confidence is the weight in
+            <code>direction &times; confidence</code> aggregation, so the corpus is weighted by a
+            noisy number.
+          </p>
+          <p>
+            <code>theta</code> was markedly better here, rising to 97.1%. That is the one reason to
+            revisit a variant that otherwise failed its risk gate.
+          </p>
+        </div>
+      </div>
+
+      <div class="entry stop">
+        <span class="rail">open</span>
+        <span class="kicker">Source weights are inverted relative to measured value</span>
+        <div class="body">
+          <p>
+            Macro carries weight 1.2 plus a 1.3 ranking nudge and grades <b>24%</b> relevant. News
+            carries 1.0 and grades <b>79%</b>. The best source has the lowest weight, and the
+            diversity cap is saturated at exactly 24 of 40 macro in every cycle since it shipped
+            &mdash; so the misallocation is locked in rather than incidental.
+          </p>
+        </div>
+        <div class="check"><b>Partly addressed by</b><span>the 13 Aug feed split, which is what makes a weight change measurable rather than a guess.</span></div>
+      </div>
+
+      <div class="entry stop">
+        <span class="rail">open</span>
+        <span class="kicker">The two paper arms are not comparable</span>
+        <div class="body">
+          <p>
+            Baseline sells 5-wide at 9% credit-to-width with no pricing floor; the signal arm would
+            sell 25-wide requiring &ge;20%. A P&amp;L difference between them would not isolate the
+            sentiment gate &mdash; it would mostly measure the structure difference.
+          </p>
+        </div>
+      </div>
+
+      <div class="entry stop">
+        <span class="rail">open</span>
+        <span class="kicker">Whether a condor prices through the filters at all</span>
+        <div class="body">
+          <p>
+            The delta, POP, RoR and liquidity filters are now the binding constraints, and not one of
+            them has ever been reached with a live candidate. This is the right question to be left
+            with, and it is entirely untested. First chance: 5 August.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================================ decision log ====== -->
+  <section>
+    <div class="sec-head">
+      <h2>Decision log</h2>
+      <span class="sec-note">check here before re-litigating anything</span>
+    </div>
+
+    <p class="lede">
+      Every scanner decision that changed the strategy, the roadmap or a rule, with the evidence
+      behind it. Decisions belonging to the technical half are not duplicated here.
+    </p>
+
+    <div class="scroll"><table>
+      <thead><tr><th>Date</th><th>Decision</th><th>Evidence</th></tr></thead>
+      <tbody>
+        <tr><td class="num">07-28</td><td>Gate trades on <strong>per-side tail risk</strong>; add iron condors</td><td>Direction is not what a premium seller needs. Flat with both tails quiet is the best setup the strategy gets.</td></tr>
+        <tr><td class="num">07-30</td><td>Diversity cap at 60% per source type</td><td>Macro was taking 39 of 40 prompt slots</td></tr>
+        <tr><td class="num">07-30</td><td>Recency decay, 72-hour half-life</td><td>A 98-hour-old &ldquo;attacks halt&rdquo; outranked a 23-hour-old &ldquo;attacks resume&rdquo; on the same conflict</td></tr>
+        <tr><td class="num">07-30</td><td>Deploy as a scoped IAM user, not account root</td><td><code>spx-deployer</code>; root keys retired</td></tr>
+        <tr><td class="num">08-02</td><td>Ship <code>trend_side_block</code> at <strong>0</strong></td><td>The only new measure that changes which trades may exist; behaviour change and its own instrumentation must not land together</td></tr>
+        <tr><td class="num">08-02</td><td>Model stays <code>claude-haiku-4-5</code></td><td>Sonnet 5&rsquo;s weighted error landed inside the 1.3% run-to-run noise floor</td></tr>
+        <tr><td class="num">08-02</td><td><strong>The corpus carries hazard, not direction</strong></td><td>188 of 199 labelled items had no directional sign; 20 flagged shock risk</td></tr>
+        <tr><td class="num">08-03</td><td><strong>Premium richness is an edge input, not a hard gate</strong></td><td>Four days of IV/RV history. A hard floor repeats the confidence-gate failure with a fresher number.</td></tr>
+        <tr><td class="num">08-03</td><td>Ship as a Lambda ZIP; keep the container unscheduled as rollback</td><td>32.6 MB against a 433 MB base layer that failed ~30 pushes and held three commits out of production</td></tr>
+        <tr><td class="num">08-03</td><td>Serialise <code>trafilatura.extract()</code></td><td>The dump named the shared lxml parser. <code>psycopg2</code>&rsquo;s OpenSSL was loaded but no thread was executing in it.</td></tr>
+        <tr><td class="num">08-04</td><td><code>confidence_gate</code> <strong>0.65 &rarr; 0.40</strong></td><td>75th percentile of the synthesis distribution. The scale moved when the aggregator was swapped and nothing re-derived the threshold.</td></tr>
+        <tr><td class="num">08-04</td><td><strong>Scope the directional gate to verticals</strong></td><td>A condor is short both tails and holds no view &mdash; the uncertainty that disqualifies a vertical is its precondition</td></tr>
+        <tr><td class="num">08-04</td><td>Marking gets its own chain, rather than widening the scan chain</td><td><code>atm_iv()</code> averages across every expiry it is handed; widening would move the regime level synthesis reads from</td></tr>
+        <tr><td class="num">08-04</td><td>Ask <code>risk</code> directly; take the <strong>max</strong> across chunks</td><td>The &times;8 metric was inferred from <code>abs(direction) &gt; 0.3 or magnitude &gt; 0.5</code>; averaging dilutes one paragraph naming a shock</td></tr>
+        <tr><td class="num">08-04</td><td><code>SCORING_PROMPT</code> stays <code>current</code></td><td><code>theta</code> at 30.0% risk recall against a 45% floor &mdash; a nine-point weighted-error edge bought with a 40-point deficit on the metric priced at &times;8</td></tr>
+        <tr><td class="num">08-04</td><td>API timeouts 30 s scoring / 120 s synthesis, separated</td><td>The 600 s SDK default equals the Lambda budget, so one hung call ends a cycle having done nothing</td></tr>
+        <tr><td class="num">08-05</td><td><strong>The spread dict is <code>spread_suggestions</code>&rsquo; schema</strong> &mdash; pin it with a test</td><td><code>save_prediction</code> splats the dict into the ORM, so a field added to the strategy and not the model is a production TypeError. <code>test_spread_persistence.py</code> checks every emitted key against a mapped column</td></tr>
+        <tr><td class="num">08-05</td><td>New columns are <strong>nullable</strong>, never defaulted to 0</td><td>Rows written before the field existed are unmeasured, not zero; a default makes them indistinguishable from a measured 0.0. Same rule as <code>item_scores.risk</code> on 08-04</td></tr>
+        <tr><td class="num">08-05</td><td><strong>Do not deploy after the close</strong> and read the overnight cycles as evidence</td><td>Outside RTH <code>run_once</code> returns before the write, so 20 green cycles exercised everything except the branch that was broken</td></tr>
+        <tr><td class="num">08-05</td><td>Retries stay at 2 attempts</td><td>They rescued the hung-API cycle on 08-04. A schema bug is simply the case where retrying cannot help, and capping them would trade a real rescue for a bounded waste</td></tr>
+      </tbody>
+    </table></div>
+
+    <div class="note stop">
+      <p>
+        <strong>Nothing here is evidence of edge.</strong> The signal arm has never opened a position,
+        the baseline arm has never closed one, and no realised P&amp;L exists. Every number in this
+        document is an input to a decision, not a result.
+      </p>
+    </div>
+  </section>
+
+  <footer>
+    <span>Scanner-only record &middot; split out 2026-08-04</span>
+    <span>System <code>spx-scanner-zip</code> &middot; build <code>r61-g135419c</code></span>
+    <span>Companions: operational tracker, pipeline flow, combined roadmap</span>
+    <span>Educational research only &mdash; not financial advice</span>
+  </footer>
+</div>
