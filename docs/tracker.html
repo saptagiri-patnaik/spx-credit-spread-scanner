@@ -178,18 +178,18 @@
     <h1>Open investigations, running experiments, and what to watch next</h1>
     <p class="standfirst">
       Everything currently unresolved in the pipeline, each with the condition that would make you
-      act on it. Regenerated 4 August 2026, evening, from the live database, CloudWatch and the deployed
-      configuration. Since the 3 August edition: the ZIP ran its first full live session cleanly,
-      the confidence gate was found to be measuring on a scale that changed underneath it and has
-      been recalibrated <em>and then rescoped</em> so the iron condor is no longer rejected for
-      having no directional view, the paper tracker was found unable to mark &mdash; or close &mdash;
-      any position more than a few days old, and the scoring prompt question was settled against
-      <code>theta</code> once risk could be measured rather than inferred.
+      act on it. Regenerated 6 August 2026, midday, from the live database, CloudWatch and the deployed
+      configuration. Since the 4 August edition: the reject tally shipped and immediately answered the
+      put-side question it was built for &mdash; and the answer was a flag that had never once been
+      false in 190 predictions, silently pinning the scanner to its event-risk branch and leaving two
+      configured thresholds unreachable for the life of the function. Fixed and deployed as
+      <code>r70</code>. What remains is the half of that finding a window change does not reach: on
+      event days the put side still cannot clear the credit-to-width floor against skew.
     </p>
   </header>
 
   <dl class="strip">
-    <div class="cell"><dt>Deployed</dt><dd class="ok">r67 &middot; 0faee85 &middot; zip</dd></div>
+    <div class="cell"><dt>Deployed</dt><dd class="ok">r70 &middot; a481d58 &middot; zip</dd></div>
     <div class="cell"><dt>AWS identity</dt><dd class="ok">spx-deployer</dd></div>
     <div class="cell"><dt>Root keys</dt><dd class="ok">none</dd></div>
     <div class="cell"><dt>Alarms</dt><dd class="ok">both OK</dd></div>
@@ -286,7 +286,17 @@
         finding above &mdash; the inputs still mostly carry no directional sign. What it fixes is the
         gate being the binding constraint, which it should never have been.
       </p>
-      <div class="trigger"><b>Close condition</b><span>a cycle logging <code>num_candidates &gt; 0</code>, and a first <code>arm='model'</code> row in <code>paper_positions</code>. Neither has ever occurred. If the arm still does not trade at 0.40, the blocker is downstream — edge, POP, RoR or liquidity — and is a different investigation.</span></div>
+      <p>
+        <strong>6 August &mdash; the blocker is downstream, and it is now named.</strong> The close
+        condition below anticipated this. At 0.40 the gate is no longer what stands in the way:
+        <strong>161 of 190 cycles cleared it, and 11 produced a candidate.</strong> The other ~150
+        cleared confidence and emptied on the pricing filters. The gate recalibration was still
+        correct &mdash; it was a threshold measuring on a scale that had moved &mdash; but it was
+        never going to open the signal arm on its own, and the four sessions since prove it. The
+        binding constraints are the event-risk delta cap (fixed today, <code>r70</code>) and the
+        credit-to-width floor against skew (open). Both are in the watch list below.
+      </p>
+      <div class="trigger"><b>Close condition</b><span>a cycle logging <code>num_candidates &gt; 0</code> <em>with a put among them</em>, and a first <code>arm='model'</code> row in <code>paper_positions</code>. Neither has ever occurred. The candidate count alone is no longer a sufficient condition: it has been non-zero on 11 cycles and every one of them was a call spread, so a scan that fills with calls again proves nothing about the signal.</span></div>
     </div>
   </section>
 
@@ -302,38 +312,160 @@
       <article class="item sev-risk">
         <div class="item-top">
           <h3>The put side never reaches the ranking, and a bullish read sells calls</h3>
-          <span class="pill p-watch">instrumented 5 Aug</span>
-          <span class="when">found 5 Aug &middot; settles 6 Aug</span>
+          <span class="pill p-run">answered 6 Aug &middot; half fixed</span>
+          <span class="when">found 5 Aug &middot; answered 6 Aug</span>
         </div>
         <p>
-          Across all seven candidates on 5 August, <strong>every structure was a call credit
-          spread</strong> &mdash; the trade that profits if the index does not rise &mdash; while the
-          model called UP on all eight cycles. The three ranked alternatives per cycle were calls
-          too. With spot at 7734, no strike below it appeared anywhere in the scan.
+          <strong>Answered, and the tally said &ldquo;both&rdquo; &mdash; in sequence.</strong> The item
+          above set two mutually exclusive outcomes for this line. The live scan produced both, because
+          they are not alternatives: the delta cap runs <em>first</em> and pushes the surviving shorts
+          far enough out that the RoR floor then rejects every one of them.
+        </p>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Reject reason</th><th>put</th><th>call</th><th>Reads as</th></tr></thead>
+            <tbody>
+              <tr><td><code>delta_band</code></td><td class="num">729</td><td class="num">289</td><td>the event-risk cap at 0.20, not the configured 0.30</td></tr>
+              <tr><td><code>ror_floor</code></td><td class="num">932</td><td class="num">207</td><td>every put pairing that survived; no call side equivalent</td></tr>
+              <tr><td><code>buffer</code></td><td class="num">0</td><td class="num">2</td><td>zero, because the tighter delta band already caught them</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          The tail gate is exonerated a second time and more strongly than before: it was not merely
+          passing, it has <strong>never blocked either side in any prediction that carries tail data</strong>
+          &mdash; 0 of 52. Both sides were allowed on this cycle at <code>DOWN 31% UP 20%</code>.
         </p>
         <p>
-          Three explanations are already ruled out. It is not the tail gate, which logged
-          <code>DOWN 37% UP 22% (cap 55%) -&gt; both sides open</code> every cycle. It is not
-          <code>trend_side_block</code>, still 0. And it is not the ranking: the alignment term
-          <em>favours</em> puts here, adding about +0.013 to a put spread and &minus;0.013 to a call
-          at direction +0.20 and confidence 0.42 &mdash; a 0.025 head start the put side never
-          used.
+          <strong>The mechanism underneath is worse than the item suspected.</strong>
+          <code>event_risk</code> asked whether a high-impact release sits inside
+          <code>dte_max</code> &mdash; 25 days &mdash; and the US calendar runs CPI, PPI, PCE, GDP, NFP
+          and Retail Sales at roughly weekly cadence, so the answer was always yes. Over the 190
+          predictions on record it was <strong>true on 190 of them. 100%. Never once false.</strong>
+          <code>short_delta_max</code> (0.30) and <code>min_buffer</code> (0.8) were therefore dead
+          config for the life of the function; the live values were always
+          <code>event_risk_delta_cap</code> (0.20) and <code>event_risk_min_buffer</code> (0.90). Both
+          sit in the deployed environment, where they read as if they were doing something.
         </p>
         <p>
-          <strong>So the put side is being eliminated before ranking, not losing it.</strong> The
-          suspected mechanism is <code>min_credit_to_width = 0.20</code> interacting with put skew:
-          richer put IV flattens the delta profile, so at equal short delta a fixed-width put spread
-          collects less than the same-width call spread. The day's calls cleared the floor at
-          22&ndash;25%, barely &mdash; a put spread collecting slightly less is rejected outright and
-          the directional view is never consulted. On any normal-skew day that would mean a bullish
-          read can only ever be expressed as a bearish structure.
+          The confidence gate is exonerated too, and this is the part that redirects the lead item
+          above: <strong>161 of 190 cycles cleared it, and only 11 produced a candidate at all.</strong>
+          Roughly 150 cycles cleared confidence and then emptied on the pricing filters, on both sides.
         </p>
         <p>
-          Unproven, and deliberately not acted on. Only the winning candidate is persisted, so the
-          losing side leaves no trace. <code>r67</code> adds a per-side rejection tally
-          (<code>side.reason</code>) covering every filter, printed on the scan line.
+          <strong>Fixed and deployed as <code>r70</code>.</strong> The flag now runs on
+          <code>event_risk_window_days</code> (4, = <code>paper_hold_days</code>): a release the
+          position will actually sit through, rather than one anywhere in the DTE window. Replayed
+          over the same 190 timestamps it fires on 53% instead of 100%. Deliberately <em>not</em>
+          changed: the event notes fed to the synthesis prompt still span the full DTE window, because
+          narrowing those would have made a scanner fix into a silent change of LLM input. A test pins
+          that split.
         </p>
-        <div class="trigger"><b>Settles</b><span>first market-hours session under <code>r67</code>, 6 Aug 06:55 PT. <code>put.ror_floor</code> dominant &rarr; the floor becomes side-aware or widths flex on the put side. <code>put.delta_band</code> or <code>put.buffer</code> dominant &rarr; the cause is the event-risk delta cap and the fix is different. <b>No threshold moves until that line is read.</b></span></div>
+        <div class="trigger"><b>Watch</b><span>the flag is still true today &mdash; payrolls lands 7 Aug &mdash; so the first cycles that differ are 7 Aug afternoon, then 17&ndash;21 Aug. The tell is <code>scanned N verticals (X put / Y call)</code> with <code>X &gt; 0</code>, which has never once appeared. If the put count stays at zero on an unflagged day, the delta cap was never the binding half and the item below is the whole story.</span></div>
+      </article>
+
+      <article class="item sev-risk">
+        <div class="item-top">
+          <h3>The credit-to-width floor cannot be met by a put spread against skew</h3>
+          <span class="pill p-risk">open &middot; unfixed half</span>
+          <span class="when">found 6 Aug</span>
+        </div>
+        <p>
+          The window fix reaches the ~47% of cycles that no longer raise the flag. On the other 53%
+          the put side remains exactly as unreachable as before, and the reason is arithmetic rather
+          than configuration. Measured like-for-like on one live chain, same delta, same width:
+        </p>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Side</th><th>Strikes</th><th>Short delta</th><th>Credit, 5-wide</th><th>RoR</th><th>vs 0.20 floor</th></tr></thead>
+            <tbody>
+              <tr><td>put</td><td class="num">7495 / 7490</td><td class="num">0.197</td><td class="num">$0.70</td><td class="num was">0.163</td><td class="was">rejected</td></tr>
+              <tr><td>call</td><td class="num">7935 / 7940</td><td class="num">0.193</td><td class="num">$1.10</td><td class="num now">0.282</td><td class="now">clears easily</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          At the same delta the call collects <strong>57% more premium</strong>. That confirms the
+          mechanism the 5 August item suspected, and which is already written as a comment above the
+          <code>ror_floor</code> reject: put skew flattens the put price curve in the OTM region, so a
+          fixed-width put spread collects less per point of width than the same-width call spread.
+          Under the event-risk cap the best reachable put RoR is <strong>0.163 against a 0.20 floor</strong>
+          &mdash; not close. Lift the cap and it reaches 0.235 and clears.
+        </p>
+        <p>
+          The consequence is the one worth stating plainly, because it undercuts the experiment the
+          whole system exists to run: <strong>the scanner has produced call credit spreads and nothing
+          else for its entire recorded history</strong> &mdash; 11 of 11 stored suggestions. A signal
+          arm that can only ever express itself as one structure is not testing the signal.
+        </p>
+        <p>
+          <strong>Corrected, same day, before anything was changed.</strong> This item first proposed
+          making the floor side-aware or letting the put side flex to wider structures.
+          <em>Both would have been wrong,</em> and the reason is that the scanner already contains a
+          second, better theory of when a spread is worth taking &mdash; the one it ranks on:
+        </p>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Test</th><th>Rule</th><th>Put pairings passing</th><th>Call pairings passing</th></tr></thead>
+            <tbody>
+              <tr><td>the filter</td><td><code>ror &ge; 0.20</code>, flat</td><td class="num">8 of 512</td><td class="num">95 of 258</td></tr>
+              <tr><td>the ranker</td><td><code>ev_ratio &gt; 0</code>, i.e. <code>ror &ge; d/(1&minus;d)</code></td><td class="num was">0 of 512</td><td class="num">86 of 258</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          <strong>Not one put pairing on the entire chain has positive expected value</strong> &mdash;
+          0 of 512, best <code>ev_ratio</code> &minus;0.039. The eight that scrape past the flat floor
+          are all negative-EV. Widening makes it worse, not better: put RoR <em>falls</em> with width
+          (0.205 at 5-wide to 0.185 at 50) while the break-even rises. So the floor is rejecting the
+          put side <em>correctly</em>. Lowering it, or splitting it by side, would have admitted
+          nothing but losers &mdash; a threshold change that looks like it fixes the symptom and buys
+          a book of negative-EV trades.
+        </p>
+        <p>
+          The total-loss assumption in <code>ev_ratio</code> was checked before trusting it, since
+          charging a full <code>max_loss</code> on every breach would bias exactly this comparison.
+          It holds: median P(full loss | short breached) is <strong>0.98 at 5-wide</strong> and 0.82
+          even at 50-wide, and a partial-loss refinement moves the best candidate's EV by +0.0035.
+          Not the explanation.
+        </p>
+        <p>
+          <strong>What is actually defective is the floor's shape.</strong> A flat 0.20 and the
+          ranker's <code>d/(1&minus;d)</code> agree at exactly one delta &mdash; 0.167 &mdash; and
+          diverge everywhere else, lenient above it and strict below. On the call side today that
+          costs both ways: the floor <strong>admits 41 pairings the ranker scores negative</strong>
+          and <strong>rejects 32 it scores positive</strong>.
+        </p>
+        <div class="trigger"><b>Act</b><span>replace the flat <code>min_credit_to_width</code> with the ranker's own break-even, <code>ror &ge; d/(1&minus;d)</code> plus a margin, so the filter and the ranking stop disagreeing. Expect it to <em>reduce</em> call-side candidates, not increase them, and to leave the put side empty. <b>Do not</b> lower the floor for puts. <b>Take a before-picture first</b> &mdash; the reject tally lives only in the alert text, not the database.</span></div>
+      </article>
+
+      <article class="item sev-watch">
+        <div class="item-top">
+          <h3>POP is a risk-neutral probability, which may make put spreads unsellable by construction</h3>
+          <span class="pill p-watch">hypothesis</span>
+          <span class="when">found 6 Aug</span>
+        </div>
+        <p>
+          The item above concludes the put side is genuinely unattractive. That conclusion is only as
+          good as the probability it rests on, and the probability is borrowed from the option's own
+          price: <code>pop = 1 - short_delta</code>.
+        </p>
+        <p>
+          Delta is a <em>risk-neutral</em> quantity. It already contains the variance and skew risk
+          premium &mdash; the very thing a premium seller is trying to harvest, and the reason OTM
+          puts trade above their historical frequency of paying out. Using it as the probability of
+          success means the model evaluates put spreads with the seller's edge already subtracted.
+          The steeper the skew, the more it subtracts, and the skew is always steepest on the
+          downside. <strong>A model built this way cannot find a put spread attractive, regardless of
+          whether one is.</strong>
+        </p>
+        <p>
+          This does not overturn the finding above &mdash; the put/call gap is large and consistent,
+          and the current regime is genuinely poor for selling (<code>IV/RV 0.78&ndash;0.83</code>,
+          options pricing <em>less</em> movement than the index has delivered). But it does mean the
+          put side has never been evaluated on a real-world probability, only on the market's own.
+        </p>
+        <div class="trigger"><b>Test</b><span>the data to settle it is accumulating already: for every suggestion recorded, whether the short strike was ever breached before expiry. Compare the realised breach rate against the delta-implied one, per side. If puts breach materially <em>less</em> often than their delta implied and calls do not, POP is the defect and every threshold tuned on top of it inherits the bias. Needs a few months; nothing should move until then.</span></div>
       </article>
 
       <article class="item sev-risk">

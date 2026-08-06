@@ -1,23 +1,45 @@
 """Scan SPX/XSP verticals (20-25 DTE) and surface the best credit spread + trade timing.
 
-Rather than forcing a spread every cycle, `scan()` ranks *every* put- or
-call-credit vertical in the DTE window by an edge score and only flags
-`recommended=True` when three things line up:
+Rather than forcing a spread every cycle, `scan()` ranks *every* surviving
+structure in the DTE window by an edge score and only flags `recommended=True`
+when three things line up:
 
   1. the market is open (regular trading hours),
-  2. the directional read clears the confidence gate, and
+  2. something survived the side gate and the pricing filters, and
   3. the best candidate's edge beats `min_edge_score`.
 
-Direction -> spread side:
-  bullish  -> put credit spread  (sell OTM put, buy further OTM put)
-  bearish  -> call credit spread (sell OTM call, buy further OTM call)
-  neutral / below confidence gate -> no trade
+Which side is sellable is a question about TAILS, not direction. A credit spread
+is short one tail and a gap through it is the loss, whichever way the index was
+drifting -- so `_sides_allowed()` gates each side on its own estimate:
+
+  downside_risk <= max_tail_risk -> put credit spreads allowed
+  upside_risk   <= max_tail_risk -> call credit spreads allowed
+  both allowed                   -> an iron condor is also assembled
+
+There is no bullish-means-puts mapping. It was removed with the tail gate, and a
+bullish read routinely sells calls: mild upward drift is compatible with a quiet
+upside tail, which is exactly when a call spread is safe. Direction re-enters
+only in the ranking, via the alignment term below, where it tilts the score
+rather than deciding what may exist. When the aggregator supplies no tail data
+(the mean aggregator does not), `_sides_allowed()` falls back to the old
+direction gate. `trend_side_block`, off by default, additionally blocks the side
+already moving against a seller.
+
+The confidence gate is likewise narrower than it looks: it governs whether
+VERTICALS are offered, not whether the cycle trades. Verticals are always
+constructed -- a condor is assembled from one of each -- and a condor holds no
+directional view, so it is never gated on directional confidence.
 
 Edge score per candidate:
   ev_ratio = POP * RoR - (1 - POP)            # expected return per $1 of risk
   edge     = ev_ratio
              + align_weight * directional_agreement * confidence
              + 0.05 * min(buffer, 2)          # reward strikes further beyond the move
+             + premium_edge                   # IV/RV richness; see _premium_edge()
+
+Note that the pricing filters, not the gates above, are what usually empty a
+side: `min_credit_to_width` in particular is a single floor applied to a skewed
+surface, and the put side has historically failed it where the call side clears.
 """
 from __future__ import annotations
 
