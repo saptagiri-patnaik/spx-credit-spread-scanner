@@ -129,8 +129,27 @@ class Aggregator:
         return recency_weight(published, now, _RECENCY_HALF_LIFE_HOURS)
 
     def _event_risk(self, events, now):
+        """Return (flag, notes) -- deliberately on two different windows.
+
+        `notes` lists every high-impact release inside the DTE window, because
+        that is context the synthesis model should reason about: a payrolls print
+        three weeks out is part of the picture even if today's entry is long gone
+        before it lands.
+
+        `flag` is a narrower question -- "will an open position sit through a
+        binary release?" -- and it drives the scanner's delta cap and buffer floor.
+        Keying it off the same DTE window made it structurally True (190 of 190
+        predictions to 6 Aug 2026), which pinned the scanner to its event-risk
+        branch permanently and left `short_delta_max` / `min_buffer` unreachable.
+        Splitting the two lets the flag mean something again without changing a
+        byte of the prompt the model sees.
+        """
         window_end = now + dt.timedelta(days=self.settings.dte_max)
+        flag_end = now + dt.timedelta(
+            days=getattr(self.settings, "event_risk_window_days", 4)
+        )
         high_impact = []
+        imminent = False
         for event in events:
             when = event.published_at
             if not when:
@@ -139,7 +158,9 @@ class Aggregator:
                 when = when.replace(tzinfo=dt.timezone.utc)
             if now <= when <= window_end and event.category == "high_impact":
                 high_impact.append(f"{event.title} @ {when.date()}")
-        return (len(high_impact) > 0, high_impact)
+                if when <= flag_end:
+                    imminent = True
+        return (imminent, high_impact)
 
     def _rationale(self, direction, macro, sentiment, num_items, events, market_context) -> str:
         parts = [

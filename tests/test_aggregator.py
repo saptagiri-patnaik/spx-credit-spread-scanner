@@ -60,19 +60,50 @@ def test_bearish_items_yield_down_label():
     assert result["direction"] < 0
 
 
+def _event(days_out, title="FOMC Rate Decision"):
+    return SimpleNamespace(
+        title=title,
+        category="high_impact",
+        published_at=dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=days_out),
+    )
+
+
 def test_event_risk_flag_and_confidence_discount():
     agg = Aggregator(_settings(), _Log())
     scored = [(_item("news"), _score(0.9)), (_item("macro"), _score(0.9))]
-    event = SimpleNamespace(
-        title="FOMC Rate Decision",
-        category="high_impact",
-        published_at=dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=3),
-    )
-    with_event = agg.aggregate(scored, {"trend_score": 0.0}, [event])
+    with_event = agg.aggregate(scored, {"trend_score": 0.0}, [_event(3)])
     without_event = agg.aggregate(scored, {"trend_score": 0.0}, [])
     assert with_event["event_risk"] is True
     assert without_event["event_risk"] is False
     assert with_event["confidence"] < without_event["confidence"]
+
+
+def test_event_risk_flag_ignores_releases_beyond_the_hold_period():
+    """A release inside the DTE window but past the hold period must not raise it.
+
+    This is the regression that made the flag structurally True: keyed off
+    dte_max, the weekly US calendar guaranteed a hit and the scanner sat on its
+    event-risk delta cap permanently.
+    """
+    agg = Aggregator(_settings(), _Log())
+    scored = [(_item("news"), _score(0.9))]
+    far = agg.aggregate(scored, {"trend_score": 0.0}, [_event(20)])
+    assert far["event_risk"] is False
+
+
+def test_distant_events_still_reach_the_model_prompt():
+    """The flag narrows; the notes do not.
+
+    `_event_risk` feeds two consumers on purpose -- the scanner's delta cap (the
+    flag) and the synthesis prompt (the notes). Narrowing the flag must leave the
+    prompt byte-identical, or this stops being a scanner fix and silently becomes
+    an LLM-input change.
+    """
+    agg = Aggregator(_settings(), _Log())
+    now = dt.datetime.now(dt.timezone.utc)
+    flag, notes = agg._event_risk([_event(20, "Nonfarm Payrolls")], now)
+    assert flag is False
+    assert len(notes) == 1 and "Nonfarm Payrolls" in notes[0]
 
 
 def test_empty_input_is_neutral():
