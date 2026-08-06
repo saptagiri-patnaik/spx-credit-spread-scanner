@@ -162,9 +162,26 @@ class Settings(BaseSettings):
     # so it realistically lands ~0.2-0.5; treat this magnitude as full conviction so the
     # gate is actually reachable. Raise it to make the gate stricter (fewer trades).
     confidence_dir_scale: float = 0.6
-    event_risk_confidence_factor: float = 0.92  # confidence multiplier when a high-impact
-                                                # event sits in the DTE window (was 0.85;
-                                                # it's on nearly always, so keep it mild)
+    event_risk_confidence_factor: float = 0.92  # confidence multiplier when the event-risk
+                                                # flag is up (was 0.85; kept mild)
+    # How close a high-impact release has to be for the event-risk flag to fire.
+    #
+    # This used to be dte_max (25 days), which made the flag structurally True: the
+    # US calendar carries CPI, PPI, PCE, GDP, NFP and Retail Sales at roughly weekly
+    # cadence, so *some* high-impact release always sits inside 25 days. Measured
+    # over the 190 predictions banked to 6 Aug 2026 the flag was True on 190 of
+    # them -- 100%, never once False. That silently pinned the scanner to its
+    # event-risk branch permanently, so `short_delta_max` (0.30) and `min_buffer`
+    # (0.8) were dead config and the real values were always `event_risk_delta_cap`
+    # (0.20) and `event_risk_min_buffer` (0.90). The put side cannot clear
+    # `min_credit_to_width` under that cap -- best reachable RoR 0.163 against a
+    # 0.20 floor -- so the scanner has only ever produced call spreads.
+    #
+    # 4 days = `paper_hold_days`: the flag should fire for a release the position
+    # will actually sit through, not one it will be closed well before. Replayed
+    # against the same 190 timestamps this fires on 53% of cycles; 3 days gives
+    # 36%, 5 gives 70%, 7 gives 95% (i.e. 7 is already back to nearly-always).
+    event_risk_window_days: int = 4
     macro_weight: float = 0.5        # sentiment weight = 1 - macro_weight
     short_delta_target: float = 0.20
     spread_width: float = 25.0       # legacy hint; scanner uses min_width/max_width
