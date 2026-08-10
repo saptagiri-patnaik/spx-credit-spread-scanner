@@ -35,11 +35,24 @@ if ($Show) {
     }
     # --query on the CLI side would still pull the value to this machine; that is
     # unavoidable for a read. It is never echoed -- only the key names are.
-    $json = aws secretsmanager get-secret-value --secret-id $SecretName --region $Region `
+    $lines = aws secretsmanager get-secret-value --secret-id $SecretName --region $Region `
         --query 'SecretString' --output text
     if ($LASTEXITCODE -ne 0) { throw 'get-secret-value failed.' }
 
+    # PowerShell captures a native command's stdout as an ARRAY of lines, and the
+    # CLI emits a trailing newline, so this arrives as two elements rather than one
+    # string. Piped straight into ConvertFrom-Json that yields a two-element array,
+    # and .PSObject.Properties.Name then reports Count/Rank/SyncRoot -- the members
+    # of System.Array -- instead of the key names. Join first.
+    #
+    # Safe against a value containing a newline: JSON requires those escaped as \n,
+    # so the stored document is genuinely one line and the join cannot corrupt it.
+    $json = @($lines) -join "`n"
+
     $stored = $json | ConvertFrom-Json
+    if ($stored -isnot [pscustomobject]) {
+        throw "Expected a JSON object from $SecretName, got $($stored.GetType().Name)."
+    }
     $names = $stored.PSObject.Properties.Name | Sort-Object
     Write-Ok "$SecretName holds $($names.Count) key(s):"
     foreach ($n in $names) {
