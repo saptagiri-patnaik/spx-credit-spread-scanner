@@ -435,6 +435,21 @@ class Pipeline:
         else:
             lines.append("BEST SPREAD: none.")
         lines.append(f"Timing    : {scan['reason']}")
+        # Applied against measured, for the one term whose weight was inherited.
+        # `premium_edge` is premium_weight * (IV/RV - 1) with the weight set by
+        # hand; the second figure reprices POP on realised vol at this strike and
+        # DTE and reports the correction that falls out. Neither is in `edge` --
+        # only the first one ever was. Printing them side by side is what turns
+        # the weight into something a recorded series can settle, and it sits
+        # down here with the other diagnostics because truncation can afford it.
+        if best and best.get("premium_edge_measured") is not None:
+            applied = best.get("premium_edge") or 0.0
+            measured = best["premium_edge_measured"]
+            ratio = f"{measured / applied:.2f}x" if applied else "n/a"
+            lines.append(
+                f"Premium   : applied {applied:+.3f} | measured {measured:+.3f} ({ratio}) | "
+                f"POP {best['pop'] * 100:.0f}% -> real {best['pop_real'] * 100:.0f}%"
+            )
         # A side that never reaches the ranking is invisible in the result, so this
         # distinguishes "the put side lost" from "the put side was filtered out
         # before it could compete". Descending, so the dominant reason reads first.

@@ -320,11 +320,19 @@ sells into.
 
 **6. Market hours ignore holidays.** `is_market_hours()` checks weekday and clock only.
 
-**6a. There are no schema migrations.** `--setup` calls SQLAlchemy's `create_all()`,
-which creates missing *tables* but never adds columns to existing ones. If you pull a
-change that adds a column, `--setup` will report success and the column will silently
-not exist. Until this project adopts Alembic, adding a column means running the
-`ALTER TABLE` yourself.
+**6a. There is no migration framework, only a declared column list.** `--setup` calls
+SQLAlchemy's `create_all()`, which creates missing *tables* but never adds columns to
+existing ones. Since 5 Aug 2026 `Repository._ADDED_COLUMNS` closes that gap: additive,
+nullable columns are declared there and `init_db()` applies them with
+`ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, idempotently. Adding a column therefore
+means three edits, not two — the model, the tuple, and the code that writes it.
+
+The sharp edge is *when* that runs. `init_db()` fires only on `--setup` and `--check`,
+never on a normal cycle, and on Lambda it is the `{"action":"setup"}` smoke test in the
+deploy runbook. **Deploy code that writes a new column without running setup and the
+first in-market cycle dies on the INSERT** — the same shape as the `premium_edge`
+outage of 5 Aug, one column further on. Anything that rewrites or drops data still does
+not belong in `_ADDED_COLUMNS`; do that by hand.
 
 **7. Spread outcomes aren't tracked.** `spread_suggestions` records what was proposed but
 nothing records what it would have been worth at expiry, so the strategy layer can't be

@@ -143,6 +143,19 @@ class SpreadSuggestion(Base):
     # a trade was taken for rich premium or for a wide buffer. Nullable -- rows
     # written before 5 Aug 2026 predate the field and are unmeasured, not zero.
     premium_edge: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # The measured counterpart to premium_edge, and the POP it comes from. `pop`
+    # above is `1 - short_delta`, a risk-neutral number that both misreads delta
+    # as a probability and carries the variance risk premium; `pop_real` reprices
+    # it on trailing realised vol at this candidate's own strike and DTE.
+    # `premium_edge_measured` is the resulting correction to ev_ratio -- what
+    # premium_edge WOULD be if it were derived rather than weighted by hand.
+    #
+    # Stored, not scored: neither touches `edge`. They exist so the weight can be
+    # settled on a recorded series instead of on one session's arithmetic.
+    # Nullable -- rows before 9 Aug 2026 predate the fields, and so does any row
+    # whose cycle had no realised vol, which is unmeasured rather than zero.
+    pop_real: Mapped[float | None] = mapped_column(Float, nullable=True)
+    premium_edge_measured: Mapped[float | None] = mapped_column(Float, nullable=True)
     buffer: Mapped[float] = mapped_column(Float, default=0.0)       # short-strike distance in expected moves
     breakeven: Mapped[float | None] = mapped_column(Float, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)

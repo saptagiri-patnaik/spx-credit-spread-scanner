@@ -37,6 +37,20 @@ Edge score per candidate:
              + 0.05 * min(buffer, 2)          # reward strikes further beyond the move
              + premium_edge                   # IV/RV richness; see _premium_edge()
 
+`premium_edge` is `premium_weight * (IV/RV - 1)`, and both the weight and that
+shape were inherited rather than derived. Each candidate therefore also carries
+`pop_real` and `premium_edge_measured`: the same adjustment computed properly,
+by repricing POP on realised vol at the candidate's own strike and DTE. They are
+RECORDED AND NOT SCORED -- `edge` is byte-for-byte what it was without them.
+
+Keeping them out of `edge` is the point. On 7 Aug 2026 the measured correction
+ran ~1.5x the applied one and would have taken the arm from zero trades to fewer
+than zero, so folding it straight in would have changed behaviour on five days of
+IV/RV history and left nothing to compare against. Landing the instrument one
+deploy ahead of the change it will judge is the discipline `trend_side_block`
+shipped under on 2 Aug. Revisit once the recorded series is long enough to say
+whether the gap is the regime or the formula.
+
 Note that the pricing filters, not the gates above, are what usually empty a
 side: `min_credit_to_width` in particular is a single floor applied to a skewed
 surface, and the put side has historically failed it where the call side clears.
@@ -52,6 +66,52 @@ def expected_move(price: float, iv: float, dte: int) -> float:
     if not price or not iv or dte <= 0:
         return 0.0
     return price * iv * math.sqrt(dte / 365.0)
+
+
+def _norm_cdf(x: float) -> float:
+    """Standard normal CDF, off the stdlib erf. No dependency needed for this."""
+    return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
+
+
+def real_world_pop(
+    price: float, strike: float, dte: int, sigma: float, want_puts: bool
+) -> float | None:
+    """P(the short strike survives to expiry) priced on `sigma`, zero drift.
+
+    `pop = 1 - short_delta` is wrong twice, in opposite directions:
+
+      1. delta is N(d1), but the chance of finishing ITM is N(d2), and
+         d2 = d1 - sigma*sqrt(T). Using delta as a probability OVERSTATES the
+         breach chance, so the scanner is slightly too pessimistic. This bias
+         has nothing to do with IV/RV and is present in every regime.
+      2. delta is a RISK-NEUTRAL probability, computed with implied vol. It
+         already contains the variance risk premium -- the very thing a premium
+         seller is trying to harvest. When IV/RV < 1 the index is delivering
+         more movement than the options price, so the real breach chance is
+         HIGHER than delta says and the scanner is much too optimistic.
+
+    Passing realised vol as `sigma` corrects both at once, per candidate, using
+    that candidate's own strike and DTE. `premium_edge` proxies only the second,
+    with one flat ATM number applied to every strike alike.
+
+    Zero drift is deliberate: a drift term is a directional forecast, and this
+    is meant to price movement, not predict it. Note which way that cuts -- SPX
+    has been drifting up and the scanner sells call spreads, so on the current
+    tape zero drift makes this a FLOOR on the correction, not a worst case.
+
+    Returns None when the inputs cannot support the calculation, so a missing
+    realised vol reads as unmeasured rather than as zero.
+    """
+    if not price or not strike or not sigma or dte <= 0 or price <= 0 or strike <= 0:
+        return None
+    t = dte / 365.0
+    x = sigma * math.sqrt(t)
+    if x <= 0:
+        return None
+    d2 = (math.log(price / strike) - 0.5 * sigma * sigma * t) / x
+    # P(S_T > K) = N(d2). A put short is breached below its strike, a call above.
+    breach = _norm_cdf(-d2) if want_puts else _norm_cdf(d2)
+    return 1.0 - breach
 
 
 def is_market_window(
@@ -199,6 +259,19 @@ class OptionsStrategy:
                     call_ok = False
         return (put_ok, call_ok)
 
+    @staticmethod
+    def _realized_vol(prediction: dict) -> float | None:
+        """Trailing realised vol from the market context, or None if unmeasured."""
+        context = prediction.get("market_context") or {}
+        value = context.get("realized_vol")
+        if value is None:
+            return None
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            return None
+        return value if value > 0 else None
+
     def _premium_edge(self, prediction: dict) -> float:
         """Score how well the premium pays, without vetoing either answer.
 
@@ -318,6 +391,11 @@ class OptionsStrategy:
         align_weight = self._cfg("align_weight", 0.15)
         direction = float(prediction["direction"])
         confidence = float(prediction["confidence"])
+        # Feeds the instrumentation below only. This is the same 20-day window
+        # that `iv_rv_ratio` divides by, so the two numbers stay comparable --
+        # the window is itself a judgement call (a 21-25 DTE trade arguably wants
+        # a longer one), which is exactly what the recorded series is for.
+        realized_vol = self._realized_vol(prediction)
 
         results: list[dict] = []
         for exp_key, strikes in exp_map.items():
@@ -403,6 +481,19 @@ class OptionsStrategy:
                         + 0.05 * min(buffer, 2.0)
                         + premium
                     )
+                    # Measured counterpart to the `premium` term inside `edge`,
+                    # recorded and DELIBERATELY NOT ADDED to it. `premium_edge`
+                    # is a hand-set weight on an ATM ratio; this is the same
+                    # adjustment computed from the candidate's own strike and
+                    # DTE. Logging both, changing neither, is how the weight
+                    # becomes a measured decision instead of an inherited one --
+                    # and it is the discipline `trend_side_block` shipped under:
+                    # land the instrument before the change it will judge.
+                    pop_real = real_world_pop(price, ss, dte, realized_vol, want_puts)
+                    premium_measured = (
+                        None if pop_real is None
+                        else (pop_real * ror - (1.0 - pop_real)) - ev_ratio
+                    )
                     breakeven = (ss - credit) if want_puts else (ss + credit)
                     results.append(
                         {
@@ -421,6 +512,10 @@ class OptionsStrategy:
                             "ror": round(ror, 3),
                             "edge": round(edge, 3),
                             "premium_edge": round(premium, 3),
+                            "pop_real": None if pop_real is None else round(pop_real, 3),
+                            "premium_edge_measured": (
+                                None if premium_measured is None else round(premium_measured, 4)
+                            ),
                             "buffer": round(buffer, 2),
                             "breakeven": round(breakeven, 2),
                             "notes": self._notes(prediction.get("event_risk", False), move, price, buffer),
@@ -467,6 +562,14 @@ class OptionsStrategy:
                 continue
 
             ev_ratio = pop * ror - (1.0 - pop)
+            # Same composition as `pop` above -- both wings must survive, so the
+            # breach probabilities add. Unmeasured on either wing leaves the
+            # condor unmeasured rather than half-counted.
+            if put["pop_real"] is None or call["pop_real"] is None:
+                pop_real = premium_measured = None
+            else:
+                pop_real = put["pop_real"] + call["pop_real"] - 1.0
+                premium_measured = (pop_real * ror - (1.0 - pop_real)) - ev_ratio
             buffer = min(put["buffer"], call["buffer"])
             # No alignment term: a condor expresses no directional view, so
             # rewarding it for agreeing with one would be incoherent. Premium
@@ -484,7 +587,12 @@ class OptionsStrategy:
                 "credit": credit, "max_loss": max_loss,
                 "pop": pop, "short_delta": round(put["short_delta"] + call["short_delta"], 3),
                 "expected_move": put["expected_move"], "ror": round(ror, 3),
-                "edge": edge, "premium_edge": round(premium, 3), "buffer": round(buffer, 2),
+                "edge": edge, "premium_edge": round(premium, 3),
+                "pop_real": None if pop_real is None else round(pop_real, 3),
+                "premium_edge_measured": (
+                    None if premium_measured is None else round(premium_measured, 4)
+                ),
+                "buffer": round(buffer, 2),
                 "breakeven": put["short_strike"] - credit,
                 "notes": (
                     f"Iron condor: {put['short_strike']:.0f}/{put['long_strike']:.0f}P + "
