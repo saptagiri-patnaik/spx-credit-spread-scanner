@@ -10,3 +10,8 @@ venv/
 .pytest_cache/
 *.egg-info/
 build/
+# Local Claude Code config (permission allowlist for the deploy scripts).
+# Untracked rather than shared: build-zip.ps1 stamps a build -dirty from
+# `git status --porcelain`, which counts untracked files, so leaving this
+# floating would mark every deployment irreproducible.
+.claude/
