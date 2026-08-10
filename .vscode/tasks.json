@@ -32,6 +32,24 @@
       "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
     },
     {
+      "label": "Lambda: Push credentials to Secrets Manager",
+      "detail": "Run after rotating a key in .env, then Sync env. Adds a new secret version.",
+      "type": "process",
+      "command": "pwsh",
+      "args": ["-NoProfile", "-File", "${workspaceFolder}/deploy/secrets.ps1"],
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "Lambda: Show secret contents (names only)",
+      "detail": "Which credentials the secret holds and how long each is. Never prints values.",
+      "type": "process",
+      "command": "pwsh",
+      "args": ["-NoProfile", "-File", "${workspaceFolder}/deploy/secrets.ps1", "-Show"],
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
       "label": "Lambda: Smoke test (DB connectivity)",
       "detail": "Runs the idempotent table setup only. Costs nothing, writes no new data.",
       "type": "process",

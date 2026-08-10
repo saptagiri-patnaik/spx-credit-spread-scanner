@@ -3,21 +3,29 @@ Fire one cycle by hand and show the result plus the log lines it produced.
 
     ./invoke.ps1              run a normal cycle
     ./invoke.ps1 -Setup       create the database tables instead (safe, idempotent)
+
+Targets the ZIP function, which is what EventBridge actually invokes. $FuncName in
+common.ps1 still names the container the ZIP replaced, so the default sent every
+manual cycle to a function that has not run since 4 Aug -- it answered, from stale
+code, and looked entirely healthy. Same trap sync-env.ps1 documents.
 #>
 param(
-    [switch]$Setup
+    [switch]$Setup,
+    [string]$TargetFuncName = 'spx-scanner-zip'
 )
 
 . (Join-Path $PSScriptRoot 'common.ps1')
 
 Assert-Tooling
 Get-AwsAccount | Out-Null
-if (-not (Test-LambdaExists)) { throw "Function '$FuncName' does not exist. Run provision.ps1 first." }
+if (-not (Test-LambdaExists $TargetFuncName)) {
+    throw "Function '$TargetFuncName' does not exist. Run provision.ps1 first."
+}
 
 $payload = if ($Setup) { '{"action":"setup"}' } else { '{}' }
 $outFile = Join-Path ([System.IO.Path]::GetTempPath()) "spx-invoke-$([guid]::NewGuid()).json"
 
-Write-Step "Invoking $FuncName (a full cycle takes ~30s-4min; this blocks)"
+Write-Step "Invoking $TargetFuncName (a full cycle takes ~30s-4min; this blocks)"
 try {
     # --log-type Tail returns this invocation's log lines in the response itself.
     # Tailing CloudWatch instead loses the race: ingestion lags the response by
@@ -36,7 +44,7 @@ try {
     # retry, and with reserved concurrency pinned to 1 that retry is rejected by the
     # invocation it started itself. The work completes; the client reports
     # ReservedFunctionConcurrentInvocationLimitExceeded and hides it.
-    $stdout = & aws lambda invoke --function-name $FuncName --region $Region `
+    $stdout = & aws lambda invoke --function-name $TargetFuncName --region $Region `
         --cli-binary-format raw-in-base64-out --payload $payload `
         --cli-read-timeout 0 --cli-connect-timeout 0 `
         --log-type Tail $outFile 2>$errFile

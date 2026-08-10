@@ -1,17 +1,90 @@
-"""Central configuration loaded from environment / .env (pydantic-settings)."""
+"""Central configuration loaded from environment / .env / Secrets Manager."""
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import Any
 
 from pydantic import model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic.fields import FieldInfo
+from pydantic_settings import (
+    BaseSettings,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+)
 from sqlalchemy.engine import URL
+
+from utils.secrets import load_secret_bundle
+
+
+class SecretsManagerSource(PydanticBaseSettingsSource):
+    """Feeds the AWS Secrets Manager bundle into Settings as a low-priority source.
+
+    Deliberately ranked *below* the environment and .env so a value can still be
+    overridden locally by exporting it -- pointing a laptop run at a scratch
+    database should not require editing the shared secret. It sits above the field
+    defaults, which is the whole point: an unset credential must come from the
+    secret, not silently stay None.
+    """
+
+    def get_field_value(self, field: FieldInfo, field_name: str) -> tuple[Any, str, bool]:
+        # Required by the ABC. __call__ below does the work in one pass, because
+        # the bundle is fetched whole and per-field lookups would just re-read it.
+        return None, field_name, False
+
+    def __call__(self) -> dict[str, Any]:
+        # Keys are uppercase in the secret (they were env var names); Settings
+        # fields are lowercase and the model is case-insensitive, so fold here.
+        return {k.lower(): v for k, v in load_secret_bundle().items() if v != ""}
+
+
+class BlankIsUnsetSource(PydanticBaseSettingsSource):
+    """Wraps the .env source so a blank line falls through to the secret.
+
+    .env.example tells you to leave the credential lines empty once secrets.ps1
+    has run. Pydantic reads `DB_PASSWORD=` as a *provided* empty string, and .env
+    outranks the secret, so without this the documented end state of the migration
+    shadows every real credential with "" -- surfacing several seconds later as an
+    authentication failure with nothing linking it back to a blank line.
+
+    Only .env is filtered. Blanks in the actual environment are left alone because
+    there they are deliberate: Get-LambdaEnvMap forces LOG_FILE empty for Lambda's
+    read-only filesystem, and local-lambda.ps1 blanks the webhooks to mute alerts.
+    Both need "" to mean "" and to keep beating the secret.
+    """
+
+    def __init__(self, inner: PydanticBaseSettingsSource) -> None:
+        super().__init__(inner.settings_cls)
+        self._inner = inner
+
+    def get_field_value(self, field: FieldInfo, field_name: str) -> tuple[Any, str, bool]:
+        return None, field_name, False
+
+    def __call__(self) -> dict[str, Any]:
+        return {k: v for k, v in self._inner().items() if v != ""}
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", case_sensitive=False, extra="ignore"
     )
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """Precedence, highest first: explicit kwargs, env, .env, Secrets Manager."""
+        return (
+            init_settings,
+            env_settings,
+            BlankIsUnsetSource(dotenv_settings),
+            SecretsManagerSource(settings_cls),
+            file_secret_settings,
+        )
 
     # --- Database (AWS Postgres) ---
     # Either provide a full DATABASE_URL, or set the DB_* parts below and the URL

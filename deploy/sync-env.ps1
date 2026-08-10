@@ -6,6 +6,11 @@ variables survive update-function-code untouched. The reverse is not true: a
 setting changed only in config.py is dead on arrival, because every value here
 overrides the code default.
 
+This is also what removes the credentials from the function's environment:
+--environment replaces the whole map, so writing a map that omits $SecretKeys
+deletes the old plaintext copies rather than leaving them behind. Run secrets.ps1
+FIRST -- between the two runs the function has neither copy and every cycle fails.
+
 Targets the ZIP function, which is what EventBridge actually invokes. $FuncName
 in common.ps1 still names the container that the ZIP replaced, so defaulting to
 it silently wrote settings into a function nothing runs -- the change would
@@ -37,5 +42,5 @@ try {
 }
 
 Write-Ok "$($map.Count) variables synced to $TargetFuncName"
-Write-Note 'Lambda env vars are readable by anyone with lambda:GetFunctionConfiguration.'
-Write-Note 'For anything long-lived, move ANTHROPIC_API_KEY and DB_PASSWORD to Secrets Manager.'
+Write-Note "Credentials are not among them: $($SecretKeys.Count) key(s) come from $SecretName."
+Write-Note 'Rotated a credential? That is secrets.ps1, not this script.'

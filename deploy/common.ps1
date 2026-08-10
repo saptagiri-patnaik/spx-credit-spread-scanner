@@ -42,6 +42,34 @@ $SchedPrefix = 'spx-scanner-grid'     # cron schedules: $SchedPrefix-1, -2, -3
 $SchedRoleName = 'spx-scheduler-role'
 $LogGroup = "/aws/lambda/$FuncName"
 
+# One secret holding a JSON object of every credential. One secret, not one per
+# key: Secrets Manager bills $0.40 per secret per month and does not care how many
+# keys are inside, so thirteen separate secrets would be $5.20/month for nothing.
+$SecretName = 'spx-scanner/prod'
+$SecretIdVar = 'SPX_SECRET_ID'
+
+# Keys that live in the secret and must NEVER be written to Lambda's environment
+# (readable by anyone with lambda:GetFunctionConfiguration, and shown in plaintext
+# in the console). DB_HOST/USER/NAME are not credentials, but they travel with the
+# password and DB_HOST discloses the Lightsail endpoint, so they ride along.
+#
+# Adding a key here is not enough on its own -- rerun secrets.ps1 to push it into
+# the secret, then sync-env.ps1 to drop it from the function's environment.
+#
+# DATABASE_URL is listed although .env assembles the URL from the DB_* parts today.
+# If anyone ever sets it directly it holds the password inline, and discovering
+# that after it had been sitting in the function's environment is the wrong order.
+$SecretKeys = @(
+    'DATABASE_URL',
+    'DB_HOST', 'DB_USER', 'DB_PASSWORD', 'DB_NAME',
+    'ANTHROPIC_API_KEY',
+    'YOUTUBE_API_KEY', 'NEWSAPI_KEY', 'FINNHUB_KEY', 'FRED_API_KEY',
+    'SCHWAB_TOKEN_DB_URL', 'SCHWAB_ACCOUNT_HASH',
+    'X_BEARER_TOKEN',
+    'TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID',
+    'DISCORD_WEBHOOK_URL', 'DISCORD_TRADE_WEBHOOK_URL'
+)
+
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 
 <#
@@ -102,18 +130,28 @@ in this project (DTE_MIN, X_DAILY_POST_BUDGET, MIN_EDGE_SCORE, ...) have code
 defaults that differ from the tuned .env values, so an allow-list that misses one
 makes Lambda run a quietly different strategy than the laptop -- the hardest
 class of bug to notice, because nothing errors.
+
+Credentials are the one exception: $SecretKeys is dropped and replaced by a
+pointer to the secret, because Lambda's environment is readable by anyone holding
+lambda:GetFunctionConfiguration.
+
+-IncludeSecrets keeps them inline and omits the pointer. That is for local-lambda.ps1
+only: the container on this laptop has no AWS credentials mounted, so a pointer it
+cannot resolve would raise SecretsUnavailable at import and every debugging run
+would die before reaching the code being debugged. Nothing is leaked by this --
+the file is a temp file holding what .env already holds in the clear.
 #>
 function Get-LambdaEnvMap {
-    $envFile = Join-Path $ProjectRoot '.env'
-    if (-not (Test-Path $envFile)) { throw "No .env at $envFile" }
+    param([switch]$IncludeSecrets)
 
-    $map = @{}
-    foreach ($line in Get-Content $envFile -Encoding utf8) {
-        $m = [regex]::Match($line.Trim(), '^([A-Z_0-9]+)=(.*)$')
-        if (-not $m.Success) { continue }
-        # Trailing "  # comment" is this file's convention; keep single '#' in values.
-        $value = ($m.Groups[2].Value -split '  #')[0].Trim()
-        $map[$m.Groups[1].Value] = $value
+    $map = Read-EnvFile
+    if (-not $IncludeSecrets) {
+        foreach ($key in $SecretKeys) { $map.Remove($key) | Out-Null }
+        $map[$SecretIdVar] = $SecretName
+    } else {
+        # Without this the .env copy of SPX_SECRET_ID would send the container to
+        # Secrets Manager anyway, which is exactly what the switch is avoiding.
+        $map.Remove($SecretIdVar) | Out-Null
     }
 
     # Lambda's filesystem is read-only outside /tmp, so file logging crashes on
@@ -127,10 +165,37 @@ function Get-LambdaEnvMap {
 
     $bytes = ($map.GetEnumerator() | ForEach-Object { $_.Key.Length + $_.Value.Length } |
               Measure-Object -Sum).Sum
-    if ($bytes -gt 4000) {
-        throw "Env payload is $bytes bytes; Lambda's hard limit is 4096. Move secrets to Secrets Manager."
+    if ($IncludeSecrets) {
+        # No 4096-byte check: that is Lambda's limit on a function configuration,
+        # and this map is going to a docker --env-file, which has none. Throwing
+        # here would block local debugging over a limit that does not apply.
+        Write-Note "$($map.Count) variables, $bytes bytes, credentials inline (local only)"
+    } else {
+        if ($bytes -gt 4000) {
+            throw "Env payload is $bytes bytes; Lambda's hard limit is 4096. Add the offending key to `$SecretKeys."
+        }
+        Write-Note "$($map.Count) variables, $bytes bytes (limit 4096); $($SecretKeys.Count) key(s) held in $SecretName"
     }
-    Write-Note "$($map.Count) variables, $bytes bytes (limit 4096)"
+    return $map
+}
+
+<#
+Parses .env into a hashtable. Split out from Get-LambdaEnvMap because secrets.ps1
+needs the same parse to build the secret payload, and two copies of this regex
+would drift.
+#>
+function Read-EnvFile {
+    $envFile = Join-Path $ProjectRoot '.env'
+    if (-not (Test-Path $envFile)) { throw "No .env at $envFile" }
+
+    $map = @{}
+    foreach ($line in Get-Content $envFile -Encoding utf8) {
+        $m = [regex]::Match($line.Trim(), '^([A-Z_0-9]+)=(.*)$')
+        if (-not $m.Success) { continue }
+        # Trailing "  # comment" is this file's convention; keep single '#' in values.
+        $value = ($m.Groups[2].Value -split '  #')[0].Trim()
+        $map[$m.Groups[1].Value] = $value
+    }
     return $map
 }
 

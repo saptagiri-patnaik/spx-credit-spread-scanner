@@ -13,6 +13,8 @@ commands to paste. Run tasks with **Ctrl+Shift+P → "Tasks: Run Task"**.
 | **Lambda: Deploy (build, push, update)** | after every code change — also `Ctrl+Shift+B` |
 | **Lambda: Provision (one-time)** | first deploy, or to repair infrastructure |
 | **Lambda: Sync env from .env** | after changing a setting |
+| **Lambda: Push credentials to Secrets Manager** | after rotating a key or password |
+| **Lambda: Show secret contents (names only)** | check a rotation landed, without printing values |
 | **Lambda: Smoke test (DB connectivity)** | cheapest check that the function works |
 | **Lambda: Invoke now** | run one cycle immediately |
 | **Lambda: Create/update 45-min schedule** | start unattended runs |
@@ -40,6 +42,12 @@ Two things are not free, and neither is Lambda's fault: the **Anthropic API spen
 is unchanged** — same cycles, same models, different machine — and **ECR storage**
 is 233 MB against a 500 MB free tier that lasts 12 months, after which it is
 roughly two cents a month.
+
+**Secrets Manager is $0.40/month.** That is per *secret*, not per key, which is
+why all thirteen credentials live in one JSON object rather than one secret each —
+the same values split up would be $5.20/month for no benefit. Reads are $0.05 per
+10,000 and the bundle is fetched once per cold start (~16/day), so the API charge
+rounds to nothing.
 
 ---
 
@@ -82,19 +90,26 @@ CloudWatch Logs.
    `linux/amd64`, pushes ~233 MB, and verifies the manifest. Expect 5–10 minutes
    the first time and under a minute afterwards. It will report that the function
    does not exist yet; that is expected.
-2. **Lambda: Provision** — execution role, function (1024 MB / 600s), reserved
-   concurrency, all `.env` variables, ECR cleanup rule, log retention. ~45
-   seconds, mostly waiting for IAM to propagate.
-3. **Lambda: Smoke test** — sends `{"action":"setup"}`, which runs the idempotent
+2. **Lambda: Push credentials to Secrets Manager** — creates `spx-scanner/prod`
+   from the credential keys in `.env`. Do this *before* Provision: the function
+   reads its credentials from the secret, so provisioning against a secret that
+   does not exist yet produces a function that fails at import on its first cycle.
+3. **Lambda: Provision** — execution role, read access to the secret, function
+   (1024 MB / 600s), reserved concurrency, the non-credential `.env` variables,
+   ECR cleanup rule, log retention. ~45 seconds, mostly waiting for IAM to
+   propagate.
+4. **Lambda: Smoke test** — sends `{"action":"setup"}`, which runs the idempotent
    table setup. Proves Lambda can reach Postgres and that the credentials work,
-   without spending anything. Success is `{"ok": true, "action": "setup"}`.
-4. **Lambda: Invoke now** — one real cycle. Success is
+   without spending anything. Success is `{"ok": true, "action": "setup"}`. This is
+   also the cheapest proof that the secret is readable — a database connection
+   means the password came back.
+5. **Lambda: Invoke now** — one real cycle. Success is
    `{"ok": true, "mode": "market_hours"}` plus either a prediction block or
    `outside market hours, deferring prediction`.
-5. **Local: Stop laptop scanner** — do this *before* scheduling. The X budget is
+6. **Local: Stop laptop scanner** — do this *before* scheduling. The X budget is
    enforced per day and shared through the database, so two scanners consume it
    twice as fast and the guard then throttles collection.
-6. **Lambda: Create/update 45-min schedule** — starts unattended runs. **It fires
+7. **Lambda: Create/update 45-min schedule** — starts unattended runs. **It fires
    immediately on creation**, then every 45 minutes; rate-based schedules do not
    wait out the first interval.
 
@@ -109,6 +124,55 @@ resurrect the laptop scanner and start competing with Lambda.
 **Lambda: Deploy.** That is all — build, push, update, and wait for the update to
 settle. Environment variables survive a code update untouched; only run
 **Lambda: Sync env from .env** when a setting changes.
+
+---
+
+## Credentials
+
+**The function's environment holds no credentials.** It holds one pointer,
+`SPX_SECRET_ID=spx-scanner/prod`, and everything secret — the database password
+and host, the Anthropic and data-source keys, the Schwab account hash, the X
+bearer token, both Discord webhooks — comes from a single Secrets Manager secret
+read once per cold start.
+
+This is not cosmetic. Lambda environment variables are readable by anyone holding
+`lambda:GetFunctionConfiguration`, which is every principal that can *describe*
+the function rather than only those that can invoke it, and the console shows them
+in plaintext. The secret is gated on `secretsmanager:GetSecretValue` against one
+resource ARN, and the function's role has only that — it cannot write or delete
+its own credentials.
+
+`.env` stays the source of truth on your laptop. `deploy/secrets.ps1` pushes it
+into the secret; nothing reads the secret to write `.env` back.
+
+### Precedence
+
+Highest first: **explicit arguments → environment → `.env` → the secret → code
+defaults.** The secret is ranked *below* the environment on purpose, so exporting
+`DB_HOST` still points a scratch run at another database without anyone editing a
+shared credential.
+
+**A blank line in `.env` means "take it from the secret."** `DB_PASSWORD=` with
+nothing after it does not override anything — that is the intended state of the
+file once you have run the push, and `config.py` drops empty `.env` values
+specifically so it works. Blanks in the actual *environment* are still real empty
+strings, which is how `LOG_FILE` gets forced empty and how the local debug run
+mutes its webhooks.
+
+### Rotating a key
+
+1. Change it in `.env`.
+2. **Lambda: Push credentials to Secrets Manager** — adds a new version.
+3. **Lambda: Show secret contents** — confirms it landed. Key names and value
+   *lengths* only; it never prints a value to your screen or shell history.
+
+No redeploy and no env sync: the next cold start reads the new version. The
+previous version stays recoverable for 30 days as `AWSPREVIOUS`.
+
+A *new* credential needs one more step — add it to `$SecretKeys` in
+`deploy/common.ps1`, push, then **Sync env** to drop the plaintext copy from the
+function's environment. In that order: between the two, the function has neither
+copy and every cycle fails.
 
 ---
 
@@ -147,6 +211,13 @@ By default it sets `DRY_RUN` and blanks the Discord and Telegram webhooks, so a
 debugging session cannot write predictions, open paper trades, or push to a
 channel you actually watch.
 
+**It passes credentials inline from `.env` rather than the secret pointer**, and
+drops `SPX_SECRET_ID` so the container cannot go looking. The container has no AWS
+credentials mounted, so a pointer it could not resolve would raise
+`SecretsUnavailable` at import and kill the run before it reached whatever you
+started it to debug. The consequence is that this path does not exercise the
+secret fetch — **Lambda: Smoke test** is what proves that works.
+
 **`DRY_RUN` is not isolation.** Collection still upserts items into the
 production database, and the X and Anthropic calls still cost money. For genuine
 isolation, point `DB_*` at a local Postgres.
@@ -169,23 +240,33 @@ isolation, point `DB_*` at a local Postgres.
 | Times out at 600s | Large unscored backlog. Check the count before blaming Lambda. |
 | Duplicate items, doubled X spend | The laptop scanner is still running. **Local: Stop laptop scanner**. |
 | `docker: command not found` | Docker Desktop installed but not started. |
-| Env payload rejected | Lambda caps all environment variables at 4096 bytes combined. Currently 72 variables, 2107 bytes. Past that, move secrets to Secrets Manager. |
+| Env payload rejected | Lambda caps all environment variables at 4096 bytes combined. Currently 64 variables, 1271 bytes — the credentials moving to the secret took roughly 800 bytes out. Past the cap, add the offending key to `$SecretKeys`. |
+| `SPX_SECRET_ID is set but boto3 is not installed` | A laptop run pointed at the secret without the library to read it. `pip install -r requirements-dev.txt`, or blank `SPX_SECRET_ID` in `.env` to run purely from the file. Lambda never hits this — its runtime ships boto3, which is why it is not in `requirements.txt`. |
+| `Could not read secret ... AccessDeniedException` | The execution role lost its `spx-secret-read` policy. Re-run **Provision**; it reapplies it whether or not the role already existed. |
+| `Could not read secret ... ResourceNotFoundException` | Provisioned before the secret existed. Run **Push credentials to Secrets Manager**. |
+| Credentials suddenly empty locally | Something is *setting* them blank at a higher precedence than the secret — an exported `DB_PASSWORD=` in the shell, not a blank line in `.env` (those are ignored by design). `Get-ChildItem env:` to find it. |
 
 ---
 
 ## Configuration notes
 
-**All 72 `.env` keys are mirrored**, not a curated subset. Most settings here have
-code defaults that differ from the tuned `.env` values (`DTE_MIN`,
-`X_DAILY_POST_BUDGET`, `MIN_EDGE_SCORE`, `PAPER_MAX_OPEN`, `LOOKBACK_DAYS` …), so
-an allow-list that misses one makes Lambda run a quietly different strategy than
-the laptop. Nothing errors; the numbers just change.
+**Every non-credential `.env` key is mirrored**, not a curated subset. Most
+settings here have code defaults that differ from the tuned `.env` values
+(`DTE_MIN`, `X_DAILY_POST_BUDGET`, `MIN_EDGE_SCORE`, `PAPER_MAX_OPEN`,
+`LOOKBACK_DAYS` …), so an allow-list that misses one makes Lambda run a quietly
+different strategy than the laptop. Nothing errors; the numbers just change.
+
+The credentials are the deliberate exception, and they are enumerated rather than
+pattern-matched — `$SecretKeys` in `deploy/common.ps1` is the list, and it is the
+one place that decides what counts as a credential. `DB_HOST`, `DB_USER` and
+`DB_NAME` are on it despite not being secrets themselves: they travel with the
+password, and `DB_HOST` discloses the Lightsail endpoint.
 
 **Files holding the database password and API keys are written to the temp
-directory, never the repo**, so no `git add -A` can commit them. Lambda
-environment variables are still readable by anyone with
-`lambda:GetFunctionConfiguration` — for anything long-lived, move
-`ANTHROPIC_API_KEY` and `DB_PASSWORD` into Secrets Manager.
+directory, never the repo**, so no `git add -A` can commit them. That applies to
+the secret payload too — `secrets.ps1` writes it to a temp file and deletes it in
+a `finally` block rather than passing it as an argument, which would put every
+credential in the process table and in PowerShell's command history.
 
 **The schedule retries once, not 185 times.** EventBridge Scheduler's default is
 185 attempts, which would re-invoke a cycle that failed mid-scoring up to 185
