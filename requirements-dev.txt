@@ -3,3 +3,8 @@
 -r requirements.txt
 
 pytest>=8.0
+
+# Reading the credential secret. Not in requirements.txt on purpose: the Lambda
+# Python runtime already provides boto3, and vendoring it into the zip would add
+# ~15 MB to an upload that has been flaky before. Only laptop runs need it here.
+boto3>=1.34

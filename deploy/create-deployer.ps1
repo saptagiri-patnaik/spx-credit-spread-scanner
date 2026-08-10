@@ -35,6 +35,10 @@ $logArn   = "arn:aws:logs:$Region`:$account`:log-group:$LogGroup"
 $topicArn = "arn:aws:sns:$Region`:$account`:$FuncName-alerts"
 $schedArn = "arn:aws:scheduler:$Region`:$account`:schedule/default/$FuncName-*"
 $roleArn  = "arn:aws:iam::$account`:role/spx-*"
+# Secrets Manager appends a random 6-character suffix to every secret's ARN, so
+# the resource cannot be named exactly -- the wildcard is the intended pattern,
+# not laziness. It still scopes to this one secret's name.
+$secretArn = "arn:aws:secretsmanager:$Region`:$account`:secret:$SecretName-??????"
 
 $policy = @{
     Version   = '2012-10-17'
@@ -128,6 +132,16 @@ $policy = @{
             Action = @('sns:CreateTopic', 'sns:Subscribe', 'sns:ListSubscriptionsByTopic',
                        'sns:GetTopicAttributes', 'sns:SetTopicAttributes')
             Resource = $topicArn
+        },
+
+        # secrets.ps1 creates the secret, pushes new versions on rotation, and
+        # reads it back for -Show. DeleteSecret is deliberately absent: this
+        # credential set is not something a deploy script should be able to destroy.
+        @{
+            Effect = 'Allow'
+            Action = @('secretsmanager:CreateSecret', 'secretsmanager:PutSecretValue',
+                       'secretsmanager:DescribeSecret', 'secretsmanager:GetSecretValue')
+            Resource = $secretArn
         },
 
         # Read-only visibility into the concurrency limit that shaped provision.ps1.

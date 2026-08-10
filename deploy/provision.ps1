@@ -57,6 +57,33 @@ if ($LASTEXITCODE -ne 0) {
     Write-Ok "$RoleName already exists"
 }
 
+# Read access to the credential secret. Applied outside the create-role branch on
+# purpose: the role predates the secret, so gating this on "role was just created"
+# would leave every existing deployment unable to read its own credentials, and
+# put-role-policy is idempotent so re-running costs nothing.
+$secretArn = "arn:aws:secretsmanager:$Region`:$(Get-AwsAccount)`:secret:$SecretName-??????"
+$secretPolicy = @{
+    Version   = '2012-10-17'
+    Statement = @(@{
+        Effect   = 'Allow'
+        Action   = @('secretsmanager:GetSecretValue')
+        # GetSecretValue only -- the function reads credentials and has no reason
+        # to be able to change them.
+        Resource = $secretArn
+    })
+} | ConvertTo-Json -Depth 5 -Compress
+
+$secretFile = Join-Path ([System.IO.Path]::GetTempPath()) "secret-read-$([guid]::NewGuid()).json"
+try {
+    Set-Content -Path $secretFile -Value $secretPolicy -Encoding utf8NoBOM
+    aws iam put-role-policy --role-name $RoleName --policy-name 'spx-secret-read' `
+        --policy-document "file://$secretFile" | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'put-role-policy for secret access failed.' }
+    Write-Ok "$RoleName can read $SecretName"
+} finally {
+    Remove-Item $secretFile -ErrorAction SilentlyContinue
+}
+
 Write-Step 'Function'
 if (-not (Test-LambdaExists)) {
     # Memory 1024, not 512: Lambda scales CPU with memory, so 1024 finishes a

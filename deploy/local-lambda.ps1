@@ -31,7 +31,12 @@ Assert-Tooling -RequireDocker
 $imageExists = docker image inspect "$($RepoName):latest" 2>$null
 if (-not $imageExists) { throw "No local image '$RepoName`:latest'. Run deploy/deploy.ps1 first." }
 
-$map = Get-LambdaEnvMap
+# -IncludeSecrets: credentials inline from .env rather than a pointer to the
+# secret. This container has no AWS credentials mounted, so it could not resolve
+# the pointer -- config.py would raise SecretsUnavailable at import and the run
+# would die before reaching whatever you started it to debug. The secret-fetch
+# path is not what this script exists to exercise.
+$map = Get-LambdaEnvMap -IncludeSecrets
 if (-not $Live) { $map['DRY_RUN'] = 'true' }
 if (-not $WithAlerts) {
     # Blanked rather than trusting ALERT_ONLY_ON_TRADE: a debugging run that pushes
