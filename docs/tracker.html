@@ -96,6 +96,7 @@
   .cell dd { font-family: var(--data); font-size: .95rem; font-variant-numeric: tabular-nums; }
   .cell dd.ok { color: var(--settled); }
   .cell dd.warn { color: var(--watch); }
+  .cell dd.no { color: var(--risk); }
 
   section { display: flex; flex-direction: column; gap: 1.25rem; }
   .sec-head { display: flex; align-items: baseline; gap: .85rem; border-bottom: 1px solid var(--rule-strong); padding-bottom: .5rem; flex-wrap: wrap; }
@@ -178,24 +179,26 @@
     <h1>Open investigations, running experiments, and what to watch next</h1>
     <p class="standfirst">
       Everything currently unresolved in the pipeline, each with the condition that would make you
-      act on it. Regenerated 6 August 2026, midday, from the live database, CloudWatch and the deployed
-      configuration. Since the 4 August edition: the reject tally shipped and immediately answered the
-      put-side question it was built for &mdash; and the answer was a flag that had never once been
-      false in 190 predictions, silently pinning the scanner to its event-risk branch and leaving two
-      configured thresholds unreachable for the life of the function. Fixed and deployed as
-      <code>r70</code>. What remains is the half of that finding a window change does not reach: on
-      event days the put side still cannot clear the credit-to-width floor against skew.
+      act on it. Regenerated 9 August 2026 from the live database, CloudWatch and the deployed
+      configuration, at <code>r72</code>. Since the 6 August edition: <code>r70</code> got its first
+      unflagged session and the funnel opened &mdash; 9 of 9 cycles produced a candidate where 11 of
+      190 had before, and put verticals reached the ranking for the first time ever. None won. The
+      binding constraint moved again, to <code>min_edge_score</code>, and measuring what stands in
+      front of it produced the most uncomfortable result the project has had: every candidate it has
+      ever generated is negative-EV once <code>POP</code> is computed honestly. The instrument for
+      that shipped today; the behaviour change it will judge deliberately did not.
     </p>
   </header>
 
   <dl class="strip">
-    <div class="cell"><dt>Deployed</dt><dd class="ok">r70 &middot; a481d58 &middot; zip</dd></div>
-    <div class="cell"><dt>AWS identity</dt><dd class="ok">spx-deployer</dd></div>
-    <div class="cell"><dt>Root keys</dt><dd class="ok">none</dd></div>
+    <div class="cell"><dt>Deployed</dt><dd class="ok">r72 &middot; 50554ba &middot; zip</dd></div>
+    <div class="cell"><dt>Clean-day clock</dt><dd class="warn">2 / 10 &middot; Gate 8</dd></div>
     <div class="cell"><dt>Alarms</dt><dd class="ok">both OK</dd></div>
-    <div class="cell"><dt>X spend, 5 Aug close</dt><dd class="warn">226 / 260</dd></div>
-    <div class="cell"><dt>Open paper</dt><dd class="warn">3 baseline, 0 signal</dd></div>
-    <div class="cell"><dt>Realised P&amp;L</dt><dd class="ok">+$1.25, baseline only</dd></div>
+    <div class="cell"><dt>Candidates, 7 Aug</dt><dd class="ok">9 / 9 cycles</dd></div>
+    <div class="cell"><dt>Signal trades</dt><dd class="no">0, all time</dd></div>
+    <div class="cell"><dt>Open paper</dt><dd class="warn">4 baseline, 0 signal</dd></div>
+    <div class="cell"><dt>Realised P&amp;L</dt><dd class="ok">+$1.55, baseline only</dd></div>
+    <div class="cell"><dt>IV / RV</dt><dd class="no">0.738&ndash;0.762</dd></div>
   </dl>
 
   <!-- ============ LEAD ============ -->
@@ -296,7 +299,83 @@
         binding constraints are the event-risk delta cap (fixed today, <code>r70</code>) and the
         credit-to-width floor against skew (open). Both are in the watch list below.
       </p>
-      <div class="trigger"><b>Close condition</b><span>a cycle logging <code>num_candidates &gt; 0</code> <em>with a put among them</em>, and a first <code>arm='model'</code> row in <code>paper_positions</code>. Neither has ever occurred. The candidate count alone is no longer a sufficient condition: it has been non-zero on 11 cycles and every one of them was a call spread, so a scan that fills with calls again proves nothing about the signal.</span></div>
+      <p>
+        <strong>7 August &mdash; the funnel opened, and it still ends in zero.</strong> The first
+        session in which <code>event_risk</code> was ever false. The delta cap ran at its configured
+        0.30 and the effect was immediate: <strong>9 of 9 cycles produced a candidate</strong>, against
+        11 of the previous 190, and <strong>19&ndash;38 put verticals reached the ranking on every
+        cycle</strong> &mdash; a line that had never once appeared. The gate is not the constraint,
+        the delta cap is no longer the constraint, and the pricing filters are no longer emptying the
+        book. What stops it now is <code>min_edge_score</code>: best edge 0.013&ndash;0.031 against
+        0.05, nine times out of nine.
+      </p>
+      <p>
+        Not one of those candidates was a put. All nine were call spreads, against a model that read
+        UP on all nine cycles. The scanner has now produced <strong>27 call spreads and zero puts in
+        its entire recorded history</strong>, and the put side has been beaten on merit rather than
+        filtered out &mdash; which is what the item below predicted and is the stronger version of
+        that finding.
+      </p>
+      <div class="trigger"><b>Close condition</b><span>unchanged, and now sharper: a first <code>arm='model'</code> row in <code>paper_positions</code>. The put-count half of this condition was met on 7 Aug &mdash; puts reach the ranking &mdash; so what remains is whether anything clears the edge threshold. On the measurement below, in this regime, nothing should.</span></div>
+    </div>
+  </section>
+
+  <!-- ============ STABILITY ============ -->
+  <section>
+    <div class="sec-head">
+      <h2>When is this stable enough to wire into Sopana?</h2>
+      <span class="sec-note">added 9 Aug &mdash; the question the open items keep obscuring</span>
+    </div>
+
+    <div class="lead" style="border-left-color: var(--accent);">
+      <h3>Two different stability questions, and only one of them is on the critical path</h3>
+      <p>
+        Every item on this page is about <em>trade construction</em> &mdash; delta caps, RoR floors,
+        POP, premium richness, edge thresholds. None of that is what Sopana consumes. The joint
+        roadmap defines the handoff as a <strong>veto only</strong>: block the put side when downside
+        risk is fat, block entries when a high-impact print lands inside the holding window. It may
+        never open a trade Sopana would not have opened anyway.
+      </p>
+      <p>
+        So the scanner has two readiness bars, and conflating them is why this feels like it never
+        stabilises &mdash; every fix reveals the next binding constraint in a funnel that Sopana does
+        not read.
+      </p>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>&nbsp;</th><th>Track A &mdash; the veto Sopana consumes</th><th>Track B &mdash; the signal arm</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><b>Output</b></td>
+              <td><code>downside_risk</code>, <code>upside_risk</code>, <code>event_risk</code></td>
+              <td>a ranked, priced, tradeable spread</td>
+            </tr>
+            <tr>
+              <td><b>Depends on</b></td>
+              <td>the scorer, synthesis, the tail estimates, the econ calendar, uptime</td>
+              <td>all of Track A <em>plus</em> every pricing filter on this page</td>
+            </tr>
+            <tr>
+              <td><b>Blocked by</b></td>
+              <td>Gate 8 &mdash; 10 consecutive clean trading days. <b>2 / 10</b>, running since 6 Aug.</td>
+              <td>an experiment with no treatment group, and a regime in which it should have none</td>
+            </tr>
+            <tr>
+              <td><b>Ready when</b></td>
+              <td class="now">~19 Aug on the current clock; veto shadow-logs from 21 Aug</td>
+              <td class="was">not date-bound. Needs IV/RV &ge; 1 and a measured POP.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        <strong>Track A does not wait on Track B, and never did.</strong> The signal arm having
+        opened zero positions is not evidence against the veto &mdash; the veto subtracts trades from
+        Sopana, so an arm that declines to trade and a veto that blocks trades are the same
+        disposition expressed twice. The worst case of a wrong veto is fewer Sopana trades, not a new
+        failure mode, which is exactly why it goes first and in shadow.
+      </p>
+      <div class="trigger"><b>Stable means</b><span>for Track A: <b>(1)</b> Gate 8 closes at 10 clean trading days; <b>(2)</b> the tail estimates have been observed <em>firing</em>, not merely passing &mdash; they are 0-for-52 on blocking either side, so a gate that has never said no is unvalidated in the only direction that matters; <b>(3)</b> <code>event_risk</code> is exported on a window matching the <em>consumer's</em> holding period, not the scanner's. See the new item below. None of these require a single signal trade.</span></div>
     </div>
   </section>
 
@@ -308,6 +387,110 @@
     </div>
 
     <div class="items">
+
+      <article class="item sev-risk">
+        <div class="item-top">
+          <h3><code>premium_weight</code> is 0.15 because it was typed, not because it was measured</h3>
+          <span class="pill p-run">measured 9 Aug &middot; instrument shipped</span>
+          <span class="when">found 7 Aug &middot; measured 9 Aug</span>
+        </div>
+        <p>
+          On 7 August <code>premium_edge</code> cost <b>0.038 of a 0.05 gate</b> &mdash; three quarters
+          of the bar on its own. Remove that one term and all nine candidates clear. It therefore
+          decides whether the signal arm trades in a cheap-premium regime, which is more authority
+          than an unvalidated constant should have.
+        </p>
+        <p>
+          <strong>The question was posed as &ldquo;is 0.15 too harsh&rdquo;. It is too lenient.</strong>
+          The term proxies for something computable: <code>pop = 1 - short_delta</code>, and delta is
+          risk-neutral, so when the index moves more than the options price the real breach chance is
+          higher than delta says. Reprice POP on realised vol, difference the expected values, and the
+          weight that reproduces the correction falls out.
+        </p>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Measure</th><th>Value</th><th>Reads as</th></tr></thead>
+            <tbody>
+              <tr><td>implied weight, median of 25 suggestions</td><td class="num">0.235</td><td>mean 0.223, range 0.148&ndash;0.278</td></tr>
+              <tr><td>weight applied</td><td class="num was">0.150</td><td>under-penalising by ~1.5&times;</td></tr>
+              <tr><td>correction the arithmetic wants</td><td class="num">&minus;0.052</td><td>vs &minus;0.034 applied</td></tr>
+              <tr><td>suggestions that are positive-EV on honest POP</td><td class="num was">2 of 25</td><td>0 of 9 on 7 Aug, at any drift</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          <strong>That last row is the uncomfortable one.</strong> Nearly every candidate the scanner
+          has ever produced loses money once POP stops being borrowed from the option's own price. On
+          this reading <code>min_edge_score</code> has been refusing them <em>correctly</em>, and the
+          signal arm's silence is the best-calibrated output the system currently has.
+        </p>
+        <p>
+          <strong>Two biases, pulling opposite ways</strong> &mdash; which is why the fix is a
+          repricing and not a bigger constant. Delta is <code>N(d1)</code> where the probability is
+          <code>N(d2)</code>, worth <b>+0.010</b> and present in every regime, modelled nowhere. The
+          risk-neutral premium is worth <b>&minus;0.068</b> on 7 August's tape. Net &minus;0.058
+          against the &minus;0.038 the weight applies.
+        </p>
+        <p>
+          <strong>And no constant is right, because the shape is wrong.</strong> Fitted across a grid
+          of forward-vol windows &times; drift assumptions the implied weight ranges <b>0.17 to
+          1.84</b> and changes sign, because <code>w &middot; (IV/RV &minus; 1)</code> vanishes as the
+          ratio approaches 1 while the true correction does not &mdash; it depends on the candidate's
+          own strike and DTE, which one flat ATM ratio cannot see. Exactly one cell defends 0.15:
+          RV30 with zero drift, at 0.167. The scanner feeds the ratio from RV20.
+        </p>
+        <div class="trigger"><b>Shipped, deliberately inert</b><span><code>r72</code> records <code>pop_real</code> and <code>premium_edge_measured</code> per candidate and scores neither &mdash; <code>edge</code> is byte-for-byte unchanged. Folding the measurement in would have changed behaviour on five days of IV/RV history and left nothing to compare against, which is how <code>confidence_gate</code> closed for a fortnight. Revisit when the recorded series can say whether the gap is the regime or the formula. <b>Do not</b> raise the weight to 0.235 in the meantime.</span></div>
+      </article>
+
+      <article class="item sev-risk">
+        <div class="item-top">
+          <h3>The event-risk window is right for the scanner and wrong for Sopana's veto</h3>
+          <span class="pill p-risk">open &middot; blocks the handoff</span>
+          <span class="when">found 9 Aug</span>
+        </div>
+        <p>
+          <code>r70</code> narrowed <code>event_risk</code> from &ldquo;a high-impact release anywhere
+          in <code>dte_max</code>&rdquo; (25 days, therefore always true &mdash; 190 of 190) to
+          <code>event_risk_window_days = 4</code>, chosen to equal <code>paper_hold_days</code>: a
+          release the position will actually sit through. That is correct <em>for the scanner</em>,
+          whose paper positions close at 4 days.
+        </p>
+        <p>
+          The joint roadmap specifies the Sopana veto as <em>&ldquo;block entries when a high-impact
+          print lands inside the DTE window&rdquo;</em>. Sopana is a 25-DTE strategy. <strong>A
+          4-day flag cannot answer a 25-day question</strong> &mdash; it will read false for releases
+          5 to 25 days out that a Sopana position sits through in full. Wire the flag across as-is and
+          the veto silently under-fires on precisely the events it exists to catch.
+        </p>
+        <p>
+          This is the same defect as the one <code>r70</code> fixed, mirrored: a window hard-coded to
+          one consumer's holding period and then read by another. The fix is not to widen it back
+          &mdash; that would restore the always-true behaviour for the scanner &mdash; but to stop
+          exporting a boolean at all.
+        </p>
+        <div class="trigger"><b>Act, before 21 Aug</b><span>export the <em>event horizon</em> rather than the verdict: the next high-impact release date and its distance in days, and let each consumer apply its own window. The scanner keeps 4, Sopana uses 25. Cheap, and it removes the class of bug rather than this instance. Blocks the shadow veto, so it is on the critical path in a way none of the pricing items are.</span></div>
+      </article>
+
+      <article class="item sev-watch">
+        <div class="item-top">
+          <h3>The reject tally's denominators move with the delta cap, so it cannot be read as a series</h3>
+          <span class="pill p-watch">open &middot; cheap</span>
+          <span class="when">found 7 Aug</span>
+        </div>
+        <p>
+          On 7 August the dominant reject line was <code>put.width 24,306</code> against
+          <code>call.width 2,878</code> &mdash; a reason that did not even appear in the 6 August
+          table. Nothing about width changed. The looser delta cap admitted many more put shorts, each
+          of which then enumerates every long leg, so the <em>pairing count</em> exploded and
+          <code>width</code> counts pairings.
+        </p>
+        <p>
+          <code>put.ror_floor</code> moved the same way for the same reason, 932 &rarr; ~1,190, which
+          reads as the put side getting worse when it is the opposite: more puts survived far enough
+          to be tested. With the cap back at 0.20 this week the counts will collapse again.
+        </p>
+        <div class="trigger"><b>Act</b><span>report rejects as a share of pairings enumerated, or drop <code>width</code> from the tally &mdash; it is loop shape, not a decision. Do it before the series starts being read across days, not after, because a week-over-week comparison of these numbers is currently meaningless in a way that looks meaningful.</span></div>
+      </article>
 
       <article class="item sev-risk">
         <div class="item-top">
@@ -361,7 +544,21 @@
           narrowing those would have made a scanner fix into a silent change of LLM input. A test pins
           that split.
         </p>
-        <div class="trigger"><b>Watch</b><span>the flag is still true today &mdash; payrolls lands 7 Aug &mdash; so the first cycles that differ are 7 Aug afternoon, then 17&ndash;21 Aug. The tell is <code>scanned N verticals (X put / Y call)</code> with <code>X &gt; 0</code>, which has never once appeared. If the put count stays at zero on an unflagged day, the delta cap was never the binding half and the item below is the whole story.</span></div>
+        <p>
+          <strong>Answered 7 August, and the delta cap was the binding half.</strong> The first
+          unflagged session put the cap at its configured 0.30 and
+          <code>scanned N verticals (X put / Y call)</code> carried <b>19&ndash;38 puts on every one
+          of nine cycles</b> &mdash; the line that had never once appeared. Puts are constructed,
+          priced and ranked. The cap was what kept them out.
+        </p>
+        <p>
+          <strong>And it changed nothing about the outcome.</strong> Zero of them won a single
+          ranking; all nine suggestions were call spreads. So both halves of this item are now
+          settled and they point the same way: the cap was suppressing the put side, and removing the
+          suppression revealed a put side that loses on merit. The item below is still the whole
+          story about <em>why</em>.
+        </p>
+        <div class="trigger"><b>Closed</b><span>superseded by <code>min_edge_score</code> as the binding constraint, and by the premium-weight item above as the explanation. Note for reading this week's logs: 10&ndash;14 Aug are all flagged again (CPI 12th, PPI 13th, Retail Sales 14th all sit inside a 4-day window), so the put count returns to ~0 and that is the flag, not a regression. Next unflagged session is ~17 Aug.</span></div>
       </article>
 
       <article class="item sev-risk">
@@ -436,13 +633,37 @@
           costs both ways: the floor <strong>admits 41 pairings the ranker scores negative</strong>
           and <strong>rejects 32 it scores positive</strong>.
         </p>
-        <div class="trigger"><b>Act</b><span>replace the flat <code>min_credit_to_width</code> with the ranker's own break-even, <code>ror &ge; d/(1&minus;d)</code> plus a margin, so the filter and the ranking stop disagreeing. Expect it to <em>reduce</em> call-side candidates, not increase them, and to leave the put side empty. <b>Do not</b> lower the floor for puts. <b>Take a before-picture first</b> &mdash; the reject tally lives only in the alert text, not the database.</span></div>
+        <p>
+          <strong>9 August &mdash; the proposed replacement needs one change before it ships, and
+          this is the second time this item has had to correct its own recommendation.</strong> The
+          rule below is <code>ror &ge; d/(1&minus;d)</code>. That <code>d</code> is the risk-neutral
+          delta &mdash; the exact quantity the premium-weight item above establishes is defective.
+          Tested on 7 August's nine winners:
+        </p>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Floor</th><th>Of 9 winners</th><th>Reads as</th></tr></thead>
+            <tbody>
+              <tr><td>flat <code>ror &ge; 0.20</code>, today</td><td class="num">9 pass</td><td>the status quo</td></tr>
+              <tr><td><code>ror &ge; d/(1&minus;d)</code>, risk-neutral <code>d</code></td><td class="num">9 pass</td><td><b>a no-op on the winners</b></td></tr>
+              <tr><td><code>ror &ge; d/(1&minus;d)</code>, real-world <code>d</code></td><td class="num was">0 pass</td><td>the honest input rejects all nine</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          So shipping it as written would cement the risk-neutral probability into a <em>filter</em>,
+          one day after it was instrumented in the ranker, and would change nothing about what
+          trades. The case for the swap is untouched &mdash; across the whole pairing population the
+          flat floor and the ranker still disagree, admitting 41 the ranker scores negative and
+          rejecting 32 it scores positive. It is the input that needs fixing, not the shape.
+        </p>
+        <div class="trigger"><b>Act, revised</b><span>replace the flat <code>min_credit_to_width</code> with the ranker's break-even <b>derived from whatever POP the ranker uses</b>, rather than hard-coding <code>d/(1&minus;d)</code>. Written that way it survives the POP correction for free instead of needing a second pass. Expect it to <em>reduce</em> call-side candidates and leave the put side empty. <b>Do not</b> lower the floor for puts. <b>Do not</b> ship it before the POP question resolves &mdash; on current evidence it is a no-op that costs a migration.</span></div>
       </article>
 
       <article class="item sev-watch">
         <div class="item-top">
           <h3>POP is a risk-neutral probability, which may make put spreads unsellable by construction</h3>
-          <span class="pill p-watch">hypothesis</span>
+          <span class="pill p-run">promoted 9 Aug &middot; now instrumented</span>
           <span class="when">found 6 Aug</span>
         </div>
         <p>
@@ -465,7 +686,27 @@
           options pricing <em>less</em> movement than the index has delivered). But it does mean the
           put side has never been evaluated on a real-world probability, only on the market's own.
         </p>
-        <div class="trigger"><b>Test</b><span>the data to settle it is accumulating already: for every suggestion recorded, whether the short strike was ever breached before expiry. Compare the realised breach rate against the delta-implied one, per side. If puts breach materially <em>less</em> often than their delta implied and calls do not, POP is the defect and every threshold tuned on top of it inherits the bias. Needs a few months; nothing should move until then.</span></div>
+        <p>
+          <strong>9 August &mdash; this stopped being a hypothesis about the put side and became the
+          central measurement.</strong> It is the same defect the premium-weight item measures from
+          the other direction, and <code>r72</code> now records the correction on every candidate as
+          <code>pop_real</code>. Two findings promote it out of the watch list:
+        </p>
+        <p>
+          It costs far more than this item guessed, and it is <em>not</em> put-specific: on 7 August
+          the correction ran &minus;0.050 to &minus;0.068 on <em>call</em> spreads, moving POP from
+          0.78&ndash;0.83 down to 0.73&ndash;0.79. And it contains a second bias nobody had named
+          &mdash; <code>pop = 1 - short_delta</code> reads <code>N(d1)</code> as a probability when
+          the probability is <code>N(d2)</code>, worth +0.010 in the other direction and present in
+          every regime, rich or cheap.
+        </p>
+        <p>
+          The put-specific claim in this item therefore stands but is no longer the interesting part.
+          The scanner does not merely evaluate puts with the seller's edge subtracted &mdash; it
+          evaluates <em>everything</em> that way, and on 7 August's tape that was the difference
+          between nine tradeable candidates and none.
+        </p>
+        <div class="trigger"><b>Test</b><span>two now run in parallel. <b>(1)</b> The breach test, unchanged and still needing months: per side, realised breach rate against delta-implied. <b>(2)</b> The recorded series from <code>r72</code>, which needs weeks not months &mdash; if <code>premium_edge_measured</code> stays ~1.5&times; the applied term across regimes, the formula is wrong; if it converges as IV/RV crosses 1, the regime was. <b>Nothing changes POP until one of them reports</b>, because POP also feeds <code>min_pop</code> (0.68) and moving it silently re-scales a second threshold &mdash; the <code>event_risk</code> trap again. Blast radius checked: 7 Aug's real-world POPs land 0.73&ndash;0.79, all still clear 0.68.</span></div>
       </article>
 
       <article class="item sev-risk">

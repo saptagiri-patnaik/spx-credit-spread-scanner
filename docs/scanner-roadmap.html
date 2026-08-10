@@ -236,11 +236,12 @@
 
   <header>
     <div class="eyebrow">SPX Scanner &middot; roadmap and progress log</div>
-    <h1>The scanner&rsquo;s own record: eleven days from first commit to a reachable trade path</h1>
+    <h1>The scanner&rsquo;s own record: fifteen days from first commit to a funnel that finally reaches its last filter</h1>
     <p class="standfirst">
       Everything the fundamental half has shipped, decided and deferred, in date order, with what
-      closed each item. Current through 5 August 2026, after the close, at build
-      <code>r67-g0faee85</code>.
+      closed each item. Current through 9 August 2026 at build <code>r72-g50554ba</code>.
+      The 7 August session opened the funnel and the 9 August measurement explained why it still
+      ends in zero &mdash; and, for the first time, argued that it <em>should</em>.
     </p>
   </header>
 
@@ -260,30 +261,47 @@
   </div>
 
   <dl class="strip">
-    <div><dt>Deployed</dt><dd class="ok">r67 &middot; 0faee85</dd></div>
+    <div><dt>Deployed</dt><dd class="ok">r72 &middot; 50554ba</dd></div>
     <div><dt>Live since</dt><dd>29 Jul, Lambda</dd></div>
     <div><dt>Signal trades</dt><dd class="no">0, all time</dd></div>
-    <div><dt>Baseline</dt><dd class="warn">3 open, 3 closed</dd></div>
-    <div><dt>Baseline P&amp;L</dt><dd class="ok">+$1.25 realised</dd></div>
-    <div><dt>Tail gate</dt><dd class="ok">0 / 45 blocked</dd></div>
-    <div><dt>Confidence</dt><dd>0.38&ndash;0.50</dd></div>
-    <div><dt>Best edge, 5 Aug</dt><dd class="warn">0.012&ndash;0.040</dd></div>
-    <div><dt>Clean-day clock</dt><dd class="no">0 / 10, restarts 6 Aug</dd></div>
-    <div><dt>X spend, 5 Aug</dt><dd class="warn">226 / 260</dd></div>
+    <div><dt>Baseline</dt><dd class="warn">4 open, 4 closed</dd></div>
+    <div><dt>Baseline P&amp;L</dt><dd class="ok">+$1.55 realised</dd></div>
+    <div><dt>Tail gate</dt><dd class="ok">0 / 61 blocked</dd></div>
+    <div><dt>Candidates, 7 Aug</dt><dd class="ok">9 / 9 cycles</dd></div>
+    <div><dt>Best edge, 7 Aug</dt><dd class="warn">0.013&ndash;0.031</dd></div>
+    <div><dt>Positive-EV, honest POP</dt><dd class="no">0 / 9</dd></div>
+    <div><dt>Clean-day clock</dt><dd class="warn">2 / 10, from 6 Aug</dd></div>
   </dl>
 
   <!-- ================================================ where it stands === -->
   <section>
     <div class="sec-head">
       <h2>Where it stands</h2>
-      <span class="sec-note">5 Aug 2026, midday</span>
+      <span class="sec-note">9 Aug 2026</span>
     </div>
 
     <p class="lede">
-      The pipeline is a funnel that has always ended in zero. On 4 August the stage doing the
-      stopping moved &mdash; from a gate that refused to ask the question, to pricing filters that
-      have never been tested. Nothing has traded either way.
+      The pipeline is a funnel that has always ended in zero. The stage doing the stopping has moved
+      four times in six days, and on 9 August the reason changed character entirely: for the first
+      time the answer is not &ldquo;a filter is miscalibrated&rdquo; but &ldquo;the trades are bad
+      and the system was right to refuse them&rdquo;.
     </p>
+
+    <div class="note good">
+      <p>
+        <strong>Read this section first if you are trying to work out whether the scanner is
+        finished.</strong> It has two outputs and they are nowhere near the same maturity. The
+        <b>tail estimates and the event-risk flag</b> &mdash; the only things Sopana consumes, and it
+        consumes them as a veto &mdash; depend on the scorer, synthesis and uptime, and are gated on
+        Gate 8's clean-day clock, currently <b>2 of 10</b> and closing ~19 Aug. The <b>tradeable
+        spread</b> depends on every pricing filter in this log and is not date-bound at all.
+      </p>
+      <p>
+        Everything below that reads like an unending sequence of defects belongs to the second
+        output. The first has been quietly working since 29 July. <b>The handoff was never waiting on
+        the signal arm</b>, and the operational tracker now carries the full criteria.
+      </p>
+    </div>
 
     <div class="note">
       <p>
@@ -337,7 +355,7 @@
   <section>
     <div class="sec-head">
       <h2>The experiment: the dumb rule against the model</h2>
-      <span class="sec-note">standings as of 5 Aug 2026, close</span>
+      <span class="sec-note">standings as of 7 Aug 2026, close</span>
     </div>
 
     <p class="lede">
@@ -349,8 +367,8 @@
 
     <div class="note stop">
       <p>
-        <strong>After eight trading days there is a control group and no treatment group.</strong>
-        The baseline has opened six positions. The signal arm has opened <b>zero, all time</b>
+        <strong>After ten trading days there is a control group and no treatment group.</strong>
+        The baseline has opened eight positions. The signal arm has opened <b>zero, all time</b>
         &mdash; it has never once cleared all three gates. The experiment cannot answer its question
         yet, and every additional day accumulates evidence only for the arm that ignores the model.
       </p>
@@ -358,6 +376,14 @@
         This is not a malfunction. Refusing to trade is a designed outcome. But &ldquo;the gate is
         correctly conservative&rdquo; and &ldquo;the gate is set where nothing can pass&rdquo; look
         identical from outside, and nothing currently distinguishes them.
+      </p>
+      <p>
+        <b>9 Aug &mdash; something finally distinguishes them.</b> Repricing POP on realised vol
+        makes <b>23 of the 25 candidates the scanner has ever produced negative-EV</b>, and 0 of 9 on
+        7 August at any drift assumption. That is the first evidence that the gate is conservative
+        <em>correctly</em> rather than arbitrarily, and it arrives from a direction nobody was
+        looking: not by loosening anything, but by checking the probability the whole ranking rests
+        on. The measurement is recorded and not yet acted on.
       </p>
     </div>
 
@@ -397,23 +423,28 @@
           </tr>
           <tr>
             <td><b>Opened</b></td>
-            <td class="num">6</td>
+            <td class="num">8</td>
             <td class="num">0</td>
           </tr>
           <tr>
             <td><b>Closed / realised</b></td>
-            <td class="num">3 &middot; +$1.25</td>
+            <td class="num">4 &middot; +$1.55</td>
             <td class="num">0 &middot; &mdash;</td>
           </tr>
           <tr>
-            <td><b>Open / unrealised</b></td>
-            <td class="num">3 &middot; +$0.40</td>
+            <td><b>Open</b></td>
+            <td class="num">4</td>
             <td class="num">0 &middot; &mdash;</td>
           </tr>
           <tr>
             <td><b>Win rate</b></td>
-            <td class="num">3 / 3</td>
+            <td class="num">4 / 4</td>
             <td>n/a</td>
+          </tr>
+          <tr>
+            <td><b>Clean closes</b> <span class="chip c-next">7 Aug</span></td>
+            <td class="num">1 &middot; +$0.30</td>
+            <td class="num">0 &middot; &mdash;</td>
           </tr>
         </tbody>
       </table>
@@ -1375,6 +1406,158 @@
         </div>
       </div>
     </div>
+
+    <!-- ---------------------------------------------------------------- -->
+    <div class="phase">
+      <span class="n">Phase 8</span>
+      <h3>The funnel opens, and the answer stops being a threshold &mdash; 7&ndash;9 August</h3>
+    </div>
+
+    <p class="lede">
+      Two sessions and one measurement. The 7th was the first day <code>event_risk</code> had ever
+      been false and it unblocked almost everything; the 9th explained why that changed nothing, and
+      the explanation is the first one in this log that does not end in &ldquo;so fix the
+      threshold&rdquo;.
+    </p>
+
+    <div class="log">
+      <div class="entry win">
+        <span class="rail">7 Aug</span>
+        <span class="kicker">First unflagged session: 9 of 9 cycles produce a candidate<span class="chip c-done">r70 confirmed</span></span>
+        <div class="body">
+          <p>
+            <code>event_risk</code> false on all nine cycles, against 190 of 190 true for the
+            function's entire prior life. With the cap at its configured 0.30 rather than the
+            event-risk 0.20:
+          </p>
+          <ul>
+            <li><b>9 of 9 cycles produced a candidate</b>, against 11 of the previous 190.</li>
+            <li><b>19&ndash;38 put verticals reached the ranking every cycle</b> &mdash;
+              <code>scanned N verticals (X put / Y call)</code> with <code>X &gt; 0</code>, the tell
+              the tracker had set and which had never once appeared.</li>
+            <li><b>Zero puts won.</b> All nine suggestions were call spreads, against a model reading
+              UP nine times out of nine. 27 of 27 all time.</li>
+          </ul>
+          <p>
+            So the delta cap <em>was</em> the binding half for construction, and removing it revealed
+            a put side that loses on merit rather than one being filtered out. Both halves of that
+            question are now closed, and they agree.
+          </p>
+          <div class="check"><b>result</b><span>best edge 0.013&ndash;0.031 against the 0.05 threshold. <code>min_edge_score</code> is now the only thing standing in the way &mdash; the fourth stage to hold that position in six days.</span></div>
+        </div>
+      </div>
+
+      <div class="entry win">
+        <span class="rail">7 Aug</span>
+        <span class="kicker">First baseline close on the rule as written<span class="chip c-done">closed</span></span>
+        <div class="body">
+          <p>
+            Position 4 closed on the time rule at <b>exactly 4.0 days for +$0.30</b>. Positions 1&ndash;3
+            ran 7.7, 6.0 and 5.0 days because they were unmarkable until 4 August, so they collected
+            theta the rule does not grant. <b>+$0.30 is the honest per-position figure; the +$0.42
+            average of the first three is not.</b> Realised now +$1.55 over four closes.
+          </p>
+        </div>
+      </div>
+
+      <div class="entry key">
+        <span class="rail">9 Aug</span>
+        <span class="kicker">The premium weight measured, and the answer inverts the question</span>
+        <div class="body">
+          <p>
+            <code>premium_edge = premium_weight &times; (IV/RV &minus; 1)</code> cost 0.038 of a 0.05
+            gate on 7 August &mdash; three quarters of the bar. Remove that one term and all nine
+            candidates clear, so it, not <code>min_edge_score</code>, decides whether the arm trades
+            in a cheap-premium regime. The question was whether 0.15 was too harsh.
+          </p>
+          <p>
+            <b>It is too lenient.</b> The term proxies for something computable exactly:
+            <code>pop = 1 - short_delta</code>, and delta is risk-neutral, so when the index moves
+            more than the options price the real breach chance exceeds what delta says. Repricing POP
+            on realised vol and differencing the expected values gives the correction directly.
+          </p>
+          <ul>
+            <li>implied weight, median of 25 recorded suggestions: <b>0.235</b> &mdash; applied 0.150,
+              under-penalising ~1.5&times;</li>
+            <li><b>23 of 25 suggestions are negative-EV</b> once POP is honest; 0 of 9 on 7 Aug at any
+              drift assumption</li>
+            <li>two biases, opposite signs: <code>N(d1)</code>-as-probability is +0.010 and modelled
+              nowhere; the risk-neutral premium is &minus;0.068</li>
+            <li>across a grid of vol windows &times; drifts the implied weight ranges <b>0.17 to
+              1.84</b> and changes sign &mdash; <b>no constant is right, because the shape is
+              wrong</b></li>
+          </ul>
+          <p>
+            The consequence is the one worth recording plainly, because it is the first good news the
+            funnel has produced: <strong>the signal arm's refusal to trade is not a defect. On this
+            measurement it is the best-calibrated output the system has.</strong>
+          </p>
+          <div class="check"><b>checked</b><span>the total-loss and window assumptions both survive scrutiny. RV20 is not stale &mdash; RV10 (0.161) runs <em>above</em> it &mdash; and the realised vol is upside-dominated (up/down semi-vol 1.93 over ten days) while the scanner sells only calls. Exactly one cell defends 0.15: RV30 with zero drift, at 0.167.</span></div>
+        </div>
+      </div>
+
+      <div class="entry key">
+        <span class="rail">9 Aug</span>
+        <span class="kicker">The instrument ships; the change it will judge deliberately does not<span class="chip c-done">r72</span></span>
+        <div class="body">
+          <p>
+            <code>real_world_pop()</code> lands, and nothing is scored on it. Every candidate now
+            carries <code>pop_real</code> and <code>premium_edge_measured</code> beside the applied
+            number, in the alert and in the database. <b><code>edge</code> is byte-for-byte
+            unchanged</b>, and a test recomputes it from its four documented terms to keep it that
+            way.
+          </p>
+          <p>
+            Folding the measurement straight in would have changed behaviour on five days of IV/RV
+            history and left nothing to compare against &mdash; the <code>confidence_gate</code>
+            mistake run in the other direction. This is the discipline
+            <code>trend_side_block = 0</code> shipped under on 2 August: land the instrument one
+            deploy ahead of the change it will judge.
+          </p>
+          <div class="check"><b>verified</b><span>replayed over 7 August's nine live suggestions the shipped helper reproduces the offline analysis exactly &mdash; mean measured &minus;0.0583 against applied &minus;0.0374, 1.56&times;. The write path was exercised against the live schema inside a rolled-back transaction, because the 5 August outage was invisible until the market opened.</span></div>
+        </div>
+      </div>
+
+      <div class="entry open">
+        <span class="rail">9 Aug</span>
+        <span class="kicker">Two items pulled back from the ship list, on the same evidence</span>
+        <div class="body">
+          <p>
+            <b>The RoR floor swap</b> was ready to ship as <code>ror &ge; d/(1&minus;d)</code>. That
+            <code>d</code> is the risk-neutral delta. Tested on 7 August's winners the rule passes 9
+            of 9 &mdash; identical to the flat floor it replaces, so a no-op &mdash; while the same
+            rule on the honest input passes <b>0 of 9</b>. Shipping it would cement the defective
+            probability into a filter one day after instrumenting it in the ranker. Deferred, and
+            rewritten to derive its floor from whatever POP the ranker uses.
+          </p>
+          <p>
+            <b>The 13 August source cut</b> lands three sessions into the premium series, on PPI day,
+            mid-flagged-week &mdash; a corpus change and a new measurement moving inside the same five
+            days. Recommended hold to 17 August, which is also when the put side reopens.
+          </p>
+        </div>
+      </div>
+
+      <div class="entry stop">
+        <span class="rail">9 Aug</span>
+        <span class="kicker">The event-risk window is correct for the scanner and wrong for the handoff<span class="chip c-open">blocks 21 Aug</span></span>
+        <div class="body">
+          <p>
+            <code>r70</code> set <code>event_risk_window_days = 4</code> to equal
+            <code>paper_hold_days</code> &mdash; a release the scanner's own position sits through.
+            The joint roadmap specifies Sopana's veto as blocking entries when a high-impact print
+            lands inside <em>the DTE window</em>, and Sopana is a 25-DTE strategy. <b>A 4-day flag
+            cannot answer a 25-day question.</b>
+          </p>
+          <p>
+            Same defect <code>r70</code> fixed, mirrored: a window hard-coded to one consumer's
+            holding period and then read by another. Recorded here because it is one of the two
+            places this document is scoped to note &mdash; where the scanner hands something across.
+          </p>
+          <div class="check"><b>fix</b><span>export the event horizon &mdash; next high-impact release date and days to it &mdash; rather than a boolean verdict, and let each consumer apply its own window. On the critical path for 21 August in a way none of the pricing items are.</span></div>
+        </div>
+      </div>
+    </div>
   </section>
 
   <!-- ==================================================== forward ======= -->
@@ -1427,10 +1610,18 @@
         <div class="body">
           <p>
             The scanner writes one row per cycle to a shared Postgres table:
-            <code>downside_risk</code>, <code>upside_risk</code>, an <code>event_risk</code> flag for
-            a high-impact print inside the DTE window, and <code>as_of</code> so a stale row can be
-            rejected. No RPC and no coupling beyond a shared read &mdash; either system keeps running
-            if the other stops.
+            <code>downside_risk</code>, <code>upside_risk</code>, the next high-impact release and
+            its distance in days, and <code>as_of</code> so a stale row can be rejected. No RPC and
+            no coupling beyond a shared read &mdash; either system keeps running if the other stops.
+          </p>
+          <p>
+            <b>Revised 9 Aug: publish the event horizon, not the verdict.</b> This entry originally
+            said &ldquo;an <code>event_risk</code> flag for a high-impact print inside the DTE
+            window&rdquo;. Since <code>r70</code> the flag runs on a 4-day window matching
+            <code>paper_hold_days</code>, and Sopana holds for 25 &mdash; so the boolean now answers
+            the scanner's question, not the consumer's, and would under-fire on exactly the events
+            the veto exists to catch. Exporting the date and the distance lets each side apply its
+            own window and removes the class of bug rather than this instance.
           </p>
           <p>
             This is the scanner&rsquo;s entire contribution to the combined system, and it is what the
@@ -1651,21 +1842,124 @@
         <tr><td class="num">08-05</td><td>New columns are <strong>nullable</strong>, never defaulted to 0</td><td>Rows written before the field existed are unmeasured, not zero; a default makes them indistinguishable from a measured 0.0. Same rule as <code>item_scores.risk</code> on 08-04</td></tr>
         <tr><td class="num">08-05</td><td><strong>Do not deploy after the close</strong> and read the overnight cycles as evidence</td><td>Outside RTH <code>run_once</code> returns before the write, so 20 green cycles exercised everything except the branch that was broken</td></tr>
         <tr><td class="num">08-05</td><td>Retries stay at 2 attempts</td><td>They rescued the hung-API cycle on 08-04. A schema bug is simply the case where retrying cannot help, and capping them would trade a real rescue for a bounded waste</td></tr>
+        <tr><td class="num">08-07</td><td><strong>The delta cap was the binding half</strong> of the put-side question</td><td>First unflagged session put 19&ndash;38 put verticals into the ranking, on all 9 cycles. None won, so the cap suppressed the put side and the skew beats it on merit &mdash; both halves settled, same direction</td></tr>
+        <tr><td class="num">08-09</td><td><strong><code>premium_weight</code> stays 0.15</strong> &mdash; measured, not endorsed</td><td>The derived weight is 0.235 (median of 25), so 0.15 under-penalises by ~1.5&times;. Not raised, because across a vol-window &times; drift grid the implied weight ranges 0.17&ndash;1.84 and changes sign &mdash; the shape is wrong, so no constant is right</td></tr>
+        <tr><td class="num">08-09</td><td><code>pop_real</code> / <code>premium_edge_measured</code> are <strong>recorded and not scored</strong></td><td><code>edge</code> unchanged byte-for-byte, pinned by a test that recomputes it from its four terms. Folding the measurement in would change behaviour on five days of IV/RV history &mdash; the <code>confidence_gate</code> failure inverted. Same rule as <code>trend_side_block</code> on 08-02</td></tr>
+        <tr><td class="num">08-09</td><td><strong>Defer the RoR floor swap</strong>; derive its floor from the ranker&rsquo;s POP</td><td><code>ror &ge; d/(1&minus;d)</code> on risk-neutral <code>d</code> passes 9 of 9 winners &mdash; a no-op &mdash; and 0 of 9 on the honest input. Shipping it would cement the defective probability into a filter one day after instrumenting it</td></tr>
+        <tr><td class="num">08-09</td><td><strong>Export the event horizon, not an <code>event_risk</code> boolean</strong></td><td>The 4-day window equals <code>paper_hold_days</code> and is right for the scanner; Sopana holds 25 days and would under-fire on the events the veto exists to catch</td></tr>
+        <tr><td class="num">08-09</td><td><strong>Track A and Track B are separately gated</strong></td><td>Sopana consumes tail estimates and event timing as a veto, none of which touches the pricing filters. The handoff is blocked by Gate 8 and never was blocked by the signal arm</td></tr>
       </tbody>
     </table></div>
 
     <div class="note stop">
       <p>
-        <strong>Nothing here is evidence of edge.</strong> The signal arm has never opened a position,
-        the baseline arm has never closed one, and no realised P&amp;L exists. Every number in this
+        <strong>Nothing here is evidence of edge.</strong> The signal arm has never opened a position
+        and there are four baseline closes, one of them on the rule as written. Every number in this
         document is an input to a decision, not a result.
+      </p>
+    </div>
+  </section>
+
+  <!-- ================================================ stability ========= -->
+  <section>
+    <div class="sec-head">
+      <h2>When is this finished?</h2>
+      <span class="sec-note">added 9 Aug 2026</span>
+    </div>
+
+    <p class="lede">
+      Fifteen days of this log read as an unbroken sequence of defects, each fix revealing the next
+      binding constraint. That pattern has an end, but only once you separate the two things the
+      scanner produces &mdash; because they are not close to the same maturity and only one of them
+      is on the critical path.
+    </p>
+
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th>&nbsp;</th><th>Track A &mdash; the hazard signal</th><th>Track B &mdash; the tradeable spread</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><b>What it is</b></td>
+            <td>per-side tail estimates and event timing, consumed by Sopana as a <b>veto only</b></td>
+            <td>a ranked, priced credit spread the signal arm can open</td>
+          </tr>
+          <tr>
+            <td><b>Depends on</b></td>
+            <td>collectors, scorer, synthesis, econ calendar, uptime</td>
+            <td>all of Track A, <em>plus</em> delta band, buffer, RoR floor, POP, liquidity, edge score</td>
+          </tr>
+          <tr>
+            <td><b>Failure mode</b></td>
+            <td>fewer Sopana trades. A veto can only subtract.</td>
+            <td>a book of negative-EV trades</td>
+          </tr>
+          <tr>
+            <td><b>Blocked by</b></td>
+            <td class="num">Gate 8 &mdash; 10 clean trading days. <b>2 / 10</b>, running from 6 Aug.</td>
+            <td class="num">a measurement that says these trades should not be taken</td>
+          </tr>
+          <tr>
+            <td><b>Ready</b></td>
+            <td class="now">~19 Aug, then shadow-logged from 21 Aug</td>
+            <td class="was">not date-bound</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="note good">
+      <p>
+        <strong>Track A can be called stable on three conditions, none of which needs a single signal
+        trade.</strong>
+      </p>
+      <ul>
+        <li><b>Gate 8 closes.</b> Ten consecutive clean trading days. Two are banked; ~19 August if
+          nothing aborts. This is the only date-bound item in the whole project.</li>
+        <li><b>The tail gate is observed <em>firing</em>.</b> It is 0-for-61 on blocking either side.
+          A gate that has never said no is unvalidated in the direction that matters, and the veto is
+          built entirely out of it. Until it refuses something, &ldquo;correctly permissive&rdquo; and
+          &ldquo;wired to always pass&rdquo; are indistinguishable &mdash; the identical confusion
+          that hid <code>confidence_gate</code> for a fortnight and <code>event_risk</code> for the
+          life of the function.</li>
+        <li><b>Event timing is exported as a horizon, not a verdict.</b> Open, cheap, and on the
+          critical path for 21 August.</li>
+      </ul>
+    </div>
+
+    <div class="note warn">
+      <p>
+        <strong>Track B has no completion date, and 9 August is the first day that looked like an
+        answer rather than a delay.</strong> The honest reading of the premium measurement is that
+        the trades on offer in this regime are not worth taking &mdash; 23 of 25 negative-EV once POP
+        stops being borrowed from the option&rsquo;s own price. If that survives contact with a
+        richer regime, the signal arm is not broken and never was; it is a strategy correctly
+        declining a bad tape, and it will open positions when IV/RV crosses 1 and stays there.
+      </p>
+      <p>
+        The standing instruction is therefore unchanged and now has arithmetic behind it rather than
+        caution: <b>do not lower <code>min_edge_score</code>, and do not raise
+        <code>premium_weight</code>, to manufacture a treatment group.</b> The one thing that would
+        genuinely change the picture is a measured POP, and that is accumulating from
+        <code>r72</code> onward.
+      </p>
+    </div>
+
+    <div class="note stop">
+      <p>
+        <strong>What would mean it is not stable, and is worth naming in advance.</strong> Track A
+        breaks if a cycle is lost (the clock resets), if the tail estimates go constant, or if the
+        econ calendar goes stale without saying so &mdash; the failure mode with no alarm, and the
+        one that has already happened twice under different names. None of those are Track B
+        problems, and none of them are fixed by anything on the watch list.
       </p>
     </div>
   </section>
 
   <footer>
     <span>Scanner-only record &middot; split out 2026-08-04</span>
-    <span>System <code>spx-scanner-zip</code> &middot; build <code>r61-g135419c</code></span>
+    <span>System <code>spx-scanner-zip</code> &middot; build <code>r72-g50554ba</code></span>
     <span>Companions: operational tracker, pipeline flow, combined roadmap</span>
     <span>Educational research only &mdash; not financial advice</span>
   </footer>

@@ -145,21 +145,22 @@
     <div class="eyebrow">SPX Scanner &middot; pipeline</div>
     <h1>What happens to a headline between arriving and not being traded</h1>
     <p class="sub">
-      Seven stages, live numbers from 4 August, evening. Every stage shows what goes in and what
-      comes out. The pipeline is still a funnel ending in zero &mdash; but the stage that stopped it
-      was reordered on 4 August, so the block has moved from &ldquo;the gate refuses to ask&rdquo; to
-      &ldquo;the pricing filters have never been tested&rdquo;. Nothing has traded yet either way.
+      Seven stages, live numbers from 7 August, close. Every stage shows what goes in and what
+      comes out. The funnel now reaches its last filter &mdash; on 7 August every cycle produced a
+      candidate, where 11 of the previous 190 had. It still ends in zero, and as of 9 August there is
+      an arithmetic argument that it <em>should</em>: repricing POP on realised vol makes almost every
+      candidate the scanner has ever built negative-EV.
     </p>
   </header>
 
   <div class="hint"><b>Click any stage</b> to open it. Numbers are real, measured, not illustrative.</div>
 
   <dl class="funnel">
-    <div class="fq"><dt>Items held</dt><dd>8,277</dd></div>
-    <div class="fq"><dt>Scored/day</dt><dd>~700</dd></div>
+    <div class="fq"><dt>Items held</dt><dd>18,414</dd></div>
+    <div class="fq"><dt>Scored/day</dt><dd>~1,090</dd></div>
     <div class="fq"><dt>Stories sent</dt><dd>40</dd></div>
     <div class="fq"><dt>Predictions</dt><dd>1 / cycle</dd></div>
-    <div class="fq"><dt>Candidates</dt><dd class="zero">0</dd></div>
+    <div class="fq"><dt>Candidates, 7 Aug</dt><dd>9 / 9</dd></div>
     <div class="fq"><dt>Trades</dt><dd class="zero">0 ever</dd></div>
   </dl>
 
@@ -199,8 +200,11 @@
           eight threads do concurrent HTTPS. Suspect is <code>psycopg2-binary</code>'s bundled
           OpenSSL beside Python's own.</div>
         <div class="flag warn"><b>Scheduled to shrink.</b> 199 hand-labelled items found social and
-          YouTube produce <b>one</b> actionable item in 107. Both are cut on 13 Aug &mdash; 79% less
-          scoring volume, and precision rises from 44% to 57%.</div>
+          YouTube produce <b>one</b> actionable item in 107. Cutting both drops scoring volume 79%
+          and lifts precision from 44% to 57%. <b>Recommended 9 Aug: hold the 13 Aug date to 17
+          Aug</b> &mdash; the 13th lands three sessions into the new premium series and on PPI day,
+          moving the corpus and a fresh measurement inside the same five days. The 17th is also when
+          the put side reopens.</div>
       </div>
     </div>
 
@@ -295,26 +299,33 @@
         <span class="name">Measure the regime</span>
         <span class="chip c-new">new 2 Aug</span>
         <span class="caret">&rsaquo;</span>
-        <span class="io"><b>today</b> IV/RV 0.93 <span>&middot;</span> VIX/VIX3M 0.850
-          <span>&middot;</span> trend +0.35</span>
+        <span class="io"><b>7 Aug</b> IV/RV 0.746 <span>&middot;</span> VIX/VIX3M 0.799
+          <span>&middot;</span> trend +1.00</span>
         <span class="bar"><i style="width:70%"></i></span>
       </button>
       <div class="detail" id="d4">
         <h4>The questions a theta strategy actually turns on</h4>
         <dl class="kv">
           <dt>IV / RV</dt><dd>ATM implied against 20-day realised. Above 1 the market charges more
-            for a move than the index has delivered. <b>Today 0.93 &mdash; below 1</b>.</dd>
+            for a move than the index has delivered. <b>7 Aug: 0.738&ndash;0.762</b>, and falling all
+            week from 0.844 on the 3rd.</dd>
           <dt>VIX / VIX3M</dt><dd>Above 1 is backwardation, historically a poor regime for selling
-            premium. Today 0.850 &mdash; healthy contango.</dd>
+            premium. 0.799 &mdash; healthy contango.</dd>
           <dt>IV rank</dt><dd>Where today sits in its own trailing range. Needs ~20 daily readings;
             first reading banked 3 Aug.</dd>
-          <dt>trend</dt><dd>5-day move, saturating at 3%. Used to pick a <i>side</i>, never to
-            predict. Currently disabled.</dd>
+          <dt>trend</dt><dd>5-day move, saturating at 3%. <b>Saturated at +1.00 all session.</b> Used
+            to pick a <i>side</i>, never to predict. Currently disabled.</dd>
         </dl>
-        <div class="flag warn"><b>Day-one reading is already useful.</b> IV/RV at 0.93 means options
-          are pricing <i>less</i> movement than SPX has actually delivered &mdash; selling insurance
-          below the recent claim rate. That is the seller's edge running backwards, and there was no
-          way to see it before 2 Aug.</div>
+        <div class="flag"><b>This stage is now the one doing the stopping.</b> IV/RV below 1 means
+          options price <i>less</i> movement than SPX has delivered &mdash; selling insurance below
+          the recent claim rate, the seller's edge running backwards. At 0.746 the
+          <code>premium_edge</code> term costs 0.038 of a 0.05 gate. Remove it alone and all nine of
+          7 August's candidates clear.</div>
+        <div class="flag warn"><b>The realised vol is upside vol, which is the worst pairing.</b>
+          Up/down semi-vol ran <b>1.93 over ten days</b> and RV10 (0.161) sits <i>above</i> RV20
+          (0.144), so this is a melt-up rather than a stale shock &mdash; and stage 06 sells call
+          spreads exclusively. The index is moving hard in precisely the direction the position is
+          short.</div>
       </div>
     </div>
 
@@ -347,53 +358,57 @@
       </div>
     </div>
 
-    <div class="link"><i></i><span>&#9660; reopened 4 Aug &mdash; the condor path no longer stops here &#9660;</span><i></i></div>
+    <div class="link"><i></i><span>&#9660; 7 Aug &mdash; the first cycles ever to reach the last filter &#9660;</span><i></i></div>
 
     <!-- 6 -->
-    <div class="node" id="n6">
+    <div class="node new" id="n6">
       <button class="nbtn" aria-expanded="false" aria-controls="d6">
         <span class="num">06</span>
         <span class="name">Gate the trade</span>
-        <span class="chip c-ok">reordered 4 Aug</span>
+        <span class="chip c-new">opened 7 Aug</span>
         <span class="caret">&rsaquo;</span>
-        <span class="io"><b>in</b> 1 prediction <span>&rarr;</span> <b>out</b> 0 candidates to date
-          &mdash; the condor path is now reached but untested</span>
-        <span class="bar"><i style="width:50%"></i></span>
+        <span class="io"><b>in</b> 1 prediction <span>&rarr;</span> <b>out</b> 1 candidate on 9 of 9
+          cycles &mdash; all call spreads, none clearing the edge threshold</span>
+        <span class="bar"><i style="width:85%"></i></span>
       </button>
       <div class="detail" id="d6">
         <h4>Reordered 4 August &mdash; tails first, direction scoped to the vertical</h4>
         <dl class="kv">
-          <dt>1. tails</dt><dd><code>_sides_allowed()</code> &mdash; the real gate. <b>0 of 37
+          <dt>1. tails</dt><dd><code>_sides_allowed()</code> &mdash; the real gate. <b>0 of 61
             cycles</b> blocked; both tails have stayed inside the 55% cap throughout.</dd>
           <dt>2. build</dt><dd>verticals are <b>always constructed</b>, because a condor is
-            assembled from one of each</dd>
+            assembled from one of each. <b>7 Aug: 144&ndash;165 per cycle, 19&ndash;38 of them
+            puts</b></dd>
           <dt>3. offer verticals</dt><dd>only when <code>confidence &ge; 0.40</code> &mdash; the
             directional trade, gated on a directional question</dd>
           <dt>4. offer condor</dt><dd>whenever both tails are quiet, <b>regardless of
             confidence</b></dd>
-          <dt>5. price</dt><dd><code>min_edge_score</code>, POP, RoR, liquidity &mdash; now the
-            binding constraints, and untested</dd>
+          <dt>5. price</dt><dd><code>min_edge_score</code>, POP, RoR, liquidity &mdash; <b>the
+            binding constraint, and now tested</b></dd>
         </dl>
-        <div class="flag good"><b>The contradiction is resolved.</b> The iron condor is the
-          instrument for &ldquo;no directional view, both tails quiet&rdquo;, and the gate that ran
-          first used to reject it for having no directional view. A vertical is short one tail and
-          long a view, so uncertainty disqualifies it; a condor is short both tails and holds no
-          view, so the same uncertainty is its precondition.</div>
-        <div class="flag"><b>The unanswerable question is still unanswerable &mdash; it just no
-          longer blocks everything.</b> 188 of 199 labelled items carry no directional sign, so the
-          gate asks how sure the model is of a direction the inputs do not contain. That is now
-          scoped to the trade that actually needs a direction, rather than standing in front of the
-          one that does not.</div>
-        <div class="flag warn"><b>Not yet observed.</b> All nine cycles of 4 August would have
-          reached the condor path under this ordering, where none did before. Whether a condor then
-          <em>prices</em> through the delta, POP, RoR and liquidity filters has never once been
-          tested. First chance: 5 August, 06:55 PDT.</div>
-        <p>Fix: move the directional check so it filters verticals only, leaving condors to the tail
-          gate, the edge threshold and the new premium-richness terms.</p>
+        <div class="flag good"><b>The stage finally ran end to end.</b> On 7 August
+          <code>event_risk</code> was false for the first time in the function's life, so the delta
+          cap ran at 0.30 instead of 0.20. Every one of nine cycles produced a candidate, against 11
+          of the previous 190 &mdash; and put verticals reached the ranking on all nine, a line that
+          had never once appeared.</div>
+        <div class="flag"><b>Every candidate was a call spread, against a model reading UP.</b> 27 of
+          27 all time. The put side is no longer filtered out before it competes; it competes and
+          loses, because put skew flattens the OTM price curve so a fixed-width put spread collects
+          less per point of width.</div>
+        <div class="flag warn"><b>What stops it now is the edge score, and one term inside it.</b>
+          Best edge 0.013&ndash;0.031 against 0.05. Decomposed: <code>ev_ratio</code> +0.028, buffer
+          +0.047, alignment &minus;0.017, <code>premium_edge</code> <b>&minus;0.038</b>. That last
+          term alone is the difference between nine trades and none &mdash; and on 9 August it was
+          measured at roughly <b>1.5&times; too small</b>, not too large.</div>
+        <div class="flag good"><b>Instrumented 9 Aug, deliberately inert.</b> Each candidate now
+          carries <code>pop_real</code> and <code>premium_edge_measured</code> &mdash; POP repriced
+          on realised vol at that strike and DTE. Neither touches <code>edge</code>. On this
+          measurement <b>23 of the 25 candidates ever produced are negative-EV</b>, which makes this
+          stage's refusal the correct answer rather than a blockage.</div>
       </div>
     </div>
 
-    <div class="link dead"><i></i><span>nothing has ever reached here</span><i></i></div>
+    <div class="link dead"><i></i><span>the signal arm has still never reached here</span><i></i></div>
 
     <!-- 7 -->
     <div class="node blocked" id="n7">
@@ -403,7 +418,7 @@
         <span class="chip c-stop">0 signal trades</span>
         <span class="caret">&rsaquo;</span>
         <span class="io"><b>signal arm</b> 0 ever <span>&middot;</span> <b>baseline arm</b> 1/day,
-          5 open, 0 closed</span>
+          4 open, 4 closed, +$1.55</span>
         <span class="bar"><i style="width:8%"></i></span>
       </button>
       <div class="detail" id="d7">
@@ -426,18 +441,23 @@
         <div class="flag warn"><b>The arms are not comparable.</b> Baseline sells 5-wide at 9%
           credit-to-width with no pricing floor; the signal arm would sell 25-wide requiring
           &ge;20%. A P&amp;L difference between them would not isolate the sentiment gate.</div>
-        <div class="flag"><b>No realised P&amp;L exists.</b> Five baseline positions open, zero
-          closed, in eight days. Three are past their hold and should close on the first in-session
-          cycle after the fix &mdash; the first realised numbers this project will have produced.
-          Everything in this pipeline is still an input to a decision, not a result.</div>
+        <div class="flag good"><b>Realised P&amp;L exists, and one number in it is trustworthy.</b>
+          Four baseline closes, +$1.55 total, 4 of 4 winners. But positions 1&ndash;3 ran 7.7, 6.0 and
+          5.0 days against a 4-day rule, because they were unmarkable until 4 Aug and collected theta
+          the rule does not grant. <b>Position 4 closed on 7 Aug at exactly 4.0 days for +$0.30</b>
+          &mdash; the first clean close, and the only honest per-position figure the project has.</div>
+        <div class="flag"><b>A 4/4 win rate is what the structure should produce, not evidence.</b>
+          A 0.15-delta credit spread wins roughly 85% of the time by construction. This book wins
+          often and loses large by design, so expectancy decides it, not win rate &mdash; and four
+          positions in one rising, low-volatility regime is not a sample.</div>
       </div>
     </div>
 
   </div>
 
   <footer>
-    <span>Live figures 3 Aug 2026</span>
-    <span>Build <code>r46-g19128a5</code></span>
+    <span>Live figures 7 Aug 2026, close</span>
+    <span>Build <code>r72-g50554ba</code></span>
     <span>Source <code>docs/scanner-flow.html</code></span>
     <span>Educational research only &mdash; not financial advice</span>
   </footer>
