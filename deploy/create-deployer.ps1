@@ -29,9 +29,17 @@ Assert-Tooling
 $account = Get-AwsAccount
 $policyArn = "arn:aws:iam::$account`:policy/$PolicyName"
 
+# Both functions, not just $FuncName. The ZIP function is the one EventBridge
+# invokes and the one every deploy script targets by default; granting only
+# $FuncName leaves this user able to administer the dead container and nothing
+# else. That went unnoticed because the live policy had a hand-added statement
+# covering Lambda broadly -- regenerating from this script removed it and took
+# spx-scanner-zip with it.
 $funcArn  = "arn:aws:lambda:$Region`:$account`:function:$FuncName"
+$zipArn   = "arn:aws:lambda:$Region`:$account`:function:$ZipFuncName"
 $repoArn  = "arn:aws:ecr:$Region`:$account`:repository/$RepoName"
 $logArn   = "arn:aws:logs:$Region`:$account`:log-group:$LogGroup"
+$zipLogArn = "arn:aws:logs:$Region`:$account`:log-group:$ZipLogGroup"
 $topicArn = "arn:aws:sns:$Region`:$account`:$FuncName-alerts"
 $schedArn = "arn:aws:scheduler:$Region`:$account`:schedule/default/$FuncName-*"
 $roleArn  = "arn:aws:iam::$account`:role/spx-*"
@@ -64,7 +72,7 @@ $policy = @{
                 'lambda:GetFunctionConfiguration', 'lambda:PutFunctionConcurrency',
                 'lambda:DeleteFunctionConcurrency', 'lambda:InvokeFunction'
             )
-            Resource = $funcArn
+            Resource = @($funcArn, $zipArn)
         },
         @{ Effect = 'Allow'; Action = @('lambda:GetAccountSettings', 'sts:GetCallerIdentity'); Resource = '*' },
 
@@ -115,7 +123,11 @@ $policy = @{
             Effect = 'Allow'
             Action = @('logs:PutRetentionPolicy', 'logs:FilterLogEvents',
                        'logs:GetLogEvents', 'logs:DescribeLogStreams')
-            Resource = @($logArn, "$logArn`:*")
+            # The ':*' forms match the log STREAMS inside each group; the bare ARN
+            # matches the group itself, and different calls are evaluated against
+            # different ones. The zip function logs to its own group, so reading
+            # the logs of the function that actually runs needs all four.
+            Resource = @($logArn, "$logArn`:*", $zipLogArn, "$zipLogArn`:*")
         },
         # Describe/live-tail are list-style calls AWS only evaluates against '*'.
         @{ Effect = 'Allow'; Action = @('logs:DescribeLogGroups', 'logs:StartLiveTail'); Resource = '*' },

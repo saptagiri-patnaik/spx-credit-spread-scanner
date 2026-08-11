@@ -42,6 +42,17 @@ $SchedPrefix = 'spx-scanner-grid'     # cron schedules: $SchedPrefix-1, -2, -3
 $SchedRoleName = 'spx-scheduler-role'
 $LogGroup = "/aws/lambda/$FuncName"
 
+# The ZIP function is the one EventBridge actually invokes; $FuncName still names
+# the container it replaced, and both exist. Anything that grants access by ARN
+# has to cover BOTH -- scoping to $FuncName alone silently revokes access to the
+# only function that runs, and every deploy script then fails with AccessDenied
+# against a function the policy never mentioned.
+#
+# build-zip.ps1, sync-env.ps1 and invoke.ps1 each mirror this as a -TargetFuncName
+# default rather than reading it from here; that predates this variable.
+$ZipFuncName = 'spx-scanner-zip'
+$ZipLogGroup = "/aws/lambda/$ZipFuncName"
+
 # One secret holding a JSON object of every credential. One secret, not one per
 # key: Secrets Manager bills $0.40 per secret per month and does not care how many
 # keys are inside, so thirteen separate secrets would be $5.20/month for nothing.
