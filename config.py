@@ -381,6 +381,45 @@ class Settings(BaseSettings):
     # is the point -- see anthropic_timeout_seconds.
     synthesis_timeout_seconds: float = 120.0
 
+    # --- Calibration (fits the stated numbers to what actually happened) ---
+    # "off"     do not settle outcomes and do not fit. Nothing is recorded.
+    # "shadow"  settle, fit, log and store -- but the strategy still sees the
+    #           model's raw numbers. The correction is measured, not applied.
+    # "apply"   the strategy sees corrected direction and tails, once a fit
+    #           clears calibration_min_neff. Below that floor "apply" behaves
+    #           exactly as "shadow" does.
+    #
+    # Ships in shadow for the reason trend_side_block ships at 0 and
+    # premium_edge_measured ships unscored: landing a behaviour change in the
+    # same deploy as the instrument meant to judge it leaves no before-picture.
+    # The correction has to be watchable as a series first.
+    calibration_mode: str = "shadow"
+    # Independent observations required before a fit may change anything. The
+    # count that matters is the deflated one -- 87 windows sampled 45 minutes
+    # apart over 14 days are worth about 3 -- so this is a bar on evidence, not
+    # on rows. At 8 it wants roughly a month of trading days at a 4-day window.
+    calibration_min_neff: float = 8.0
+    # How many observations of belief the shipped priors are worth. A fit backed
+    # by n_eff observations moves a parameter n_eff/(n_eff + strength) of the way
+    # from the prior to what it measured; at 10, three effective windows move it
+    # about a quarter of the way.
+    calibration_prior_strength: float = 10.0
+    # Hard bounds on a tail correction, either direction, however much data
+    # arrives. A calibrator that can halve a tail estimate is one bad settlement
+    # pass away from selling a tail the model correctly flagged.
+    calibration_max_factor: float = 2.0
+    # How far a single refit may move any parameter from the last banked one.
+    # Refits run every cycle on a growing series; no one of them is a verdict.
+    calibration_max_step: float = 0.25
+    # Width of the interval the tail rule is judged against. 1.96 is 95%.
+    calibration_confidence_z: float = 1.96
+    # Longest unobserved stretch a scored window may contain. The price series
+    # is only as dense as the cycles that ran with a live token, and an
+    # unobserved breach settles as "no breach" -- which biases every tail
+    # downward, the unsafe direction. 96h admits a normal weekend and rejects an
+    # outage.
+    calibration_max_gap_hours: float = 96.0
+
     # --- Paper trading (measures whether the suggestions actually pay) ---
     paper_trading_enabled: bool = True
     paper_hold_days: float = 4.0      # close on time after this many days (3-5 typical)
