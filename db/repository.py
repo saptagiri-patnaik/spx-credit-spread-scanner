@@ -12,11 +12,13 @@ from sqlalchemy.orm import Session, sessionmaker
 from .models import (
     ApiUsage,
     Base,
+    CalibrationFit,
     CollectorState,
     Item,
     ItemScore,
     PaperPosition,
     Prediction,
+    PredictionOutcome,
     SpreadSuggestion,
 )
 
@@ -182,6 +184,94 @@ class Repository:
                     .order_by(PaperPosition.closed_at)
                 )
             )
+
+    # --- outcomes + calibration --------------------------------------------
+    def all_predictions(self) -> list[Prediction]:
+        """Every prediction, oldest first. The price series is derived from these.
+
+        Deliberately unpaginated: settlement needs the whole series to find each
+        window's extremes, and at ~30 rows a day this stays small for years.
+        """
+        with self.session() as s:
+            rows = list(
+                s.scalars(select(Prediction).order_by(Prediction.created_at))
+            )
+            s.expunge_all()
+            return rows
+
+    def settled_prediction_ids(self) -> set[int]:
+        with self.session() as s:
+            return set(s.scalars(select(PredictionOutcome.prediction_id)))
+
+    def save_outcomes(self, rows: list[dict]) -> int:
+        """Insert settled outcomes, ignoring any prediction already settled.
+
+        An outcome is a statement about elapsed time and must never be rewritten:
+        `on_conflict_do_nothing` rather than an upsert, so a bug in a later
+        settlement pass cannot silently restate history that a fit has already
+        been trained on.
+        """
+        if not rows:
+            return 0
+        with self.session() as s:
+            result = s.execute(
+                pg_insert(PredictionOutcome)
+                .values(rows)
+                .on_conflict_do_nothing(index_elements=["prediction_id"])
+                .returning(PredictionOutcome.id)
+            )
+            return len(result.all())
+
+    def outcomes(self) -> list[dict]:
+        """Settled outcomes as plain dicts, oldest first -- what a fit reads."""
+        with self.session() as s:
+            rows = list(
+                s.scalars(select(PredictionOutcome).order_by(PredictionOutcome.predicted_at))
+            )
+            return [
+                {
+                    "prediction_id": r.prediction_id,
+                    "predicted_at": r.predicted_at,
+                    "label": r.label,
+                    "stated_direction": r.stated_direction,
+                    "stated_confidence": r.stated_confidence,
+                    "stated_downside": r.stated_downside,
+                    "stated_upside": r.stated_upside,
+                    "entry_price": r.entry_price,
+                    "expected_move": r.expected_move,
+                    "down_excursion": r.down_excursion,
+                    "up_excursion": r.up_excursion,
+                    "down_breach": r.down_breach,
+                    "up_breach": r.up_breach,
+                    "observations": r.observations,
+                    "max_gap_hours": r.max_gap_hours,
+                    "forward_return": r.forward_return,
+                    "hit": r.hit,
+                }
+                for r in rows
+            ]
+
+    def latest_calibration(self) -> dict | None:
+        with self.session() as s:
+            row = s.scalars(
+                select(CalibrationFit).order_by(CalibrationFit.fitted_at.desc()).limit(1)
+            ).first()
+            return dict(row.params) if row else None
+
+    def save_calibration(self, params: dict, mode: str, active: bool) -> int:
+        with self.session() as s:
+            row = CalibrationFit(
+                mode=mode,
+                version=int(params.get("version", 1)),
+                n=int(params.get("n", 0)),
+                n_eff=float(params.get("n_eff", 0.0)),
+                active=active,
+                params=params,
+                diagnostics=params.get("confidence"),
+            )
+            s.add(row)
+            s.flush()
+            return row.id
 
     # --- budget-guarded API usage + collector cursors ----------------------
     def daily_usage(self, provider: str, day: dt.date) -> int:

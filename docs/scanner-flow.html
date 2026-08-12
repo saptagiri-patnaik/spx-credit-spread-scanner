@@ -145,11 +145,12 @@
     <div class="eyebrow">SPX Scanner &middot; pipeline</div>
     <h1>What happens to a headline between arriving and not being traded</h1>
     <p class="sub">
-      Seven stages, live numbers from 7 August, close. Every stage shows what goes in and what
+      Eight stages, live numbers from 7 August, close. Every stage shows what goes in and what
       comes out. The funnel now reaches its last filter &mdash; on 7 August every cycle produced a
       candidate, where 11 of the previous 190 had. It still ends in zero, and as of 9 August there is
       an arithmetic argument that it <em>should</em>: repricing POP on realised vol makes almost every
-      candidate the scanner has ever built negative-EV.
+      candidate the scanner has ever built negative-EV. Stage 06, added 11 August, is the first that
+      reads back what actually happened &mdash; and the first that can tell you the model was wrong.
     </p>
   </header>
 
@@ -161,6 +162,7 @@
     <div class="fq"><dt>Stories sent</dt><dd>40</dd></div>
     <div class="fq"><dt>Predictions</dt><dd>1 / cycle</dd></div>
     <div class="fq"><dt>Candidates, 7 Aug</dt><dd>9 / 9</dd></div>
+    <div class="fq"><dt>Outcomes settled</dt><dd>25</dd></div>
     <div class="fq"><dt>Trades</dt><dd class="zero">0 ever</dd></div>
   </dl>
 
@@ -358,12 +360,68 @@
       </div>
     </div>
 
-    <div class="link"><i></i><span>&#9660; 7 Aug &mdash; the first cycles ever to reach the last filter &#9660;</span><i></i></div>
+    <div class="link"><i></i><span>4 numbers + the market context</span><i></i></div>
 
     <!-- 6 -->
     <div class="node new" id="n6">
       <button class="nbtn" aria-expanded="false" aria-controls="d6">
         <span class="num">06</span>
+        <span class="name">Calibrate against outcomes</span>
+        <span class="chip c-new">new 11 Aug &middot; shadow</span>
+        <span class="caret">&rsaquo;</span>
+        <span class="io"><b>in</b> 25 settled outcomes <span>&rarr;</span> <b>out</b> 4 correction
+          factors, all at identity <span>&middot;</span> n_eff 1.0 of 8 needed</span>
+        <span class="bar"><i style="width:12%"></i></span>
+      </button>
+      <div class="detail" id="d6">
+        <h4>The only stage that reads what happened last week</h4>
+        <p>Every prediction whose windows have elapsed is settled into
+          <code>prediction_outcomes</code> &mdash; written once, never revised &mdash; and a
+          correction is refitted from the whole series each cycle. Two claims, two windows:</p>
+        <dl class="kv">
+          <dt>tails</dt><dd>Largest excursion each way over <code>paper_hold_days</code>, in
+            <b>expected moves</b>. Past 1.0&nbsp;EM is a breach &mdash; the synthesis prompt&rsquo;s
+            own wording.</dd>
+          <dt>direction</dt><dd>Sign of the forward return over <code>horizon_days</code>.</dd>
+        </dl>
+        <p>No new data feed: the price series is the predictions themselves, each of which already
+          carried <code>market_context.price</code>.</p>
+
+        <h4>What it has measured so far</h4>
+        <dl class="kv">
+          <dt>downside</dt><dd>stated 0.35 &middot; <b>0 breaches in 43 windows</b> &middot; mean
+            excursion 0.05&nbsp;EM, max 0.28</dd>
+          <dt>upside</dt><dd>stated 0.22 &middot; 0 breaches &middot; mean <b>0.43&nbsp;EM</b>, max
+            0.98, five windows past 0.9</dd>
+          <dt>direction</dt><dd>42.9% hit rate against a 77% base rate</dd>
+          <dt>confidence</dt><dd>86% accurate below 0.45, <b>20% above it</b> &mdash; inverted</dd>
+        </dl>
+
+        <div class="flag"><b>It corrected nothing, on purpose.</b> 43 windows sampled 45 minutes
+          apart across 14 observed days is not 43 observations &mdash; at a 4-day window it deflates
+          to about <b>three</b>. With zero breaches in three effective windows the upper bound on
+          the true rate is still <b>0.79</b>, so a stated 0.35 sits comfortably inside it and stands.
+          Read <code>n_eff</code>, never the row count.</div>
+
+        <div class="flag warn"><b>Loosening is harder than tightening.</b> A correction may go to
+          the point estimate when raising a tail estimate, but only to the near edge of the interval
+          when lowering one. Understating a tail costs the account; overstating one costs a trade
+          &mdash; and a quiet fortnight is precisely the setup for the tail that a naive fit would
+          teach you to sell.</div>
+
+        <div class="flag warn"><b>Confidence is measured and never applied.</b> Inverted on two
+          independent samples. Flipping it with a factor would bury the finding, and
+          <code>confidence_gate</code> was placed at the 75th percentile of that number&rsquo;s raw
+          distribution &mdash; rescaling its input is the July gate failure one layer down.</div>
+      </div>
+    </div>
+
+    <div class="link"><i></i><span>&#9660; 7 Aug &mdash; the first cycles ever to reach the last filter &#9660;</span><i></i></div>
+
+    <!-- 7 -->
+    <div class="node new" id="n7">
+      <button class="nbtn" aria-expanded="false" aria-controls="d7">
+        <span class="num">07</span>
         <span class="name">Gate the trade</span>
         <span class="chip c-new">opened 7 Aug</span>
         <span class="caret">&rsaquo;</span>
@@ -371,7 +429,7 @@
           cycles &mdash; all call spreads, none clearing the edge threshold</span>
         <span class="bar"><i style="width:85%"></i></span>
       </button>
-      <div class="detail" id="d6">
+      <div class="detail" id="d7">
         <h4>Reordered 4 August &mdash; tails first, direction scoped to the vertical</h4>
         <dl class="kv">
           <dt>1. tails</dt><dd><code>_sides_allowed()</code> &mdash; the real gate. <b>0 of 61
@@ -410,10 +468,10 @@
 
     <div class="link dead"><i></i><span>the signal arm has still never reached here</span><i></i></div>
 
-    <!-- 7 -->
-    <div class="node blocked" id="n7">
-      <button class="nbtn" aria-expanded="false" aria-controls="d7">
-        <span class="num">07</span>
+    <!-- 8 -->
+    <div class="node blocked" id="n8">
+      <button class="nbtn" aria-expanded="false" aria-controls="d8">
+        <span class="num">08</span>
         <span class="name">Paper trade</span>
         <span class="chip c-stop">0 signal trades</span>
         <span class="caret">&rsaquo;</span>
@@ -421,7 +479,7 @@
           4 open, 4 closed, +$1.55</span>
         <span class="bar"><i style="width:8%"></i></span>
       </button>
-      <div class="detail" id="d7">
+      <div class="detail" id="d8">
         <h4>Two arms, only one of which trades</h4>
         <dl class="kv">
           <dt>signal</dt><dd>Trades only when all gates clear. Has never opened a position.</dd>

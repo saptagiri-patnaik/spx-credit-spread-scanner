@@ -239,9 +239,11 @@
     <h1>The scanner&rsquo;s own record: fifteen days from first commit to a funnel that finally reaches its last filter</h1>
     <p class="standfirst">
       Everything the fundamental half has shipped, decided and deferred, in date order, with what
-      closed each item. Current through 9 August 2026 at build <code>r72-g50554ba</code>.
-      The 7 August session opened the funnel and the 9 August measurement explained why it still
-      ends in zero &mdash; and, for the first time, argued that it <em>should</em>.
+      closed each item. Current through 11 August 2026; deployed build is still
+      <code>r72-g50554ba</code>, and the calibration layer below sits in the working tree behind it.
+      The 7 August session opened the funnel, the 9 August measurement explained why it still
+      ends in zero &mdash; and, for the first time, argued that it <em>should</em> &mdash; and the
+      11th gave the scanner the first record of whether any of it was right.
     </p>
   </header>
 
@@ -271,13 +273,15 @@
     <div><dt>Best edge, 7 Aug</dt><dd class="warn">0.013&ndash;0.031</dd></div>
     <div><dt>Positive-EV, honest POP</dt><dd class="no">0 / 9</dd></div>
     <div><dt>Clean-day clock</dt><dd class="warn">2 / 10, from 6 Aug</dd></div>
+    <div><dt>Settled outcomes</dt><dd class="warn">25 &middot; n_eff 1.0</dd></div>
+    <div><dt>Downside breaches</dt><dd class="ok">0 / 43 windows</dd></div>
   </dl>
 
   <!-- ================================================ where it stands === -->
   <section>
     <div class="sec-head">
       <h2>Where it stands</h2>
-      <span class="sec-note">9 Aug 2026</span>
+      <span class="sec-note">11 Aug 2026</span>
     </div>
 
     <p class="lede">
@@ -337,6 +341,24 @@
         call spread, against a model that said UP eight times.</strong> Both tails were open and the
         ranking favoured puts, so the put side is being filtered out before it can compete. That is
         an open question, not a finding, and <code>r67</code> ships the counters to settle it.
+      </p>
+    </div>
+
+    <div class="note">
+      <p>
+        <b>11 Aug &mdash; the scanner can now be wrong on the record.</b> Until this week nothing
+        stored whether a prediction was right; the data existed but only a report ever read it.
+        <code>prediction_outcomes</code> settles each matured prediction against what followed, and a
+        correction is refitted from that series every cycle.
+      </p>
+      <p>
+        <strong>The first thing it learned was to change nothing, and that is the finding.</strong>
+        Zero downside breaches in 43 windows against a stated 25&ndash;42% looks like a ten-fold
+        overstatement until the windows are counted honestly &mdash; 45 minutes apart across 14
+        observed days, they deflate to about three independent observations of one calm, rising,
+        contango regime, and the upper bound on the true breach rate is still 0.79. The stated value
+        sits inside that interval, so it stands. <b>The number to read on this layer is
+        <code>n_eff</code>, never the row count</b>, and it is currently 1.0 against a floor of 8.
       </p>
     </div>
 
@@ -1558,6 +1580,142 @@
         </div>
       </div>
     </div>
+
+    <!-- ---------------------------------------------------------------- -->
+    <div class="phase">
+      <span class="n">Phase 9</span>
+      <h3>The loop closes, and the first thing it learns is to do nothing &mdash; 11 August</h3>
+    </div>
+
+    <p class="lede">
+      Eighteen days of predictions, and until now nothing recorded whether any of them was right.
+      The settlement layer fixes that. The correction layer built on top of it then declined to
+      correct anything &mdash; which is the entry worth reading, because the naive reading of the
+      same data says to start selling puts.
+    </p>
+
+    <div class="log">
+      <div class="entry win">
+        <span class="rail">11 Aug</span>
+        <span class="kicker">Predictions now settle against what happened<span class="chip c-next">working tree, not deployed</span></span>
+        <div class="body">
+          <p>
+            <code>prediction_outcomes</code>: one row per matured prediction, written once and never
+            revised. Both windows the model makes claims over are scored, and they are deliberately
+            different windows.
+          </p>
+          <ul>
+            <li><b>Tails</b> over <code>paper_hold_days</code> &mdash; the days a position is
+              actually exposed, not the DTE it never sees the end of. Largest excursion each way,
+              denominated in <em>expected moves</em>, with anything past 1.0&nbsp;EM a breach. That
+              threshold is the synthesis prompt&rsquo;s own wording; scoring the model against a
+              different one would be marking a question it was never asked.</li>
+            <li><b>Direction</b> over <code>horizon_days</code>, against the sign of the forward
+              return.</li>
+          </ul>
+          <p>
+            No new data feed. The price series is the predictions themselves &mdash; every one
+            already carried <code>market_context.price</code> &mdash; which is also its limitation:
+            the series is only as dense as the cycles that ran with a live token, so a measured
+            excursion is a <em>floor</em> on the true one. <code>observations</code> and
+            <code>max_gap_hours</code> are stored per window so thinly-sampled ones can be refused
+            rather than averaged in, because an unobserved breach settles as &ldquo;no
+            breach&rdquo; and that biases every tail downward &mdash; the unsafe direction.
+          </p>
+          <div class="check"><b>state</b><span>25 of 224 predictions settled. The archive is the binding constraint, not the code: 100 cycles ran with no live token and so recorded no price, and 62 predate the 2 August regime instrumentation and carry no <code>atm_iv</code>, without which there is no expected move to denominate an excursion in. Of the 62 rows that <em>could</em> settle, 25 have and 36 are still running. <code>tools/calibrate.py</code> prints that breakdown, because &ldquo;25 of 224&rdquo; is otherwise indistinguishable from a bug.</span></div>
+        </div>
+      </div>
+
+      <div class="entry key">
+        <span class="rail">11 Aug</span>
+        <span class="kicker">Zero downside breaches in 43 windows &mdash; and the calibrator is built not to believe it</span>
+        <div class="body">
+          <p>
+            The first measurement of the tail estimates against realised moves, and it is lopsided in
+            a way nobody predicted:
+          </p>
+          <ul>
+            <li><b>Downside: 0 breaches in 43 windows.</b> Mean excursion 0.05&nbsp;EM, maximum 0.28
+              &mdash; the index never came close. Stated <code>downside_risk</code> ran 25&ndash;42%
+              throughout.</li>
+            <li><b>Upside: also 0 past 1.0&nbsp;EM, but mean 0.43 and max 0.98.</b> Five of 43
+              windows cleared 0.9&nbsp;EM. The live tail is the one the model consistently rated
+              <em>lower</em> &mdash; stated <code>upside_risk</code> averaged 0.22 against
+              downside&rsquo;s 0.35.</li>
+          </ul>
+          <p>
+            Read naively the downside line says the estimate is roughly ten times too high and put
+            spreads should be sold freely. <strong>That reading is how premium sellers die.</strong>
+            43 windows sampled 45 minutes apart across 14 observed days is not 43 observations; at a
+            4-day window it deflates to about <b>three</b>, all of them inside one calm, rising,
+            contango regime. With zero breaches in three effective windows the upper bound on the
+            true rate is still <b>0.79</b>. The absence of a rare event over a quiet fortnight is
+            very nearly no evidence at all &mdash; and a quiet fortnight is exactly the setup for the
+            tail it would teach you to sell.
+          </p>
+          <p>
+            So the rule is not &ldquo;match the point estimate&rdquo;. A stated value stands unless
+            it falls <em>outside</em> the interval the data supports; when it does, a correction may
+            go to the point estimate when <b>tightening</b> but only to the near edge of the interval
+            when <b>loosening</b>. Understating a tail costs the account; overstating one costs a
+            trade, and the calibrator is allowed to be wrong only in the second direction.
+          </p>
+          <div class="check"><b>result</b><span>0.35 sits inside [0.00, 0.79], so the factor is <b>1.000</b> and nothing moves. That is the correct answer, not a failure to learn. As windows accumulate the interval narrows on its own, and if the downside really is this quiet the correction arrives &mdash; slowly, bounded per refit, and without a calm fortnight ever being able to stampede it.</span></div>
+        </div>
+      </div>
+
+      <div class="entry stop">
+        <span class="rail">11 Aug</span>
+        <span class="kicker">Cycle confidence is inverted on the settled sample too<span class="chip c-open">feeds 12 Aug</span></span>
+        <div class="body">
+          <p>
+            The confidence buckets on the 25 settled outcomes: <b>86% accurate below 0.45</b>
+            (n=14), <b>20% above it</b> (n=5). <code>tools/backtest.py</code> reads the same shape on
+            its wider slice &mdash; 60.5% below 0.55, 17.4% between 0.55 and 0.65, 0% above. Not
+            noisy-and-flat. <em>Inverted</em>, on two independently computed samples.
+          </p>
+          <p>
+            <strong>Confidence is therefore measured and never applied.</strong> An inverted signal
+            means the formula is measuring the wrong thing, and a calibrator that quietly flipped it
+            would bury that finding under a correction factor. It would also reach further than it
+            looks: <code>confidence_gate</code> decides whether verticals are constructed at all and
+            was placed at the 75th percentile of the raw distribution, so rescaling its input is the
+            exact failure that closed the gate for a fortnight in July, one layer down.
+          </p>
+          <div class="check"><b>feeds</b><span>the 12 August double-draw diagnostic already queued below. If two synthesis draws on an identical prompt differ by more than the gate&rsquo;s distance to either, the inversion is sampling noise and the fix is a computed component &mdash; not a calibration factor. Same question, and this is a second sample pointing at it.</span></div>
+        </div>
+      </div>
+
+      <div class="entry key">
+        <span class="rail">11 Aug</span>
+        <span class="kicker">Ships in shadow, for the third time on the same principle</span>
+        <div class="body">
+          <p>
+            <code>CALIBRATION_MODE=shadow</code>: settle, fit, log and bank &mdash; and the strategy
+            still sees the model&rsquo;s raw numbers. Below <code>CALIBRATION_MIN_NEFF</code>
+            (8 effective windows, currently 1.0) <code>apply</code> behaves identically, so the floor
+            protects the sample even if the mode is switched early.
+          </p>
+          <p>
+            Same discipline as <code>trend_side_block</code> at 0 on 2 August and
+            <code>premium_edge_measured</code> unscored on the 9th: landing a behaviour change in the
+            same deploy as the instrument meant to judge it leaves no before-picture. Four parameters
+            can ever move &mdash; a two-parameter direction map and one factor per tail &mdash; and
+            the untrained prior is <code>tanh</code>, within 0.01 of the identity across the whole
+            range the aggregator has ever produced, so switching the layer on changes nothing by
+            construction.
+          </p>
+          <p>
+            Every applied cycle records the pre-correction values under
+            <code>market_context.calibration</code>, and every refit reads <em>those</em>. Without
+            it each fit would be correcting its own previous output and the loop would walk away from
+            the data. That record is what makes it stable, and it is also why switching the mode back
+            off leaves no residue.
+          </p>
+          <div class="check"><b>note</b><span>the layer adds two tables, and <code>create_all()</code> creates them on <code>--setup</code> and nowhere else. Both the settlement pass and the refit are wrapped, so a skipped setup does not kill the cycle the way the <code>premium_edge</code> column did on 5 August &mdash; it fails quieter, running uncalibrated with only <code>Calibration failed</code> in the log. Check for that line after the first cycle of the deploy.</span></div>
+        </div>
+      </div>
+    </div>
   </section>
 
   <!-- ==================================================== forward ======= -->
@@ -1594,14 +1752,27 @@
 
       <div class="entry open">
         <span class="rail">this<br>week</span>
-        <span class="kicker">Reconcile <code>deploy/</code> with the account</span>
+        <span class="kicker">Split <code>$FuncName</code> &mdash; the scripts, not the account</span>
         <div class="body">
           <p>
-            Split <code>$FuncName</code> in <code>common.ps1</code>, then re-run
-            <code>alarms.ps1</code> and <code>schedule.ps1</code>. Cheap, and it removes a class of
-            silent failure that has already happened once.
+            <b>Narrowed 11 Aug: the account is already right.</b> Both alarms
+            (<code>spx-scanner-errors</code>, <code>spx-scanner-no-invocations</code>) carry
+            <code>FunctionName=spx-scanner-zip</code> and read OK, and all three
+            <code>spx-scanner-grid</code> schedules target the <code>-zip</code> ARN. Nothing needs
+            re-running to make production correct.
+          </p>
+          <p>
+            What is left is the more dangerous half. <code>common.ps1</code> still sets
+            <code>$FuncName = 'spx-scanner'</code>, and neither <code>alarms.ps1</code> nor
+            <code>schedule.ps1</code> takes a <code>-Zip</code> switch &mdash; both resolve their
+            target from <code>$FuncName</code> alone. So the scripts no longer describe the account
+            they manage, and re-running either one would move the alarms and the whole 45-minute grid
+            onto the function that last executed on 4 August. The account looks healthy right up
+            until someone reaches for the tooling, which is the same shape as the silent failure this
+            entry was opened for.
           </p>
         </div>
+        <div class="check"><b>Check</b><span>a fresh <code>alarms.ps1</code> and <code>schedule.ps1</code> run against the live account is a no-op &mdash; same alarm dimensions, same target ARN on all three schedules &mdash; instead of a repoint.</span></div>
       </div>
 
       <div class="entry key">
@@ -1624,12 +1795,50 @@
             own window and removes the class of bug rather than this instance.
           </p>
           <p>
+            <b>Revised 11 Aug: name whether the tails are raw or calibrated.</b> The scanner now
+            refits a correction to those two numbers each cycle. It ships in shadow, so today the
+            exported values are the model&rsquo;s raw ones and this changes nothing &mdash; but move
+            <code>CALIBRATION_MODE</code> to <code>apply</code> and the same column starts carrying
+            corrected values, with no schema change for a consumer to notice. A veto threshold pinned
+            against the raw distribution would then be reading a different scale. That is the 4-day
+            window defect one field along, so it gets the same fix: export both, or say which this is.
+          </p>
+          <p>
             This is the scanner&rsquo;s entire contribution to the combined system, and it is what the
             199 labels say news is actually good for. What the consumer does with it is not this
             document&rsquo;s scope.
           </p>
         </div>
         <div class="check"><b>Check</b><span>the consumer logs the scanner&rsquo;s tails on every tick and behaves identically while ignoring them.</span></div>
+      </div>
+
+      <div class="entry key">
+        <span class="rail">Wed<br>12 Aug</span>
+        <span class="kicker">Is the confidence gate reading noise?<span class="chip c-next">diagnostic</span></span>
+        <div class="body">
+          <p>
+            11 August held <code>direction</code> at +0.10 to +0.12 for eight consecutive cycles on a
+            corpus that barely moved &mdash; 40 of ~2680 stories each time, the same six drivers,
+            macro=24 every cycle &mdash; while <code>confidence</code> ranged <b>0.32 to 0.42</b>. The
+            gate sits at 0.40, inside that band. Seven of nine cycles lost their verticals to it, and
+            the only two that survived were the two highest draws.
+          </p>
+          <p>
+            Cycle confidence is the synthesis model&rsquo;s own number, clamped to [0,1] and used
+            verbatim &mdash; there is no computed component once synthesis succeeds, and the
+            aggregator&rsquo;s conviction / coverage / agreement formula only runs on the fallback
+            path. The 4 August derivation placed 0.40 at the 75th percentile of that distribution,
+            which fixes the threshold <i>against</i> the distribution but says nothing about whether
+            the number tracks anything.
+          </p>
+          <p>
+            This is not the item-level calibration question in Open questions below. That one is about
+            the per-item scorer&rsquo;s confidence as an aggregation weight. This is the cycle-level
+            scalar that decides whether a vertical is constructed at all. Run it <b>before</b> the
+            13 August feed split, which changes the corpus underneath it.
+          </p>
+        </div>
+        <div class="check"><b>Check</b><span>draw the synthesis twice on the identical prompt in one cycle and log both. If two draws on the same input differ by more than the gate&rsquo;s distance to either of them, the gate is reading sampling noise and no threshold on it is meaningful &mdash; the fix is to restore a computed component, not to move the number. If they agree to within a point or two, the 11 August spread was information and this closes.</span></div>
       </div>
 
       <div class="entry key">
@@ -1677,6 +1886,28 @@
           </p>
         </div>
         <div class="check"><b>Check</b><span><code>iv_rank</code> present in the <code>Regime:</code> line.</span></div>
+      </div>
+
+      <div class="entry">
+        <span class="rail">~Wed<br>16 Sep</span>
+        <span class="kicker">Calibration reaches the evidence floor</span>
+        <div class="body">
+          <p>
+            Pure waiting, and longer than it looks. <code>CALIBRATION_MIN_NEFF</code> is 8
+            <em>effective</em> windows, which at a 4-day window is ~32 observed trading days of
+            settled predictions &mdash; and the clock starts at 2 August, when <code>atm_iv</code>
+            first entered <code>market_context</code>, not at the idea. Reading 1.0 today.
+          </p>
+          <p>
+            Nothing needs doing in the meantime, and that is the point: the layer accumulates,
+            refits and logs on its own every cycle, so the decision when the date arrives is made
+            against a banked series rather than a fresh calculation. What it will have settled by
+            then is a tail estimate over roughly one regime, so <b>expect the answer to be that the
+            interval is still too wide to act on</b> unless the market has done something other than
+            drift up.
+          </p>
+        </div>
+        <div class="check"><b>Check</b><span><code>tools/calibrate.py</code> reports <code>ELIGIBLE</code>. Read the tail intervals <em>before</em> deciding whether to move <code>CALIBRATION_MODE</code> to <code>apply</code> &mdash; eligibility means the sample cleared the floor, not that the correction is worth making. If the intervals still bracket the stated values, leave it in shadow and let it keep accumulating.</span></div>
       </div>
     </div>
   </section>
@@ -1764,7 +1995,52 @@
             <code>theta</code> was markedly better here, rising to 97.1%. That is the one reason to
             revisit a variant that otherwise failed its risk gate.
           </p>
+          <p>
+            <b>11 Aug &mdash; the cycle-level number has the same defect, and it is worse than
+            non-monotonic.</b> The settled outcomes read <b>86% accurate below 0.45</b> (n=14) and
+            <b>20% above it</b> (n=5); <code>tools/backtest.py</code>, computing independently over a
+            wider slice, reads 60.5% / 17.4% / 0% up the buckets. Both samples say <em>inverted</em>,
+            not noisy. The item-level question above and this one are still distinct &mdash; that is
+            a weight inside the aggregation, this is the scalar that decides whether a vertical is
+            built &mdash; but they now point the same way.
+          </p>
+          <p>
+            The calibration layer deliberately <strong>measures confidence and never corrects
+            it</strong>. Flipping an inverted signal with a factor would bury the finding, and
+            rescaling the input to <code>confidence_gate</code> &mdash; a threshold placed at the
+            75th percentile of that input&rsquo;s raw distribution &mdash; is the July gate failure
+            repeated one layer down.
+          </p>
         </div>
+        <div class="check"><b>Closes when</b><span>the 12 Aug double-draw diagnostic separates the two candidate explanations: sampling noise in the synthesis draw, or a number that means something and means it backwards. Nothing should be built on cycle confidence until it does.</span></div>
+      </div>
+
+      <div class="entry stop">
+        <span class="rail">open</span>
+        <span class="kicker">The tail estimates cannot be falsified in this regime<span class="chip c-open">added 11 Aug</span></span>
+        <div class="body">
+          <p>
+            43 settled windows, <b>zero</b> downside breaches past 1.0&nbsp;EM, maximum excursion
+            0.28. The tail estimates are the scanner&rsquo;s product &mdash; they gate which sides may
+            be sold and they are the only thing Sopana consumes &mdash; and the sample cannot
+            currently tell a well-calibrated 0.35 from a wildly overstated one, because nothing has
+            happened that would distinguish them.
+          </p>
+          <p>
+            This is not a defect in the measurement; it is the regime. Every observed day has been
+            calm, rising and in contango, and a tail estimate is only testable against tails. The
+            calibrator handles it correctly by declining to move &mdash; a stated value inside the
+            interval stands &mdash; but that is a holding action, not an answer.
+          </p>
+          <p>
+            The asymmetry worth naming: the <em>upside</em> excursions are real (mean 0.43&nbsp;EM,
+            five of 43 past 0.9) and the model rates that tail <em>lower</em> than the downside one
+            it has never once seen fire. If anything is miscalibrated, current evidence points there
+            &mdash; and that is the direction where a correction would <b>tighten</b>, which needs
+            far less evidence to act on than loosening does.
+          </p>
+        </div>
+        <div class="check"><b>Closes when</b><span>a genuine drawdown or a vol spike lands inside a settled window. Until then the honest statement is that the tails are recorded and unfalsified, not that they are right. Watch the upside factor first: it is the one that can move on the evidence being collected.</span></div>
       </div>
 
       <div class="entry stop">
@@ -1803,6 +2079,30 @@
             with, and it is entirely untested. First chance: 5 August.
           </p>
         </div>
+      </div>
+
+      <div class="entry stop">
+        <span class="rail">open</span>
+        <span class="kicker">The 4-day event window is firing at 75%, against a replayed 53%</span>
+        <div class="body">
+          <p>
+            <code>r70</code> narrowed <code>event_risk_window_days</code> to 4 because the old
+            25-day window made the flag structurally True &mdash; 190 of 190 &mdash; which pinned the
+            scanner to its event-risk branch and made <code>short_delta_max</code> (0.30) and
+            <code>min_buffer</code> (0.8) dead config. Replayed against those same 190 timestamps, a
+            4-day window fired on <b>53%</b> of cycles.
+          </p>
+          <p>
+            Live since it shipped it has fired on <b>27 of 36</b> cycles &mdash; false on one session
+            out of four (7 August), and 27 of 27 this week. Four sessions is not a divergence and this
+            week earns its flag honestly: CPI 8/12, PPI 8/13 and retail sales 8/14 all land inside the
+            window. But the direction is the wrong one, and the failure mode it would return to is the
+            one the change existed to remove &mdash; at which point the capped band is again the only
+            band the scanner has ever been measured in, including the premium series and the 7 August
+            put-side result that rests on that one unflagged session.
+          </p>
+        </div>
+        <div class="check"><b>Closes when</b><span>20 trading days of the flag exist and the realised firing rate is set against the replayed 53%. Above ~70% the window is structurally true again and 3 days is the next candidate &mdash; the same replay puts that at 36%. The 12 August horizon export makes this readable as a series rather than a boolean nobody counts.</span></div>
       </div>
     </div>
   </section>
@@ -1848,6 +2148,13 @@
         <tr><td class="num">08-09</td><td><strong>Defer the RoR floor swap</strong>; derive its floor from the ranker&rsquo;s POP</td><td><code>ror &ge; d/(1&minus;d)</code> on risk-neutral <code>d</code> passes 9 of 9 winners &mdash; a no-op &mdash; and 0 of 9 on the honest input. Shipping it would cement the defective probability into a filter one day after instrumenting it</td></tr>
         <tr><td class="num">08-09</td><td><strong>Export the event horizon, not an <code>event_risk</code> boolean</strong></td><td>The 4-day window equals <code>paper_hold_days</code> and is right for the scanner; Sopana holds 25 days and would under-fire on the events the veto exists to catch</td></tr>
         <tr><td class="num">08-09</td><td><strong>Track A and Track B are separately gated</strong></td><td>Sopana consumes tail estimates and event timing as a veto, none of which touches the pricing filters. The handoff is blocked by Gate 8 and never was blocked by the signal arm</td></tr>
+        <tr><td class="num">08-11</td><td><strong>Count evidence, not rows</strong> &mdash; every interval and shrinkage weight uses <code>n_eff</code></td><td>Predictions land 45 minutes apart and are scored over windows days long. 43 windows across 14 observed days deflate to ~3 at a 4-day window. Without the deflator, 43 near-identical rows read as overwhelming evidence for whatever the fortnight did</td></tr>
+        <tr><td class="num">08-11</td><td><strong>Loosening a tail needs more evidence than tightening it</strong></td><td>0 downside breaches in 43 windows against a stated 0.35. At n_eff 3 the upper bound is 0.79, so the stated value stands. A correction goes to the point estimate when tightening, only to the interval&rsquo;s near edge when loosening &mdash; understating a tail costs the account, overstating one costs a trade</td></tr>
+        <tr><td class="num">08-11</td><td><strong>Confidence is measured and never applied</strong></td><td>Inverted on two independent samples &mdash; 86%/20% on settled outcomes, 60.5%/17.4%/0% on the backtest. A correction factor would bury the finding, and rescaling <code>confidence_gate</code>&rsquo;s input repeats the July gate failure one layer down</td></tr>
+        <tr><td class="num">08-11</td><td>Calibrate <strong>four numbers</strong>, not the weight vector</td><td>A 6-day horizon yields ~52 independent observations a year against ~17 free parameters. Source weights, half-lives and edge terms are left alone; the layer fits a direction map and one factor per tail, downstream of the aggregator</td></tr>
+        <tr><td class="num">08-11</td><td>Ship calibration in <strong>shadow</strong></td><td>Third application of the same rule, after <code>trend_side_block</code> at 0 (08-02) and <code>premium_edge_measured</code> unscored (08-09). The floor makes it moot today &mdash; <code>apply</code> below <code>CALIBRATION_MIN_NEFF</code> behaves identically</td></tr>
+        <tr><td class="num">08-11</td><td>Refits read <strong>pre-correction</strong> values, kept in <code>market_context.calibration</code></td><td>Fitting on corrected numbers means each refit corrects a correction; the error compounds every cycle and the loop walks away from the data. It is also what makes switching the mode off leave no residue</td></tr>
+        <tr><td class="num">08-11</td><td>An outcome row is <strong>written once, never revised</strong></td><td><code>on_conflict_do_nothing</code>, not an upsert. A later settlement bug must not be able to restate history a fit has already trained on</td></tr>
       </tbody>
     </table></div>
 

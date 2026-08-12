@@ -11,6 +11,8 @@ import json
 from apscheduler.schedulers.blocking import BlockingScheduler
 
 from alerts.notifier import Notifier
+from analysis import calibration as calib
+from analysis import outcomes as outcome_lib
 from analysis.claude_client import ClaudeClient, build_llm
 from analysis.sentiment import SentimentAnalyzer
 from analysis.synthesis import build_aggregator
@@ -151,6 +153,17 @@ class Pipeline:
         # market_hours comes entirely from the once-per-cycle synthesis call.
         self.score_new()
 
+        # Settling is about elapsed time, not about new information, so it runs
+        # ahead of every early return below. A quiet cycle -- no new items, or
+        # outside market hours -- is still a cycle in which yesterday's
+        # prediction may have finished maturing, and skipping those would leave
+        # the labelled series with holes exactly where the market was calm.
+        if getattr(self.s, "calibration_mode", "shadow") != "off":
+            try:
+                self.settle_outcomes()
+            except Exception as exc:  # noqa: BLE001
+                self.log.warning("Calibration: settling failed (%s).", exc)
+
         if getattr(self.s, "schedule_mode", "continuous") == "market_hours":
             now = dt.datetime.now(dt.timezone.utc)
             if not is_market_hours(now, getattr(self.s, "market_tz", "America/New_York")):
@@ -184,6 +197,13 @@ class Pipeline:
         self._log_regime(market_context)
 
         prediction = self.aggregator.aggregate(scored, market_context, events)
+        # Settle what has matured and refit BEFORE this cycle's prediction is
+        # used, so a correction is always the newest one the evidence supports.
+        # It sits here rather than inside either aggregator because both emit
+        # the same dict and the correction belongs to neither -- and because the
+        # scan below must see the corrected tails, which decide which sides may
+        # be sold at all.
+        prediction = self._calibrate(prediction)
         scan = self.strategy.scan(chain, prediction)
         best = scan["best"]
         spreads = [best] if best else []
@@ -205,6 +225,80 @@ class Pipeline:
         trade_alert = bool(scan["recommended"]) and self._claim_trade_alert(best)
         push = trade_alert or not getattr(self.s, "alert_only_on_trade", True)
         self.notifier.send(self._format(prediction, scan), external=push, trade=trade_alert)
+
+    # --- calibration -------------------------------------------------------
+    def settle_outcomes(self) -> int:
+        """Record what happened to every prediction whose windows have elapsed.
+
+        Cheap and idempotent: one query, arithmetic over an in-memory series,
+        and an insert that ignores anything already settled. Runs every cycle so
+        the labelled series is never more than one cycle stale.
+        """
+        predictions = self.repo.all_predictions()
+        if not predictions:
+            return 0
+        rows = outcome_lib.settle_all(
+            predictions,
+            self.repo.settled_prediction_ids(),
+            dt.datetime.now(dt.timezone.utc),
+            self.s,
+        )
+        written = self.repo.save_outcomes(rows) if not self.dry_run else len(rows)
+        if written:
+            self.log.info("Calibration: settled %d newly-matured prediction(s).", written)
+        return written
+
+    def _calibrate(self, prediction: dict) -> dict:
+        """Refit from settled outcomes and hand back the prediction to act on.
+
+        A failure here must not cost the cycle its prediction -- the correction
+        is an improvement on the raw numbers, never a precondition for having
+        any. Anything that goes wrong falls back to the uncalibrated dict, which
+        is exactly what shipped before this existed.
+        """
+        mode = getattr(self.s, "calibration_mode", "shadow")
+        if mode == "off":
+            return prediction
+        try:
+            rows = self.repo.outcomes()
+            if not rows:
+                self.log.info("Calibration: no settled outcomes yet; running uncorrected.")
+                return prediction
+            previous = self.repo.latest_calibration()
+            params = calib.fit(rows, self.s, previous=previous)
+            calibration = calib.build(params, self.s)
+            # Bank only when the numbers that change behaviour move. A refit runs
+            # every cycle, so writing each one would put ~11,000 near-identical
+            # rows a year into the table whose entire job is to answer "what did
+            # it learn, and when" -- the answer would be buried in its own log.
+            if not self.dry_run and calib.differs(params, previous):
+                self.repo.save_calibration(params, mode, calibration.active)
+            self.log.info("%s", calibration.summary())
+            result = calibration.apply(prediction)
+            self._log_calibration_delta(prediction, result, calibration)
+            return result
+        except Exception as exc:  # noqa: BLE001
+            self.log.warning("Calibration failed (%s); running uncorrected.", exc)
+            return prediction
+
+    def _log_calibration_delta(self, before: dict, after: dict, calibration) -> None:
+        """Say what the correction did, or would have done in shadow mode.
+
+        Printed every cycle rather than only when it changes something: a
+        correction silently sitting at identity and a correction that is not
+        running at all look identical in a log that only speaks up on change,
+        and those are very different states to be in.
+        """
+        corrected = (after.get("market_context") or {}).get("calibration", {}).get("corrected", {})
+        if not corrected:
+            return
+        context = before.get("market_context") or {}
+        verb = "applied" if calibration.active else "would apply"
+        parts = [f"direction {before['direction']:+.3f} -> {corrected['direction']:+.3f}"]
+        for key, name in (("downside_risk", "downside"), ("upside_risk", "upside")):
+            if key in corrected and context.get(key) is not None:
+                parts.append(f"{name} {float(context[key]):.0%} -> {corrected[key]:.0%}")
+        self.log.info("Calibration %s: %s", verb, " | ".join(parts))
 
     def _marking_chain(self, scan_chain: dict | None) -> dict | None:
         """A chain that actually contains the legs of every open position.
@@ -458,6 +552,31 @@ class Pipeline:
         # body at 2000 chars and a long synthesis rationale can approach that, so
         # this sits where an overflow costs a diagnostic rather than the trade
         # decision above it. The log keeps the whole string either way.
+        # What the learned correction did to the numbers above, or would have
+        # done. Only printed once a fit exists and only when it moves something:
+        # in shadow mode at identity this line is noise, and the log carries the
+        # full state every cycle regardless.
+        stamp = (prediction.get("market_context") or {}).get("calibration") or {}
+        corrected = stamp.get("corrected") or {}
+        if corrected and stamp.get("direction_raw") is not None:
+            moved = abs(corrected.get("direction", 0) - stamp["direction_raw"]) >= 0.01 or any(
+                stamp.get(f"{side}_raw") is not None
+                and abs(corrected.get(key, 0) - stamp[f"{side}_raw"]) >= 0.01
+                for side, key in (("downside", "downside_risk"), ("upside", "upside_risk"))
+            )
+            if moved:
+                verb = "applied" if stamp.get("active") else "shadow"
+                bits = [f"dir {stamp['direction_raw']:+.2f}->{corrected['direction']:+.2f}"]
+                for stem, name, key in (
+                    ("downside", "down", "downside_risk"),
+                    ("upside", "up", "upside_risk"),
+                ):
+                    if key in corrected and stamp.get(f"{stem}_raw") is not None:
+                        bits.append(
+                            f"{name} {stamp[f'{stem}_raw']:.0%}->{corrected[key]:.0%}"
+                        )
+                lines.append(f"Calibrated: [{verb}] " + " | ".join(bits))
+
         rejects = scan.get("rejects") or {}
         if rejects:
             top = sorted(rejects.items(), key=lambda kv: kv[1], reverse=True)[:8]

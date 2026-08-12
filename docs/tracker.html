@@ -388,6 +388,47 @@
 
     <div class="items">
 
+      <article class="item sev-new">
+        <div class="item-top">
+          <h3>The tails have been measured for the first time &mdash; and the sample cannot falsify them</h3>
+          <span class="pill p-new">shipped 11 Aug &middot; shadow</span>
+          <span class="when">found 11 Aug</span>
+        </div>
+        <p>
+          <code>prediction_outcomes</code> now settles every matured prediction against what
+          followed: the largest excursion each way over <code>paper_hold_days</code>, in expected
+          moves, plus the forward return over the horizon. Written once, never revised. This is the
+          first time the scanner has recorded whether it was right about anything.
+        </p>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Claim</th><th>Stated</th><th>Realised</th><th>Reads as</th></tr></thead>
+            <tbody>
+              <tr><td><code>downside_risk</code></td><td class="num">0.35</td><td class="num">0 breaches / 43</td><td>mean excursion 0.05 EM, max 0.28 &mdash; never close</td></tr>
+              <tr><td><code>upside_risk</code></td><td class="num was">0.22</td><td class="num">0 breaches / 43</td><td>mean <b>0.43 EM</b>, max 0.98, five past 0.9</td></tr>
+              <tr><td>direction</td><td class="num">&mdash;</td><td class="num was">42.9%</td><td>against a 77% base rate</td></tr>
+              <tr><td>confidence</td><td class="num">&mdash;</td><td class="num was">86% / 20%</td><td>below 0.45 vs above &mdash; inverted</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          <strong>The ordering is the finding, not the zero.</strong> The model consistently rates
+          the downside tail higher than the upside one, and every excursion that has actually
+          happened went <em>up</em>. If anything here is miscalibrated, the evidence points at the
+          upside estimate being too low &mdash; and that is the direction in which a correction
+          <b>tightens</b>, which needs far less evidence to act on than loosening does.
+        </p>
+        <p>
+          <b>What the zero does not mean.</b> 43 windows sampled 45 minutes apart across 14 observed
+          days is not 43 observations; at a 4-day window it deflates to about <b>three</b>, all
+          inside one calm, rising, contango regime. With zero breaches in three effective windows the
+          upper bound on the true rate is still <b>0.79</b>. A tail estimate is only testable against
+          tails, and none have occurred &mdash; so the honest statement is that the tails are
+          recorded and <em>unfalsified</em>, not that they are right.
+        </p>
+        <div class="trigger"><b>Shipped inert, and the first thing it did was decline to act</b><span><code>CALIBRATION_MODE=shadow</code>, and below <code>CALIBRATION_MIN_NEFF</code> (8 effective windows, reading <b>1.0</b>) <code>apply</code> behaves identically. Even eligible, 0.35 sits inside [0.00, 0.79] so the factor is 1.000. The rule: a stated value stands unless it falls outside the interval, and a correction goes to the point estimate when tightening but only to the interval's near edge when loosening. <b>Do not</b> switch to <code>apply</code> on the strength of the zero &mdash; a quiet fortnight is the setup for the tail it would teach you to sell.</span></div>
+      </article>
+
       <article class="item sev-risk">
         <div class="item-top">
           <h3><code>premium_weight</code> is 0.15 because it was typed, not because it was measured</h3>
@@ -1118,6 +1159,38 @@
     </div>
 
     <div class="items">
+
+      <article class="item sev-run">
+        <div class="item-top">
+          <h3>Accumulating toward an evidence floor of 8 effective windows</h3>
+          <span class="pill p-run">running &middot; n_eff 1.0 of 8</span>
+          <span class="when">started 11 Aug &middot; earliest answer ~16 Sep</span>
+        </div>
+        <p>
+          The calibration layer settles, refits, logs and banks on its own every cycle. Nothing needs
+          doing in the meantime; the point of the floor is that the decision, when it arrives, is made
+          against a banked series rather than a fresh calculation on whatever the last fortnight did.
+        </p>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Measure</th><th>Now</th><th>Needed</th><th>Note</th></tr></thead>
+            <tbody>
+              <tr><td>settled outcomes</td><td class="num">25</td><td class="num">&mdash;</td><td>of 224 predictions &mdash; the archive is the constraint, not the code</td></tr>
+              <tr><td>observed days in the series</td><td class="num was">3</td><td class="num">~32</td><td><code>atm_iv</code> only entered <code>market_context</code> on 2 Aug</td></tr>
+              <tr><td>n_eff, tails</td><td class="num was">1.0</td><td class="num">8.0</td><td>observed days &divide; the 4-day window</td></tr>
+              <tr><td>n_eff, direction</td><td class="num was">1.0</td><td class="num">8.0</td><td>same series, longer window, so fewer</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          <b>Why 25 of 224.</b> 100 cycles ran without a live Schwab token and recorded no price;
+          62 predate the 2 August regime instrumentation and carry no <code>atm_iv</code>, without
+          which there is no expected move to denominate an excursion in; 36 are still running. Of
+          the 62 rows that <em>could</em> settle, 25 have. <code>tools/calibrate.py</code> prints
+          that breakdown, because &ldquo;25 of 224&rdquo; otherwise reads as a bug.
+        </p>
+        <div class="trigger"><b>Read the intervals, not the eligibility flag</b><span>Clearing the floor means the sample is large enough to be worth looking at &mdash; not that the correction is worth making. If the tail intervals still bracket the stated values on ~16 September, the answer is to leave it in shadow and keep accumulating. Expect exactly that unless the market does something other than drift up between now and then.</span></div>
+      </article>
 
       <article class="item sev-run">
         <div class="item-top">

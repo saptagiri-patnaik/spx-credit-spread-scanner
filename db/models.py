@@ -217,6 +217,107 @@ class PaperPosition(Base):
     underlying_at_close: Mapped[float | None] = mapped_column(Float, nullable=True)
 
 
+class PredictionOutcome(Base):
+    """What actually happened after a prediction, in the terms the model claimed.
+
+    The scanner has never recorded whether it was right. `predictions` stores the
+    call and `market_context.price` stores the index level at the time, so the
+    realised outcome has always been *derivable* -- but deriving it on demand
+    (tools/backtest.py) means nothing downstream can read it, and a weight cannot
+    be fitted to a number that is recomputed differently by every caller. This is
+    that derivation, done once per prediction and frozen.
+
+    One row per prediction, written only when every window it makes a claim over
+    has fully elapsed. Two windows are measured because the model makes two
+    different claims:
+
+      tails      `downside_risk` / `upside_risk` are probabilities of a sharp move
+                 beyond one expected move. Measured over `paper_hold_days`, which
+                 is how long a position actually sits exposed -- not over the DTE,
+                 which the position never sees the end of.
+      direction  `direction` / `label` are a 5-7 day call. Measured over
+                 `horizon_days` against the sign of the forward return.
+
+    The stated values are denormalised in rather than joined from `predictions`,
+    for one reason that matters: once calibration is applied, the row in
+    `predictions` carries the *corrected* numbers. A fit that read those would be
+    fitting a correction on top of its own previous output and would compound its
+    own error every cycle. These columns hold what the model said before any
+    correction, so every refit starts from the same raw series.
+    """
+
+    __tablename__ = "prediction_outcomes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    prediction_id: Mapped[int] = mapped_column(
+        ForeignKey("predictions.id", ondelete="CASCADE"), unique=True, index=True
+    )
+    settled_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    predicted_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+    # --- what the model said (pre-calibration; see the class docstring) ---
+    label: Mapped[str] = mapped_column(String(20))
+    stated_direction: Mapped[float] = mapped_column(Float)
+    stated_confidence: Mapped[float] = mapped_column(Float)
+    # Null on the mean aggregator, which produces no tail estimates at all. Null
+    # is "never claimed", which is not the same as "claimed zero" -- a fit that
+    # read those as 0.0 would be scoring the mean aggregator against a claim it
+    # never made.
+    stated_downside: Mapped[float | None] = mapped_column(Float, nullable=True)
+    stated_upside: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # --- the yardstick ---
+    entry_price: Mapped[float] = mapped_column(Float)
+    # One expected move at entry, in index points. Excursions are stored in units
+    # of THIS, not in points or percent: a 40-point move is a different event at
+    # 11% vol than at 22%, and the model's claim is denominated in expected moves.
+    expected_move: Mapped[float] = mapped_column(Float)
+
+    # --- tail window ---
+    tail_window_days: Mapped[float] = mapped_column(Float)
+    down_excursion: Mapped[float] = mapped_column(Float)   # max drawdown, in EMs
+    up_excursion: Mapped[float] = mapped_column(Float)     # max run-up, in EMs
+    down_breach: Mapped[bool] = mapped_column(Boolean)     # excursion >= 1 EM
+    up_breach: Mapped[bool] = mapped_column(Boolean)
+    # Sampling quality of the window. The price series is whatever cycles happened
+    # to run with a live Schwab token, so an excursion is a sampled extreme and
+    # therefore a FLOOR on the true one -- it can only understate. Both are stored
+    # so a fit can exclude thinly-observed windows rather than average them in,
+    # and so that "the tail never fired" can be distinguished from "nobody looked".
+    observations: Mapped[int] = mapped_column(Integer)
+    max_gap_hours: Mapped[float] = mapped_column(Float)
+
+    # --- directional horizon ---
+    horizon_days: Mapped[int] = mapped_column(Integer)
+    exit_price: Mapped[float] = mapped_column(Float)
+    forward_return: Mapped[float] = mapped_column(Float)
+    # Null for NEUTRAL, which asserts no direction and cannot be scored as one.
+    hit: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+
+
+class CalibrationFit(Base):
+    """One fitted correction set, kept as history rather than overwritten.
+
+    The live parameters are the newest row. Older rows are the audit trail: when
+    the scanner starts behaving differently the first question is what it learned
+    and when, and a single mutable row of weights cannot answer it.
+    """
+
+    __tablename__ = "calibration_fits"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    fitted_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    # "off" / "shadow" / "apply" -- the mode this fit was produced under, so the
+    # record shows whether it actually reached the strategy or merely watched.
+    mode: Mapped[str] = mapped_column(String(12), index=True)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    n: Mapped[int] = mapped_column(Integer)          # settled outcomes read
+    n_eff: Mapped[float] = mapped_column(Float)      # ...deflated for window overlap
+    active: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    params: Mapped[dict] = mapped_column(JSON)
+    diagnostics: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+
 class ApiUsage(Base):
     """Per-day paid-usage counter for budget-guarded APIs (e.g. X)."""
 

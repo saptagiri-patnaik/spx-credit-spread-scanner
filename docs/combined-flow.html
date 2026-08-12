@@ -193,6 +193,15 @@
               running if the other stops.</p>
             <div class="flag good"><b>This is what the labels say news is good for.</b> 188 of 199
               items had no directional sign, but 20 flagged shock risk. Hazard, not direction.</div>
+            <div class="flag warn"><b>11 Aug &mdash; decide whether these are the raw or the
+              calibrated tails, and say so in the contract.</b> The scanner now settles its
+              predictions against realised moves and refits a correction each cycle. It ships in
+              shadow, so <b>today the exported numbers are the model's raw ones</b> and nothing has
+              changed. But if <code>CALIBRATION_MODE</code> ever moves to <code>apply</code>, the
+              same column silently starts carrying corrected values &mdash; a consumer that pinned
+              its veto threshold against the raw distribution would be reading a different scale
+              without a schema change to notice. Same defect as the 4-day event window read by a
+              25-day strategy, one field along. Export both, or name which one this is.</div>
           </div></div>
 
       </div>

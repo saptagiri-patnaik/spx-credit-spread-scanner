@@ -209,6 +209,14 @@ Scores past predictions against what the market actually did. It needs predictio
 older than the 6-day horizon *and* a working Schwab connection at the time they were
 made, so expect it to report nothing useful for the first week.
 
+```bash
+python -m tools.calibrate
+```
+
+Settles matured predictions into `prediction_outcomes` and shows what the model
+claimed against what happened — see [Self-calibration](#self-calibration) below.
+The pipeline does this on its own every cycle; the tool is for reading it.
+
 ### 10. Evaluating the scorer
 
 The directional call is only as good as the per-item scores feeding it, and you
@@ -271,20 +279,104 @@ without them the sentiment/macro half still produces a directional call.
 The X collector is the only paid source. It enforces a daily post budget
 (`X_DAILY_POST_BUDGET`) tracked in Postgres, so cost is bounded across restarts.
 
+## Self-calibration
+
+The scanner's outputs are claims with truth values. `downside_risk: 0.37` says a
+sharp move down is 37% likely over the holding period; `direction: +0.12` says up.
+Since 11 Aug 2026 each prediction is settled against what followed, into
+`prediction_outcomes`, and a correction is refitted from that series every cycle.
+
+```
+predictions ──(both windows elapsed)──> prediction_outcomes ──> fit ──> calibration_fits
+                                                                          │
+      market_context.calibration <── applied or shadowed <────────────────┘
+```
+
+**What is measured.** Tails are scored over `paper_hold_days` — the days a
+position is actually exposed, not the DTE it never sees the end of — as the
+largest excursion each way, denominated in *expected moves*, with anything past
+1.0 EM counting as a breach (the synthesis prompt's own wording). Direction is
+scored over `horizon_days` against the sign of the forward return. The index
+price series is the predictions themselves; there is no extra feed.
+
+**What is corrected.** Two parameters for direction, one factor per tail. Nothing
+else. Source weights, recency half-lives and the edge terms are left alone: they
+sit behind an LLM call or a ranking whose gradient nobody can compute, and there
+is no sample that would justify touching them.
+
+**Why so little.** The constraint in issue 2 below is arithmetic and does not go
+away because a loop is automated. What makes the difference between a fit and a
+memorised fortnight is counting evidence honestly:
+
+- **Effective sample size, not row count.** Predictions land every ~45 minutes
+  and are scored over windows days long, so consecutive rows are near-copies.
+  87 overlapping windows across 14 observed days is worth about 3 independent
+  observations, not 87. Every interval and shrinkage weight uses the deflated
+  number.
+- **Nothing applies below `CALIBRATION_MIN_NEFF`** (default 8) — a bar on
+  evidence, not on rows, currently wanting about a month of trading days.
+- **Loosening is harder than tightening.** Over the first 43 evaluable windows
+  the index never once moved a full expected move *down* (mean excursion 0.05
+  EM, max 0.28) against a stated 25–42% downside risk. Read naively that says
+  the tail estimate is ten times too high and put spreads should be sold freely.
+  That reading is how premium sellers die: the absence of a rare event across
+  three independent observations of one calm, rising, contango regime is very
+  nearly no evidence at all, and with zero breaches in ~3 effective windows the
+  upper bound on the true rate is still above 70%. So a stated value stands
+  unless it falls *outside* the interval the data supports; when it does, a
+  correction may go to the point estimate when tightening but only to the near
+  edge of the interval when loosening. Understating a tail costs the account;
+  overstating one costs a trade.
+
+Today that means the correction changes nothing, which is the correct answer
+rather than a failure to learn. As windows accumulate the interval narrows, and
+if the downside really is that quiet the correction arrives on its own — slowly,
+in daylight, without a calm fortnight ever being able to stampede it.
+
+**Confidence is measured and never applied.** The relationship currently reads
+*inverted* — 86% accurate below 0.45, 20% above it, on the first 25 settled
+outcomes. An inverted confidence signal means the formula is measuring the wrong
+thing, and quietly rescaling it would bury that finding under a correction
+factor. It is also the input to `confidence_gate`, which was calibrated against
+the 75th percentile of the raw distribution; rescaling the input to a threshold
+fitted to that input's old scale is the exact failure that closed the gate for a
+fortnight in July.
+
+**It ships in shadow.** `CALIBRATION_MODE=shadow` settles, fits, logs and banks —
+and the strategy still sees the model's raw numbers. Set it to `apply` to let a
+fit that has cleared the floor move the numbers the scan reads. This is the
+discipline `trend_side_block` shipped at 0 under and `premium_edge_measured`
+ships unscored under: landing a behaviour change in the same deploy as the
+instrument meant to judge it leaves no before-picture.
+
+Every applied cycle records the pre-correction values under
+`market_context.calibration`, and every refit reads *those*. Without it each fit
+would be correcting its own previous output and the loop would walk away from the
+data — that record is what makes it stable, and it also means switching the mode
+back off is a one-line change with no residue.
+
 ## Known issues and open questions
 
 Listed honestly, because these are where feedback would help most.
 
-**1. Nothing validates the predictions.** There is no backtest and no tracked hit rate. The
-`predictions` table has been accumulating with entry prices in `market_context`, so the data
-exists — `tools/backtest.py` is a first pass at measuring it, but the sample is still small.
-**Until this is answered, treat every number the tool prints as unvalidated.**
+**1. The predictions are now tracked, but the sample is still ~3 observations.** Outcomes
+are settled automatically into `prediction_outcomes` (see [Self-calibration](#self-calibration)),
+so the hit rate and the tail breach rate are recorded rather than derived on demand. What has
+not changed is how much they say: the first 25 settled outcomes span three observed days and
+deflate to about **one** independent window. `tools/backtest.py` reads a wider slice (87
+windows, 42.9% directional hit rate against a 77% base rate) and is still the better read on
+direction, with the same caveat it always carried. **Treat every number the tool prints as
+unvalidated.**
 
 **2. Every weight is hand-chosen.** `SOURCE_WEIGHTS`, the 48-hour recency half-life, the
 `0.85/0.15` direction-vs-trend blend, the `0.60/0.20/0.20` confidence formula, `align_weight`,
 the `±0.12` label threshold, `min_edge_score` — all priors, none fitted to anything. They are
 plausible, not empirical. Note they can't simply be *learned*: a 6-day horizon yields ~52
-independent observations a year against ~17 free parameters.
+independent observations a year against ~17 free parameters. The calibration layer does not
+change this and is not meant to: it fits four numbers downstream of the aggregator — a
+direction map and one factor per tail — and leaves every weight in this list alone, because
+the arithmetic above is exactly why fitting them on 18 days of data would produce a
+confident memory of a fortnight rather than a model.
 
 **2a. The per-item scorer used to read tone, not index impact — largely fixed.** The original
 prompt scored **83% of everything bearish** (5.6:1 bear:bull) on a 60-item paired sample.
@@ -334,9 +426,19 @@ first in-market cycle dies on the INSERT** — the same shape as the `premium_ed
 outage of 5 Aug, one column further on. Anything that rewrites or drops data still does
 not belong in `_ADDED_COLUMNS`; do that by hand.
 
-**7. Spread outcomes aren't tracked.** `spread_suggestions` records what was proposed but
-nothing records what it would have been worth at expiry, so the strategy layer can't be
-scored even once the directional layer can.
+**7. Spread outcomes still aren't tracked.** `prediction_outcomes` settles the *prediction*
+layer — direction and both tails. It does not settle the strategy layer: `spread_suggestions`
+still records what was proposed and nothing records what it would have been worth at expiry.
+So the edge score's own weights (`align_weight`, `premium_weight`, the `0.05` buffer term,
+`min_edge_score`) remain unfittable, and deliberately outside what the calibrator touches.
+`paper_positions` is the nearest thing, and the model arm has never opened one.
+
+**8. Calibration needs its tables before the first cycle that writes them.** Two new tables
+arrive with the calibration layer, and `--setup` creates them (`create_all()` does create
+missing *tables*; it is columns it will not add — see 6a). Both the settlement pass and the
+refit are wrapped so a missing table degrades to a warning rather than killing the cycle,
+which is the mitigation the 5 Aug outage earned — but a deploy that skips setup runs
+uncalibrated and silently, and the only sign is `Calibration failed` in the log.
 
 ## Testing
 

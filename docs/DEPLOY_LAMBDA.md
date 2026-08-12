@@ -103,6 +103,15 @@ CloudWatch Logs.
    without spending anything. Success is `{"ok": true, "action": "setup"}`. This is
    also the cheapest proof that the secret is readable — a database connection
    means the password came back.
+
+   **Do not skip this on a release that adds a table.** `create_all()` creates
+   missing tables here and nowhere else — a normal cycle never calls `init_db()`.
+   The calibration release (11 Aug 2026) adds `prediction_outcomes` and
+   `calibration_fits`; both the settlement pass and the refit are wrapped, so a
+   skipped setup does not kill the cycle the way the `premium_edge` column did on
+   5 August. It fails quieter instead: the scanner runs uncalibrated and settles
+   nothing, and the only sign is `Calibration failed` in the log. Check for it
+   after the first cycle of any release that touched the schema.
 5. **Lambda: Invoke now** — one real cycle. Success is
    `{"ok": true, "mode": "market_hours"}` plus either a prediction block or
    `outside market hours, deferring prediction`.

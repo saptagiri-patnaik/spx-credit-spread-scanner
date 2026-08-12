@@ -298,6 +298,18 @@
     </div>
   </header>
 
+  <div class="note">
+    <span class="tag">Written 25 July · partly superseded</span>
+    This is the structural walkthrough and the shapes still hold, but several specifics have
+    moved since. The scorer is <code>claude-haiku-4-5</code>, not <code>llama3.1:8b</code>;
+    the directional blend described below is the <b>fallback</b> path, since the live aggregator
+    reasons over de-duplicated stories and emits per-side tail estimates; <code>confidence_gate</code>
+    is 0.40, not 0.65; and which side may be sold is decided by those tails rather than by the
+    direction label. <b><a href="scanner-flow.html">scanner-flow.html</a> is the current
+    stage-by-stage picture</b> and carries live numbers. The two sections added on 11 August —
+    <b>Calibration</b> and the <b>State</b> table — are current.
+  </div>
+
   <div class="legend">
     <span><i class="swatch sw-io"></i> I/O &amp; external</span>
     <span><i class="swatch sw-gate"></i> Decision gate</span>
@@ -590,6 +602,115 @@ flowchart TB
 
   <hr />
 
+  <!-- ============ CALIBRATION ============ -->
+  <section class="stage">
+    <div class="stage-head">
+      <span class="stage-num">06</span>
+      <h2>Calibration — the only loop that closes</h2>
+    </div>
+    <p>
+      Added 11 August. Everything above runs forward: headlines in, a spread out. This stage runs
+      backward — it reads what the market did after a prediction and refits a correction from it.
+      It sits between the aggregator and the scan, so the scan sees corrected tails.
+    </p>
+
+    <div class="plate">
+<pre class="mermaid">
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#ffffff','primaryTextColor':'#10161d','primaryBorderColor':'#8fa3b5','lineColor':'#5c6773','secondaryColor':'#dfe9ef','tertiaryColor':'#f2f6f9','fontFamily':'ui-monospace, Menlo, Consolas, monospace','fontSize':'13px'}}}%%
+flowchart TB
+  PRED["predictions<br/>direction · confidence · tails · price"]:::io
+  SETTLE{"Both windows<br/>elapsed?"}:::gate
+  WAIT["Leave it running<br/>re-checked every cycle"]
+  QUAL{"Window well<br/>sampled?"}:::gate
+  DROP["Refused — an unobserved breach<br/>would settle as 'no breach'"]:::bear
+  OUT["prediction_outcomes<br/>excursions in expected moves · hit"]:::io
+  NEFF["Deflate to n_eff<br/>observed days ÷ window length"]
+  FIT["Fit 4 parameters<br/>direction map · one factor per tail"]
+  FLOOR{"n_eff ≥ 8<br/>and mode = apply?"}:::gate
+  SHADOW["Shadow — record what it<br/>WOULD do, change nothing"]:::bear
+  APPLY["Correct direction + tails"]:::bull
+  SCAN["Stage 05 · scan the chain"]:::io
+
+  PRED --> SETTLE
+  SETTLE -- no --> WAIT
+  SETTLE -- yes --> QUAL
+  QUAL -- no --> DROP
+  QUAL -- yes --> OUT
+  OUT --> NEFF --> FIT --> FLOOR
+  FLOOR -- no --> SHADOW --> SCAN
+  FLOOR -- yes --> APPLY --> SCAN
+
+  classDef io fill:#d3e5e9,stroke:#16697a,color:#0d3b45,stroke-width:1.5px
+  classDef gate fill:#f2e3c4,stroke:#a2711a,color:#4a340a,stroke-width:1.5px
+  classDef bull fill:#cfe8dd,stroke:#1a7f5a,color:#0c3e2b,stroke-width:1.5px
+  classDef bear fill:#f0d7d8,stroke:#b0393c,color:#5a1c1e,stroke-width:1.5px
+</pre>
+    </div>
+
+    <h3>What is scored, and over which window</h3>
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th>Claim</th><th>Window</th><th>Measured as</th><th>So far</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>downside_risk</code></td><td><code>paper_hold_days</code> — 4d</td>
+            <td>Largest drawdown in expected moves; ≥ 1.0 EM is a breach</td>
+            <td class="num">0 / 43 · max 0.28 EM</td></tr>
+          <tr><td><code>upside_risk</code></td><td><code>paper_hold_days</code> — 4d</td>
+            <td>Largest run-up, same units</td>
+            <td class="num">0 / 43 · max 0.98 EM</td></tr>
+          <tr><td><code>direction</code> / <code>label</code></td><td><code>horizon_days</code> — 6d</td>
+            <td>Sign of the forward return</td>
+            <td class="num">42.9% vs 77% base</td></tr>
+          <tr><td><code>confidence</code></td><td><code>horizon_days</code> — 6d</td>
+            <td>Hit rate by bucket — <b>diagnostic only, never corrected</b></td>
+            <td class="num">86% low / 20% high</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      The tails are scored over the holding period rather than the DTE because that is the span a
+      position is actually exposed to; a breach in week three happens to a spread that was closed
+      a fortnight earlier. The 1.0 EM threshold is the synthesis prompt's own wording, so the model
+      is marked on the question it was asked.
+    </p>
+
+    <h3>Why four parameters and not seventeen</h3>
+    <p>
+      A 6-day horizon yields ~52 independent observations a year against ~17 hand-set weights, so
+      fitting the weight vector would memorise a fortnight rather than learn a market. Source
+      weights, recency half-lives and the edge terms are untouched. What makes the difference is
+      counting evidence honestly:
+    </p>
+    <div class="note">
+      <span class="tag">n_eff, not n</span>
+      Predictions land every 45 minutes and are scored over windows days long, so consecutive rows
+      are near-copies. <b>43 windows across 14 observed days is worth about 3 independent
+      observations</b>, not 43. Every interval and shrinkage weight uses the deflated figure, and
+      nothing applies below <code>calibration_min_neff</code> — currently reading 1.0 against a
+      floor of 8.
+    </div>
+    <div class="note">
+      <span class="tag">Asymmetric by design</span>
+      A stated value stands unless it falls <b>outside</b> the interval the data supports. When it
+      does, a correction may go to the point estimate when <b>tightening</b> a tail, but only to the
+      near edge of the interval when <b>loosening</b> one. Zero downside breaches in 43 windows
+      reads as "cut the estimate tenfold" until the windows are counted — at n_eff 3 the upper bound
+      on the true rate is still 0.79, so 0.35 stands. Understating a tail costs the account;
+      overstating one costs a trade.
+    </div>
+    <div class="note">
+      <span class="tag">No feedback contamination</span>
+      Every applied cycle stores the pre-correction values under
+      <code>market_context.calibration</code>, and every refit reads <b>those</b>. Fitting on
+      corrected numbers would mean each refit correcting a correction, compounding its own error
+      every cycle. It is also why switching <code>calibration_mode</code> back off leaves no residue.
+    </div>
+  </section>
+
+  <hr />
+
   <!-- ============ PARAMS ============ -->
   <section class="stage">
     <div class="stage-head">
@@ -634,6 +755,13 @@ flowchart TB
           <tr><td><code>max_rel_bid_ask</code></td><td class="num">0.60</td><td>Liquidity filter on both legs</td></tr>
           <tr><td><code>align_weight</code></td><td class="num">0.15</td><td>Directional agreement weight in edge</td></tr>
           <tr><td><code>min_edge_score</code></td><td class="num">0.05</td><td>Recommendation threshold</td></tr>
+          <tr><td><code>calibration_mode</code></td><td class="num">shadow</td><td>off / shadow / apply — shadow fits and logs but corrects nothing</td></tr>
+          <tr><td><code>calibration_min_neff</code></td><td class="num">8.0</td><td><b>Independent</b> windows before any correction applies</td></tr>
+          <tr><td><code>calibration_prior_strength</code></td><td class="num">10.0</td><td>Observations of belief the shipped priors are worth</td></tr>
+          <tr><td><code>calibration_max_factor</code></td><td class="num">2.0</td><td>Hard cap on a tail correction, either direction</td></tr>
+          <tr><td><code>calibration_max_step</code></td><td class="num">0.25</td><td>Furthest one refit may move a parameter</td></tr>
+          <tr><td><code>calibration_confidence_z</code></td><td class="num">1.96</td><td>Interval width; wider makes loosening <i>harder</i></td></tr>
+          <tr><td><code>calibration_max_gap_hours</code></td><td class="num">96</td><td>Longest unobserved stretch a scored window may contain</td></tr>
         </tbody>
       </table>
     </div>
@@ -665,9 +793,11 @@ flowchart TB
       <h2>State</h2>
     </div>
     <p>
-      Six tables on AWS Lightsail Postgres. <code>collector_state</code> and
+      Nine tables on AWS Lightsail Postgres. <code>collector_state</code> and
       <code>api_usage</code> are what make the paid X collector safe to run every 45 minutes —
-      they carry the cursor and the daily spend counter across restarts.
+      they carry the cursor and the daily spend counter across restarts. The last three are the
+      measurement layer: what a suggestion was worth, what a prediction turned out to be, and what
+      the scanner has learned from the two.
     </p>
 
     <div class="tablewrap">
@@ -682,6 +812,9 @@ flowchart TB
           <tr><td><code>spread_suggestions</code></td><td>The best spread, when one exists</td><td>Stage 5</td></tr>
           <tr><td><code>api_usage</code></td><td>Daily paid-API call counts and cost</td><td>X collector</td></tr>
           <tr><td><code>collector_state</code></td><td>Cursors; Schwab token under <code>app_data</code></td><td>Collectors / refresher</td></tr>
+          <tr><td><code>paper_positions</code></td><td>Simulated entries and exits, two arms</td><td>Paper tracker</td></tr>
+          <tr><td><code>prediction_outcomes</code></td><td>What followed each matured prediction — written once, never revised</td><td>Stage 6</td></tr>
+          <tr><td><code>calibration_fits</code></td><td>Fitted corrections, banked only when behaviour changes</td><td>Stage 6</td></tr>
         </tbody>
       </table>
     </div>
