@@ -181,6 +181,13 @@ if ($Status) {
         if ($message -notmatch 'NotFound|ResourceNotFoundException') {
             throw "could not check whether legacy schedule '$SchedName' exists -- AWS call failed: $($message.Trim())"
         }
+        # The call's own nonzero exit is expected and already handled -- and
+        # this MUST be $global:, not a plain assignment: $LASTEXITCODE set
+        # without that scope modifier only shadows it inside this script's
+        # own scope and never reaches the caller, so anyone running this
+        # script from a prompt or another script would still see the false
+        # failure signal this was meant to remove.
+        $global:LASTEXITCODE = 0
     }
     return
 }
@@ -377,6 +384,13 @@ if ($LASTEXITCODE -eq 0) {
     if ($message -notmatch 'NotFound|ResourceNotFoundException') {
         throw "could not check whether legacy schedule '$SchedName' exists -- AWS call failed: $($message.Trim())"
     }
+    # This is the steady state once the legacy schedule has been cleaned up
+    # once: every normal healthy run hits this branch, so leaving AWS CLI's
+    # raw nonzero exit code unreset would make a successful run of this
+    # script look like a failure from the outside, every single time.
+    # $global: is required -- see the -Status branch above for why a plain
+    # assignment silently does nothing outside this script's own scope.
+    $global:LASTEXITCODE = 0
 }
 
 Write-Host "`nSession cycles: $(($grid.Times | Where-Object { $_ -ge '06:30' -and $_ -lt '13:00' }) -join ' ') $Timezone" -ForegroundColor Cyan

@@ -70,6 +70,11 @@ if ($Status) {
         $message = ($lines | Out-String)
         if ($message -match 'NotFound') {
             Write-Note 'topic does not exist yet'
+            # Handled, not a failure -- and $global: is required: a plain
+            # $LASTEXITCODE assignment only shadows it inside this script's
+            # own scope and never reaches the caller, so SNS's raw NotFound
+            # exit code would still leak out as this script's exit code.
+            $global:LASTEXITCODE = 0
         } else {
             throw "could not list SNS subscriptions for $topicArn -- AWS call failed: $($message.Trim())"
         }
