@@ -69,7 +69,8 @@ $policy = @{
             Action = @(
                 'lambda:CreateFunction', 'lambda:UpdateFunctionCode',
                 'lambda:UpdateFunctionConfiguration', 'lambda:GetFunction',
-                'lambda:GetFunctionConfiguration', 'lambda:PutFunctionConcurrency',
+                'lambda:GetFunctionConfiguration', 'lambda:GetFunctionConcurrency',
+                'lambda:PutFunctionConcurrency',
                 'lambda:DeleteFunctionConcurrency', 'lambda:InvokeFunction'
             )
             Resource = @($funcArn, $zipArn)
