@@ -8,6 +8,10 @@ so run deploy.ps1 first.
 
 Does NOT create the schedule; that is schedule.ps1, so you can test the function
 before it starts firing on its own.
+
+Everything below targets $FuncName, the container function -- production runs
+on $ZipFuncName instead (see common.ps1). This script does not provision or
+pin concurrency on $ZipFuncName; that is zip-concurrency.ps1.
 #>
 . (Join-Path $PSScriptRoot 'common.ps1')
 

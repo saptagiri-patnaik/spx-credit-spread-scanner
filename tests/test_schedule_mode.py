@@ -12,6 +12,8 @@ from types import SimpleNamespace
 import main as main_module
 from main import Pipeline
 
+from ._session_fixtures import FakeCalendar
+
 
 class _Log:
     def __init__(self):
@@ -42,6 +44,16 @@ def _pipeline(monkeypatch, *, market_open, mode="market_hours", new_items=5):
         raise AssertionError("prediction should not run outside market hours")
 
     p.repo = SimpleNamespace(recent_scores=_boom, fetch_events=_boom)
+    # A news-bearing cycle now fetches the scan chain before it reads scores,
+    # because the same chain marks the open positions ahead of the prediction.
+    # `_boom` still guards the prediction path itself.
+    p.schwab = SimpleNamespace(
+        symbol=lambda u: u,
+        option_chain=lambda *a: {"underlyingPrice": 7000.0},
+    )
+    # dry_run=True skips every paper.* call, so a wide-open fake is enough --
+    # nothing here depends on the exact session boundary.
+    p.calendar = FakeCalendar()
     return p
 
 

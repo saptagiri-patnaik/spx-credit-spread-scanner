@@ -42,7 +42,9 @@ param(
 
 Assert-Tooling
 $account = Get-AwsAccount
-$funcArn = "arn:aws:lambda:$Region`:$account`:function:$FuncName"
+# $ZipFuncName, not $FuncName -- $ZipFuncName is the function EventBridge
+# actually invokes. See common.ps1's comment on the two names.
+$funcArn = "arn:aws:lambda:$Region`:$account`:function:$ZipFuncName"
 $schedRoleArn = "arn:aws:iam::$account`:role/$SchedRoleName"
 
 <#
@@ -89,39 +91,46 @@ function Get-Grid {
 
 function Get-GridScheduleNames {
     $names = aws scheduler list-schedules --region $Region --name-prefix $SchedPrefix `
-        --query 'Schedules[].Name' --output text 2>$null
-    if ($LASTEXITCODE -ne 0 -or -not $names) { return @() }
+        --query 'Schedules[].Name' --output text
+    # A nonzero exit here means the AWS call itself failed (auth, network,
+    # region) -- list-schedules returns an empty, successful result for a
+    # prefix that matches nothing, so failure and "no schedules" are never
+    # the same case. Conflating them let -Status report "no grid schedules
+    # exist yet" during an outage, and let -Enable/-Disable proceed past a
+    # throw that should have stopped them.
+    if ($LASTEXITCODE -ne 0) {
+        throw "could not list schedules with prefix '$SchedPrefix' -- AWS call failed, not confirmed absent."
+    }
+    if (-not $names) { return @() }
     return @($names -split '\s+' | Where-Object { $_ })
 }
 
-if ($Status) {
-    $names = Get-GridScheduleNames
-    if (-not $names) { Write-Note 'no grid schedules exist yet' }
-    foreach ($name in $names) {
-        aws scheduler get-schedule --name $name --region $Region `
-            --query '{Name:Name,State:State,Expression:ScheduleExpression,Tz:ScheduleExpressionTimezone,Retries:Target.RetryPolicy.MaximumRetryAttempts}' `
-            --output json
+# Reads every named schedule's current definition once. Shared by -Disable
+# and -Enable so each reads the same way and the update loop below never has
+# to re-fetch (a second fetch is a second place the two could disagree).
+function Get-CurrentSchedules {
+    param([string[]]$Names)
+    $currents = @{}
+    foreach ($name in $Names) {
+        $raw = aws scheduler get-schedule --name $name --region $Region --output json
+        if ($LASTEXITCODE -ne 0) { throw "could not read schedule '$name' -- AWS call failed, not confirmed absent." }
+        $currents[$name] = $raw | ConvertFrom-Json
     }
-    aws scheduler get-schedule --name $SchedName --region $Region --query 'Name' --output text 2>$null | Out-Null
-    if ($LASTEXITCODE -eq 0) { Write-Note "legacy rate schedule '$SchedName' still exists" }
-    return
+    return $currents
 }
 
-if (-not (Test-LambdaExists)) { throw "Function '$FuncName' does not exist. Run provision.ps1 first." }
-
-if ($Disable -or $Enable) {
-    $names = Get-GridScheduleNames
-    if (-not $names) { throw 'No grid schedules to change. Run ./schedule.ps1 with no arguments first.' }
-    $state = if ($Disable) { 'DISABLED' } else { 'ENABLED' }
-    foreach ($name in $names) {
-        # update-schedule replaces the definition, so the existing one has to be read
-        # back and re-sent with only State altered.
-        $current = aws scheduler get-schedule --name $name --region $Region --output json | ConvertFrom-Json
+# Applies $State to every schedule in $Currents, preserving everything else
+# about its definition -- update-schedule replaces the whole thing, so the
+# existing values have to be re-sent rather than only the changed field.
+function Set-ScheduleStates {
+    param([hashtable]$Currents, [string]$State)
+    foreach ($name in $Currents.Keys) {
+        $current = $Currents[$name]
         $body = @{
             Name                       = $name
             ScheduleExpression         = $current.ScheduleExpression
             ScheduleExpressionTimezone = $current.ScheduleExpressionTimezone
-            State                      = $state
+            State                      = $State
             FlexibleTimeWindow         = @{ Mode = 'OFF' }
             Target                     = @{
                 Arn         = $current.Target.Arn
@@ -136,14 +145,105 @@ if ($Disable -or $Enable) {
         try {
             Set-Content -Path $file -Value $body -Encoding utf8NoBOM
             aws scheduler update-schedule --region $Region --cli-input-json "file://$file" | Out-Null
-            if ($LASTEXITCODE -ne 0) { throw "could not set $name to $state." }
+            if ($LASTEXITCODE -ne 0) { throw "could not set $name to $State." }
         } finally {
             Remove-Item $file -ErrorAction SilentlyContinue
         }
-        Write-Ok "$name -> $state"
+        Write-Ok "$name -> $State"
     }
+}
+
+if ($Status) {
+    $names = Get-GridScheduleNames
+    if (-not $names) { Write-Note 'no grid schedules exist yet' }
+    foreach ($name in $names) {
+        $raw = aws scheduler get-schedule --name $name --region $Region `
+            --query '{Name:Name,State:State,Expression:ScheduleExpression,Tz:ScheduleExpressionTimezone,Retries:Target.RetryPolicy.MaximumRetryAttempts,Arn:Target.Arn}' `
+            --output json
+        if ($LASTEXITCODE -ne 0) {
+            throw "could not read schedule '$name' -- AWS call failed, not confirmed absent."
+        }
+        $info = $raw | ConvertFrom-Json
+        $info | ConvertTo-Json
+        if (-not $info.Arn -or $info.Arn -ne $funcArn) {
+            $seen = if ($info.Arn) { "'$($info.Arn)'" } else { 'no target Arn' }
+            Write-Note "MISMATCH: $($info.Name) targets $seen, expected '$funcArn' -- this schedule may still be invoking the retired function"
+        }
+    }
+    aws scheduler get-schedule --name $SchedName --region $Region --query 'Name' --output text 2>$null | Out-Null
+    if ($LASTEXITCODE -eq 0) { Write-Note "legacy rate schedule '$SchedName' still exists" }
     return
 }
+
+if ($Disable) {
+    # Deliberately does not call Test-LambdaExists: this is the emergency
+    # brake, and it must work even when the Lambda function is broken,
+    # deleted, or the existence check's own AWS call is failing. Disabling
+    # schedules is always safe to attempt; refusing to attempt it because of
+    # an unrelated Lambda problem defeats the point of having a brake.
+    $names = Get-GridScheduleNames
+    if (-not $names) { throw 'No grid schedules to change. Run ./schedule.ps1 with no arguments first.' }
+    $currents = Get-CurrentSchedules -Names $names
+    Set-ScheduleStates -Currents $currents -State 'DISABLED'
+    return
+}
+
+if (-not (Test-LambdaExists $ZipFuncName)) {
+    throw "Function '$ZipFuncName' does not exist. No script in this repo creates it -- " +
+        "it must exist already (created by hand or a script this repo does not have). " +
+        "Run build-zip.ps1 -Deploy to populate its code once it exists."
+}
+
+if ($Enable) {
+    Assert-ZipConcurrencyPinned
+
+    $names = Get-GridScheduleNames
+    if (-not $names) { throw 'No grid schedules to change. Run ./schedule.ps1 with no arguments first.' }
+    $currents = Get-CurrentSchedules -Names $names
+
+    # -Enable must not resume schedules that still point at the retired
+    # container, or resume a ZIP-targeted schedule the scheduler role can't
+    # actually invoke -- either would look like a successful resume and
+    # silently do nothing (or invoke the wrong function) in production.
+    $wrongTarget = @($currents.Values | Where-Object { -not $_.Target.Arn -or $_.Target.Arn -ne $funcArn })
+    if ($wrongTarget.Count -gt 0) {
+        $bad = ($wrongTarget | ForEach-Object { $_.Name }) -join ', '
+        throw "Refusing to enable: $bad target something other than '$funcArn'. Run ./schedule.ps1 with no arguments first to repoint them, then -Enable."
+    }
+
+    # A correct target Arn is not enough on its own: EventBridge Scheduler
+    # assumes Target.RoleArn to make the call, so a schedule could target
+    # $ZipFuncName correctly while its RoleArn still names some other role
+    # (or a typo) that was never granted invoke-spx at all.
+    $wrongRole = @($currents.Values | Where-Object { -not $_.Target.RoleArn -or $_.Target.RoleArn -ne $schedRoleArn })
+    if ($wrongRole.Count -gt 0) {
+        $bad = ($wrongRole | ForEach-Object { $_.Name }) -join ', '
+        throw "Refusing to enable: $bad execute as something other than '$schedRoleArn'. Run ./schedule.ps1 with no arguments first to repoint them, then -Enable."
+    }
+
+    $policyJson = aws iam get-role-policy --role-name $SchedRoleName --policy-name invoke-spx `
+        --region $Region --query 'PolicyDocument' --output json
+    if ($LASTEXITCODE -ne 0) {
+        throw "Refusing to enable: could not read the scheduler role's invoke-spx policy. Run ./schedule.ps1 with no arguments first."
+    }
+    # Matching the ARN anywhere in the document isn't enough either: a
+    # Deny statement, or an Allow for some other action, would satisfy an
+    # ARN-only check while granting nothing this schedule needs.
+    $statements = @(($policyJson | ConvertFrom-Json).Statement)
+    $authorizing = @($statements | Where-Object {
+        $_.Effect -eq 'Allow' -and
+        ('lambda:InvokeFunction' -in @($_.Action)) -and
+        ($funcArn -in @($_.Resource))
+    })
+    if ($authorizing.Count -eq 0) {
+        throw "Refusing to enable: the scheduler role's invoke-spx policy grants no Allow lambda:InvokeFunction on '$funcArn'. Run ./schedule.ps1 with no arguments first to repair it, then -Enable."
+    }
+
+    Set-ScheduleStates -Currents $currents -State 'ENABLED'
+    return
+}
+
+Assert-ZipConcurrencyPinned
 
 Write-Step 'Scheduler role'
 # A different role from the function's: assumed by the scheduler service rather
@@ -159,23 +259,13 @@ if ($LASTEXITCODE -ne 0) {
         })
     } | ConvertTo-Json -Depth 6 -Compress
 
-    $policy = @{
-        Version   = '2012-10-17'
-        Statement = @(@{ Effect = 'Allow'; Action = 'lambda:InvokeFunction'; Resource = $funcArn })
-    } | ConvertTo-Json -Depth 6 -Compress
-
-    $trustFile  = Join-Path ([System.IO.Path]::GetTempPath()) "trust-sched-$([guid]::NewGuid()).json"
-    $policyFile = Join-Path ([System.IO.Path]::GetTempPath()) "invoke-sched-$([guid]::NewGuid()).json"
+    $trustFile = Join-Path ([System.IO.Path]::GetTempPath()) "trust-sched-$([guid]::NewGuid()).json"
     try {
         Set-Content -Path $trustFile -Value $trust -Encoding utf8NoBOM
-        Set-Content -Path $policyFile -Value $policy -Encoding utf8NoBOM
         aws iam create-role --role-name $SchedRoleName --assume-role-policy-document "file://$trustFile" | Out-Null
         if ($LASTEXITCODE -ne 0) { throw 'create-role failed for the scheduler role.' }
-        aws iam put-role-policy --role-name $SchedRoleName --policy-name invoke-spx `
-            --policy-document "file://$policyFile" | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw 'put-role-policy failed.' }
     } finally {
-        Remove-Item $trustFile, $policyFile -ErrorAction SilentlyContinue
+        Remove-Item $trustFile -ErrorAction SilentlyContinue
     }
     Write-Ok "created $SchedRoleName"
     Write-Note 'waiting 15s for IAM to propagate'
@@ -183,6 +273,29 @@ if ($LASTEXITCODE -ne 0) {
 } else {
     Write-Ok "$SchedRoleName already exists"
 }
+
+Write-Step 'Scheduler invoke policy'
+# Reapplied every normal run, not only when the role is first created: a role
+# that already existed from before the ZIP migration would otherwise keep an
+# invoke grant for $FuncName -- a function nothing invokes -- and no grant at
+# all for $ZipFuncName, the one EventBridge actually calls. Changing $funcArn
+# above does nothing to a policy document that was never re-sent.
+# put-role-policy is idempotent, so resending the current $funcArn here costs
+# nothing when it already matches and self-heals when it does not.
+$policy = @{
+    Version   = '2012-10-17'
+    Statement = @(@{ Effect = 'Allow'; Action = 'lambda:InvokeFunction'; Resource = $funcArn })
+} | ConvertTo-Json -Depth 6 -Compress
+$policyFile = Join-Path ([System.IO.Path]::GetTempPath()) "invoke-sched-$([guid]::NewGuid()).json"
+try {
+    Set-Content -Path $policyFile -Value $policy -Encoding utf8NoBOM
+    aws iam put-role-policy --role-name $SchedRoleName --policy-name invoke-spx `
+        --policy-document "file://$policyFile" | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'put-role-policy failed.' }
+} finally {
+    Remove-Item $policyFile -ErrorAction SilentlyContinue
+}
+Write-Ok "invoke-spx policy grants $ZipFuncName"
 
 $grid = Get-Grid -LocalTime $AnchorTime -IntervalMinutes $IntervalMinutes
 Write-Step "Grid: every $IntervalMinutes min anchored to $AnchorTime $Timezone"
@@ -229,15 +342,31 @@ foreach ($cron in $grid.Crons) {
 $stale = Get-GridScheduleNames | Where-Object { $_ -notin (1..$index | ForEach-Object { "$SchedPrefix-$_" }) }
 foreach ($name in $stale) {
     aws scheduler delete-schedule --name $name --region $Region | Out-Null
-    Write-Note "deleted stale schedule $name"
+    # Previously logged "deleted" unconditionally regardless of whether the
+    # call actually succeeded. A schedule that survives this is not cosmetic
+    # -- it keeps firing its own grid alongside the current one.
+    if ($LASTEXITCODE -ne 0) {
+        throw "could not delete stale schedule '$name' -- it will keep firing on its own grid until removed."
+    }
+    Write-Ok "deleted stale schedule $name"
 }
 
 # The rate-based schedule this replaces. Left in place it would double every cycle.
-aws scheduler get-schedule --name $SchedName --region $Region *> $null
+$legacyCheck = aws scheduler get-schedule --name $SchedName --region $Region --query 'Name' --output text 2>&1
 if ($LASTEXITCODE -eq 0) {
     aws scheduler delete-schedule --name $SchedName --region $Region | Out-Null
-    if ($LASTEXITCODE -eq 0) { Write-Ok "removed legacy rate schedule $SchedName" }
-    else { Write-Note "could not remove $SchedName -- delete it by hand or cycles will double" }
+    if ($LASTEXITCODE -ne 0) {
+        throw "could not remove legacy rate schedule '$SchedName' -- it will keep firing alongside the grid and double every cycle."
+    }
+    Write-Ok "removed legacy rate schedule $SchedName"
+} else {
+    # ResourceNotFoundException means the legacy schedule is genuinely gone.
+    # Anything else (auth, network, region) is a real failure that must not
+    # be reported the same way as "already cleaned up."
+    $message = ($legacyCheck | Out-String)
+    if ($message -notmatch 'NotFound|ResourceNotFoundException') {
+        throw "could not check whether legacy schedule '$SchedName' exists -- AWS call failed: $($message.Trim())"
+    }
 }
 
 Write-Host "`nSession cycles: $(($grid.Times | Where-Object { $_ -ge '06:30' -and $_ -lt '13:00' }) -join ' ') $Timezone" -ForegroundColor Cyan

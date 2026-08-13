@@ -97,6 +97,28 @@ class SchwabClient:
             self.log.warning("Schwab quote fail (%s): %s", symbol, exc)
             return None
 
+    def market_hours(self, market: str, date: dt.date) -> dict | None:
+        """Schwab's own session open/close/early-close data for `market`.
+
+        See market/session_calendar.py for what this feeds and why: the actual
+        Cboe SPX index-options session, not a generic weekday rule.
+        """
+        headers = self._headers()
+        if not headers:
+            return None
+        try:
+            resp = requests.get(
+                f"{MARKETDATA_BASE}/markets/{market}",
+                headers=headers,
+                params={"date": date.isoformat()},
+                timeout=15,
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as exc:  # noqa: BLE001
+            self.log.warning("Schwab market hours fail (%s, %s): %s", market, date, exc)
+            return None
+
     def option_chain(self, symbol: str, from_date: dt.date, to_date: dt.date) -> dict | None:
         headers = self._headers()
         if not headers:

@@ -159,6 +159,13 @@ class SpreadSuggestion(Base):
     buffer: Mapped[float] = mapped_column(Float, default=0.0)       # short-strike distance in expected moves
     breakeven: Mapped[float | None] = mapped_column(Float, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # The worse of the short and long leg's pricing (`utils.quotes.quote_quality`,
+    # a condor takes the worse of both wings). `credit` treats a two-sided quote
+    # and a mark/last fallback as the same kind of number; this is what lets a
+    # later query tell a real fill from a guessed one instead of assuming every
+    # priced candidate was quoted the same way. Nullable -- rows before 13 Aug
+    # 2026 predate the field.
+    quote_quality: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     prediction = relationship("Prediction", back_populates="spreads")
 
@@ -178,12 +185,37 @@ class PaperPosition(Base):
     spread_id: Mapped[int | None] = mapped_column(
         ForeignKey("spread_suggestions.id", ondelete="SET NULL"), index=True, nullable=True
     )
-    # "model"    = opened because a scan cleared all three gates
-    # "baseline" = opened mechanically, ignoring sentiment entirely
+    # "model"        = opened because a scan cleared all three gates
+    # "model_shadow" = the daily ranked winner rejected only by the edge gate
+    # "baseline"     = opened mechanically, ignoring sentiment entirely
     # Without the baseline arm, P&L has nothing to be compared against: the
     # question is not "did this make money" but "did it beat selling premium
     # without the model".
     arm: Mapped[str] = mapped_column(String(12), default="model", index=True)
+
+    # --- policy in force at entry ---
+    #
+    # An arm's rules change over time -- the baseline alone has moved from
+    # "re-enter whenever no position is open" to a rolling 24h window to one
+    # decision per exchange session. Without a stamp, every such change silently
+    # splices two different experiments into one series, and which policy
+    # produced a given row becomes unknowable after the fact. Reading today's
+    # config back at analysis time cannot recover it, which is the same mistake
+    # that left baseline entries with no delta to compare a POP against.
+    #
+    # `policy_version` names the SEMANTICS, not the build: it changes when the
+    # decision rule changes and not when the code is redeployed. The snapshot
+    # carries the parameters those semantics were run with, so a version can be
+    # interpreted without archaeology into a config file's git history.
+    #
+    # Nullable, and deliberately never backfilled: rows written before this
+    # existed were produced under a policy nobody recorded, and stamping today's
+    # onto them would manufacture exactly the certainty that is missing.
+    policy_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    policy_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # The exchange session this entry was DECIDED in, which is not derivable
+    # from opened_at without knowing the timezone that was configured then.
+    decision_session: Mapped[dt.date | None] = mapped_column(Date, nullable=True, index=True)
 
     # --- entry ---
     opened_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
@@ -201,6 +233,18 @@ class PaperPosition(Base):
     max_loss: Mapped[float] = mapped_column(Float)    # width - credit
     stop_price: Mapped[float] = mapped_column(Float)  # close if mark reaches this
     underlying_at_open: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Observed facts about the entry, not parameters of the policy: the SAME
+    # baseline.v3-session-anchored policy can select a 0.12 delta one session and
+    # a 0.18 delta the next, and pop_real depends on that day's realised vol.
+    # Recording them here rather than folding them into policy_snapshot is what
+    # lets a query compare "delta actually sold" against "delta targeted" instead
+    # of conflating the two. Model and shadow entries already carry this on their
+    # linked SpreadSuggestion row (short_delta, pop, pop_real); it is duplicated
+    # here so all three arms are queryable the same way without a conditional
+    # join. Nullable -- rows before 13 Aug 2026 predate the fields, and so does
+    # every baseline row, which never persisted a delta to begin with.
+    entry_short_delta: Mapped[float | None] = mapped_column(Float, nullable=True)
+    entry_quote_quality: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     # --- live ---
     status: Mapped[str] = mapped_column(String(12), default="open", index=True)  # open/closed
@@ -212,9 +256,54 @@ class PaperPosition(Base):
     # --- exit ---
     closed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     exit_mark: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # "expired_unpriced": the position's expiration passed while it remained
+    # unmarkable in every chain requested for it. No live chain will ever
+    # quote an expired contract again, so this is terminal rather than a gap a
+    # later cycle might fill -- and it is what stops a single unlucky expiry
+    # from holding a paper_max_open slot forever.
     exit_reason: Mapped[str | None] = mapped_column(String(20), nullable=True)
     pnl: Mapped[float | None] = mapped_column(Float, nullable=True)  # credit - exit_mark
     underlying_at_close: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # The quote quality behind exit_mark, the same classification entry_quote_
+    # quality uses. Realised P&L could not previously tell a position closed
+    # against a real two-sided market from one closed on a guessed mark/last
+    # fallback. Null whenever exit_mark is null (no mark, nothing to grade).
+    exit_quote_quality: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
+
+class PaperArmDecision(Base):
+    """One row per (arm, session): what a session-scoped arm actually did, or why not.
+
+    Without this, "no position opened" and "the code never ran that cycle" leave
+    the same trace -- nothing. A missing calendar date is detectable; the reason
+    for it is not, and "chain outage" versus "disabled" versus "no candidate
+    cleared the filters" call for different follow-up. Written at every attempt a
+    session-scoped arm makes, so the row exists whether or not an entry resulted.
+
+    Upserted, not appended: `(arm, decision_session)` is unique, and later
+    attempts within the same session update `outcome`/`reason`/`last_attempt_at`
+    in place rather than adding rows. A session's history is one settled answer,
+    not a log of every cycle that looked at it.
+    """
+
+    __tablename__ = "paper_arm_decisions"
+    __table_args__ = (UniqueConstraint("arm", "decision_session", name="uq_arm_session"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    arm: Mapped[str] = mapped_column(String(12), index=True)
+    decision_session: Mapped[dt.date] = mapped_column(Date, index=True)
+    # "opened"         a position was taken; paper_position_id names it
+    # "no_quote"       inside the entry window, no valid candidate yet -- may
+    #                  still resolve to "opened" or "skipped" on a later cycle
+    # "skipped"        the entry window closed with no candidate ever clearing
+    # "disabled"       the arm's enable flag was off this session
+    outcome: Mapped[str] = mapped_column(String(20))
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    paper_position_id: Mapped[int | None] = mapped_column(
+        ForeignKey("paper_positions.id", ondelete="SET NULL"), nullable=True
+    )
+    first_attempt_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    last_attempt_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
 class PredictionOutcome(Base):

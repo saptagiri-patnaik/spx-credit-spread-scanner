@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from pydantic import model_validator
 from pydantic.fields import FieldInfo
@@ -119,6 +120,28 @@ class Settings(BaseSettings):
                     port=self.db_port,
                     database=self.schwab_token_db_name,
                 ).render_as_string(hide_password=False)
+        return self
+
+    @model_validator(mode="after")
+    def _reject_an_unloadable_market_tz(self) -> "Settings":
+        """A bad `market_tz` must stop the process, not degrade quietly.
+
+        This is not a display setting. `is_market_hours()` treats an unloadable
+        zone as OPEN, so one typo disables the RTH boundary system-wide: scans
+        and paper entries would run against closed-market quotes, and the
+        paper arms' session windows would fall back to their safety defaults.
+        Every one of those failures is silent and none of them is local to the
+        code that reads the setting, so the only honest place to catch it is
+        before the process starts doing work.
+        """
+        try:
+            ZoneInfo(self.market_tz)
+        except Exception as exc:  # noqa: BLE001 - any zoneinfo failure, same answer
+            raise ValueError(
+                f"market_tz {self.market_tz!r} is not a loadable IANA timezone "
+                f"({exc}). The market-hours check fails OPEN, so an unreadable "
+                "zone would let the scanner trade a closed market."
+            ) from exc
         return self
 
     # --- LLM (local Ollama) ---
@@ -454,10 +477,22 @@ class Settings(BaseSettings):
                                       # $1.00 loss - risking 1x credit to make 1x
     paper_max_open: int = 5           # concurrent simulated positions
 
+    # Counterfactual arm: once per day, mark the ranked spread that reached the
+    # final edge gate but was rejected by it. It never consumes paper_max_open
+    # and never changes alerts or recommendations; its only purpose is to test
+    # whether min_edge_score separates realised payoffs.
+    paper_shadow_enabled: bool = True
+
     # Control arm: sells a spread every day ignoring sentiment entirely. Without
     # it, P&L has nothing to be measured against -- the question is not "did the
     # model make money" but "did it beat selling premium without the model".
     paper_baseline_enabled: bool = True
+    # Minutes after the 09:30 ET open during which the control arm may still take
+    # the session's entry. A transient quote gap should not cost a whole day of
+    # control data, but retrying until something fills would restore the drifting
+    # entry time that session-anchoring exists to remove. Past the window the
+    # session is simply undecided -- a visible hole, not a late entry.
+    paper_baseline_entry_window_minutes: float = 90.0
     paper_baseline_delta: float = 0.15   # short-leg delta the control arm targets
     paper_baseline_side: str = "put"     # put credit spreads; embeds an upward-drift
                                          # assumption, switch to "call" to test the other

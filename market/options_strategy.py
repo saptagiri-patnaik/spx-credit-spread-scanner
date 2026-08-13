@@ -61,6 +61,8 @@ import datetime as dt
 import math
 from zoneinfo import ZoneInfo
 
+from utils.quotes import quote_quality, worse_quality
+
 
 def expected_move(price: float, iv: float, dte: int) -> float:
     if not price or not iv or dte <= 0:
@@ -239,12 +241,29 @@ class OptionsStrategy:
         }
 
     # --- public API -------------------------------------------------------
-    def scan(self, chain: dict | None, prediction: dict, now: dt.datetime | None = None) -> dict:
-        """Rank all verticals and decide whether *now* is the right time to trade."""
+    def scan(
+        self,
+        chain: dict | None,
+        prediction: dict,
+        now: dt.datetime | None = None,
+        market_open: bool | None = None,
+    ) -> dict:
+        """Rank all verticals and decide whether *now* is the right time to trade.
+
+        `market_open`, when explicitly passed, OVERRIDES the internal
+        `is_market_hours()` check entirely -- the caller has a real exchange
+        session (SessionCalendar, backed by Schwab) and this must not
+        second-guess it with a generic weekday rule that reads "open" through
+        a full holiday and for hours after a half day has actually closed.
+        Left as `None` only for callers -- mainly this module's own tests --
+        that are not wiring the calendar and want the old self-contained
+        behaviour.
+        """
         now = now or dt.datetime.now(dt.timezone.utc)
-        market_open = (not self._cfg("require_market_hours", True)) or is_market_hours(
-            now, self._cfg("market_tz", "America/New_York")
-        )
+        if market_open is None:
+            market_open = (not self._cfg("require_market_hours", True)) or is_market_hours(
+                now, self._cfg("market_tz", "America/New_York")
+            )
         rejects: dict[str, int] = {}
         stages = self._new_stages()
         candidates = self._candidates(chain, prediction, rejects, stages)
@@ -607,6 +626,7 @@ class OptionsStrategy:
                         self._reject(rejects, side, "long_illiquid")
                         continue
                     credit = short_mid - self._mid(lo)
+                    leg_quality = worse_quality(quote_quality(short), quote_quality(lo))
                     max_loss = width - credit
                     if credit <= 0 or max_loss <= 0:
                         self._reject(rejects, side, "no_credit")
@@ -670,6 +690,7 @@ class OptionsStrategy:
                             "buffer": round(buffer, 2),
                             "breakeven": round(breakeven, 2),
                             "notes": self._notes(prediction.get("event_risk", False), move, price, buffer),
+                            "quote_quality": leg_quality,
                         }
                     )
 
@@ -746,6 +767,7 @@ class OptionsStrategy:
                 ),
                 "buffer": round(buffer, 2),
                 "breakeven": put["short_strike"] - credit,
+                "quote_quality": worse_quality(put["quote_quality"], call["quote_quality"]),
                 "notes": (
                     f"Iron condor: {put['short_strike']:.0f}/{put['long_strike']:.0f}P + "
                     f"{call['short_strike']:.0f}/{call['long_strike']:.0f}C. "
@@ -849,16 +871,30 @@ class OptionsStrategy:
     def _mid(self, option) -> float:
         bid = float(option.get("bid") or 0)
         ask = float(option.get("ask") or 0)
-        if bid and ask:
+        # bid <= ask, not just both truthy: a crossed quote is not tradeable at
+        # either printed price, and averaging it produces a number that LOOKS
+        # like a real mid while `quote_quality()` correctly refuses to call it
+        # TWO_SIDED. The two must agree about the same quote.
+        if bid > 0 and ask > 0 and bid <= ask:
             return (bid + ask) / 2.0
         return float(option.get("mark") or option.get("last") or 0)
 
     def _rel_bid_ask(self, option) -> float:
+        """How wide the market is, relative to its mid -- or `inf` if unassessable.
+
+        A quote with no genuine two sides (missing bid/ask, or crossed) cannot
+        have its width measured at all. Returning `0.0` for that case used to
+        score it as the TIGHTEST possible market -- the exact "fails open"
+        pattern that let an unpriced or mark-only leg pass every liquidity gate
+        for free. `inf` fails the same `max_rel_bid_ask` threshold everything
+        else is judged by, which rejects it rather than inventing a number for
+        it: no new coefficient, just closing the gate that was open.
+        """
         bid = float(option.get("bid") or 0)
         ask = float(option.get("ask") or 0)
+        if bid <= 0 or ask <= 0 or bid > ask:
+            return float("inf")
         mid = (bid + ask) / 2.0
-        if mid <= 0:
-            return 0.0 if (option.get("mark") or option.get("last")) else 1.0
         return (ask - bid) / mid
 
     def _notes(self, event_risk: bool, move: float, price: float, buffer: float) -> str:

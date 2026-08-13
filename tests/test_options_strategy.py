@@ -5,6 +5,8 @@ import datetime as dt
 import math
 from types import SimpleNamespace
 
+import pytest
+
 from market.options_strategy import OptionsStrategy, expected_move, is_market_hours
 
 
@@ -36,6 +38,31 @@ class _Log:
 
     def warning(self, *a, **k):
         pass
+
+
+def test_rel_bid_ask_is_infinite_without_a_two_sided_quote():
+    strat = OptionsStrategy(_settings(), _Log())
+    assert strat._rel_bid_ask({}) == float("inf")
+    assert strat._rel_bid_ask({"mark": 1.10}) == float("inf")
+    assert strat._rel_bid_ask({"bid": 0, "ask": 1.20}) == float("inf")
+
+
+def test_rel_bid_ask_is_infinite_for_a_crossed_quote():
+    # bid > ask is not a market anyone could trade at either printed price.
+    # Both sides being positive numbers is not sufficient to call it liquid.
+    strat = OptionsStrategy(_settings(), _Log())
+    assert strat._rel_bid_ask({"bid": 2.00, "ask": 1.00}) == float("inf")
+
+
+def test_rel_bid_ask_measures_a_genuine_two_sided_quote():
+    strat = OptionsStrategy(_settings(), _Log())
+    assert strat._rel_bid_ask({"bid": 0.90, "ask": 1.10}) == pytest.approx(0.20)
+
+
+def test_mid_falls_back_to_mark_on_a_crossed_quote_instead_of_averaging_it():
+    strat = OptionsStrategy(_settings(), _Log())
+    assert strat._mid({"bid": 2.00, "ask": 1.00, "mark": 1.50}) == 1.50
+    assert strat._mid({"bid": 2.00, "ask": 1.00}) == 0.0
 
 
 def test_expected_move_formula():
@@ -106,6 +133,78 @@ def test_build_returns_best_put_credit_spread():
     assert 20 <= spread["dte"] <= 25
 
 
+def test_a_candidate_with_two_sided_legs_is_marked_two_sided():
+    strat = OptionsStrategy(_settings(), _Log())
+    spread = strat.build(_put_chain(), _BULLISH)
+    assert spread["quote_quality"] == "two_sided"
+
+
+def test_a_mark_only_leg_is_rejected_not_merely_flagged():
+    # 4700 (the original winner's long leg) drops its bid/ask and survives only
+    # on `mark`. `_rel_bid_ask()` used to score a mark-only quote as PERFECTLY
+    # liquid (0.0), so this leg would have passed every filter and the winning
+    # candidate would merely have been LABELLED mark_or_last. Now it must be
+    # excluded from candidacy altogether -- both as a short leg in its own
+    # right and as a long leg backing any other short -- and the book must
+    # settle on a different, fully two-sided winner instead.
+    chain = _put_chain()
+    key = f"{(dt.date.today() + dt.timedelta(days=22)).isoformat()}:22"
+    long_leg = chain["putExpDateMap"][key]["4700"][0]
+    del long_leg["bid"], long_leg["ask"]
+    long_leg["mark"] = 20.0
+    strat = OptionsStrategy(_settings(), _Log())
+
+    rejects: dict = {}
+    stages = strat._new_stages()
+    candidates = strat._candidates(chain, {**_BULLISH, "market_context": {}}, rejects, stages)
+    assert not any(c["short_strike"] == 4700 or c["long_strike"] == 4700 for c in candidates)
+    assert rejects.get("put.short_illiquid", 0) >= 1  # 4700 rejected as a short leg
+    assert rejects.get("put.long_illiquid", 0) >= 1   # 4700 rejected as a long leg
+
+    spread = strat.build(chain, _BULLISH)
+    assert spread is not None
+    assert spread["short_strike"] != 4700.0
+    assert spread["long_strike"] != 4700.0
+    assert spread["quote_quality"] == "two_sided"
+
+
+def _vertical(strategy, quote_quality, **kw):
+    # short_delta 0.15 each side -> condor pop 1-(0.15+0.15) = 0.70, clearing
+    # the 0.68 min_pop gate the combined condor is checked against.
+    base = dict(
+        underlying="SPX", strategy=strategy, short_strike=5000.0, long_strike=4995.0,
+        expiration="2026-09-04", dte=22, width=5.0, credit=1.0, max_loss=4.0,
+        pop=0.85, short_delta=0.15, expected_move=100.0, ror=0.25, edge=0.10,
+        premium_edge=0.0, pop_real=0.80, premium_edge_measured=0.0, buffer=1.0,
+        breakeven=4999.0, notes="", quote_quality=quote_quality,
+    )
+    base.update(kw)
+    return base
+
+
+def test_a_condor_takes_the_worse_of_its_two_wings_quote_quality():
+    strat = OptionsStrategy(_settings(), _Log())
+    put = _vertical("PUT_CREDIT_SPREAD", "two_sided")
+    call = _vertical(
+        "CALL_CREDIT_SPREAD", "mark_or_last",
+        short_strike=5100.0, long_strike=5105.0, breakeven=5101.0,
+    )
+    condors = strat._condors([put, call])
+    assert len(condors) == 1
+    assert condors[0]["quote_quality"] == "mark_or_last"
+
+
+def test_a_condor_with_two_two_sided_wings_stays_two_sided():
+    strat = OptionsStrategy(_settings(), _Log())
+    put = _vertical("PUT_CREDIT_SPREAD", "two_sided")
+    call = _vertical(
+        "CALL_CREDIT_SPREAD", "two_sided",
+        short_strike=5100.0, long_strike=5105.0, breakeven=5101.0,
+    )
+    condors = strat._condors([put, call])
+    assert condors[0]["quote_quality"] == "two_sided"
+
+
 def test_scan_recommends_when_open_and_edge_clears():
     strat = OptionsStrategy(_settings(), _Log())
     result = strat.scan(_put_chain(), _BULLISH, now=_OPEN)
@@ -122,6 +221,27 @@ def test_scan_does_not_recommend_when_market_closed():
     result = strat.scan(_put_chain(), _BULLISH, now=_CLOSED)
     assert result["best"] is not None          # still finds/ranks the best candidate
     assert result["recommended"] is False      # but won't fire outside RTH
+    assert "closed" in result["reason"].lower()
+
+
+def test_an_explicit_market_open_override_takes_precedence_on_a_weekday_close():
+    # now=_CLOSED is a Saturday, which is_market_hours() would call closed on
+    # its own -- proves the override REPLACES the internal check rather than
+    # merely widening it.
+    strat = OptionsStrategy(_settings(), _Log())
+    result = strat.scan(_put_chain(), _BULLISH, now=_CLOSED, market_open=True)
+    assert result["market_open"] is True
+    assert result["recommended"] is True
+
+
+def test_an_explicit_market_open_false_overrides_a_weekday_rth_reading():
+    # now=_OPEN is a Wednesday during RTH -- is_market_hours() would call this
+    # open. A real exchange calendar (a half day, a holiday) must be able to
+    # override that.
+    strat = OptionsStrategy(_settings(), _Log())
+    result = strat.scan(_put_chain(), _BULLISH, now=_OPEN, market_open=False)
+    assert result["market_open"] is False
+    assert result["recommended"] is False
     assert "closed" in result["reason"].lower()
 
 

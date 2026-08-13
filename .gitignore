@@ -15,3 +15,8 @@ build/
 # `git status --porcelain`, which counts untracked files, so leaving this
 # floating would mark every deployment irreproducible.
 .claude/
+# Standalone HTML review artifacts (architecture/roadmap/tracker dashboards).
+# Not part of the deployed source -- build-zip.ps1's manifest never lists
+# this directory -- so tracking it would only add more untracked-file noise
+# to the same -dirty check .claude/ above is exempted from.
+artifacts/

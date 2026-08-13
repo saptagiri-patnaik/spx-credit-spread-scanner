@@ -129,6 +129,41 @@ function Test-LambdaExists {
     return $LASTEXITCODE -eq 0
 }
 
+# Reserved concurrency on $ZipFuncName, or $null if AWS confirms none is set.
+# Read-only -- reserving it is zip-concurrency.ps1's job; this is the
+# read-back both that script and schedule.ps1's preflight guard share, so
+# they cannot drift into checking the value two different ways.
+#
+# Throws rather than returning $null when the call itself fails: the
+# underlying API always answers 200 with ReservedConcurrentExecutions=null
+# (rendered "None" in --output text) for a function with no reservation, so a
+# nonzero exit code here is never that case -- it is auth, network, region or
+# a typo'd function name, and treating it the same as "confirmed unset" would
+# let a caller decide production is unpinned when it never actually asked.
+function Get-ZipReservedConcurrency {
+    $value = aws lambda get-function-concurrency --function-name $ZipFuncName --region $Region `
+        --query 'ReservedConcurrentExecutions' --output text
+    if ($LASTEXITCODE -ne 0) {
+        throw "could not read reserved concurrency for $ZipFuncName -- AWS call failed, not confirmed absent."
+    }
+    if (-not $value -or $value.Trim() -eq 'None') { return $null }
+    return [int]$value.Trim()
+}
+
+# Throws unless $ZipFuncName's reserved concurrency is confirmed to be exactly
+# 1. Every guarantee in this codebase that depends on "at most one live
+# process" -- same-session re-entry checks, one baseline decision per session,
+# the per-day X budget -- is documented as process-level, not system-level,
+# without this pin, so scheduling or enabling production must refuse to
+# proceed rather than silently run unpinned.
+function Assert-ZipConcurrencyPinned {
+    $concurrency = Get-ZipReservedConcurrency
+    if ($concurrency -ne 1) {
+        $seen = if ($null -eq $concurrency) { 'unset' } else { $concurrency }
+        throw "Refusing to proceed: $ZipFuncName reserved concurrency is $seen, not 1. Run ./zip-concurrency.ps1 first."
+    }
+}
+
 function Write-Step { param($Message) Write-Host "`n==> $Message" -ForegroundColor Cyan }
 function Write-Ok   { param($Message) Write-Host "    OK  $Message" -ForegroundColor Green }
 function Write-Note { param($Message) Write-Host "    --  $Message" -ForegroundColor DarkGray }

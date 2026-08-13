@@ -36,12 +36,46 @@ $silenceAlarm = 'spx-scanner-no-invocations'
 
 if ($Status) {
     Write-Step 'Alarms'
-    aws cloudwatch describe-alarms --alarm-names $errorAlarm $silenceAlarm --region $Region `
-        --query 'MetricAlarms[].{Name:AlarmName,State:StateValue,Reason:StateReason}' --output json
+    $raw = aws cloudwatch describe-alarms --alarm-names $errorAlarm $silenceAlarm --region $Region `
+        --query 'MetricAlarms[].{Name:AlarmName,State:StateValue,Reason:StateReason,Dimensions:Dimensions}' `
+        --output json
+    # describe-alarms returns an empty, successful MetricAlarms list for names
+    # that do not exist -- a nonzero exit is always the AWS call itself
+    # failing (auth, network, region), never "these alarms are absent", so
+    # the two must not be reported the same way.
+    if ($LASTEXITCODE -ne 0) {
+        throw 'could not describe alarms -- AWS call failed, not confirmed absent.'
+    }
+    $alarms = $raw | ConvertFrom-Json
+    if (-not $alarms) { Write-Note 'alarms do not exist yet' }
+    foreach ($alarm in $alarms) {
+        $dims = ($alarm.Dimensions | ForEach-Object { "$($_.Name)=$($_.Value)" }) -join ', '
+        Write-Host "$($alarm.Name): $($alarm.State) [$dims]"
+        $target = $alarm.Dimensions | Where-Object { $_.Name -eq 'FunctionName' } | Select-Object -ExpandProperty Value
+        # A missing FunctionName dimension is also a mismatch, not a pass --
+        # it means this alarm cannot be watching $ZipFuncName either.
+        if (-not $target -or $target -ne $ZipFuncName) {
+            $seen = if ($target) { "'$target'" } else { 'no FunctionName dimension' }
+            Write-Note "MISMATCH: $($alarm.Name) watches $seen, not '$ZipFuncName' -- it may be blind to the function that actually runs"
+        }
+    }
     Write-Step 'Email subscriptions'
-    aws sns list-subscriptions-by-topic --topic-arn $topicArn --region $Region `
-        --query 'Subscriptions[].{Endpoint:Endpoint,Status:SubscriptionArn}' --output json 2>$null
-    if ($LASTEXITCODE -ne 0) { Write-Note 'topic does not exist yet' }
+    # A missing topic is SNS's NotFoundException, distinguishable from every
+    # other failure by that name in the error text -- auth, network and
+    # region problems all raise something else, and reporting those as
+    # "topic does not exist yet" would hide the actual cause.
+    $lines = aws sns list-subscriptions-by-topic --topic-arn $topicArn --region $Region `
+        --query 'Subscriptions[].{Endpoint:Endpoint,Status:SubscriptionArn}' --output json 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        $message = ($lines | Out-String)
+        if ($message -match 'NotFound') {
+            Write-Note 'topic does not exist yet'
+        } else {
+            throw "could not list SNS subscriptions for $topicArn -- AWS call failed: $($message.Trim())"
+        }
+    } else {
+        $lines
+    }
     Write-Note 'a SubscriptionArn of "PendingConfirmation" means the email link has not been clicked'
     return
 }
@@ -92,7 +126,7 @@ aws cloudwatch put-metric-alarm --region $Region `
     --alarm-name $errorAlarm `
     --alarm-description 'SPX scanner Lambda failed a cycle AND its automatic retry within 15 minutes.' `
     --namespace AWS/Lambda --metric-name Errors `
-    --dimensions "Name=FunctionName,Value=$FuncName" `
+    --dimensions "Name=FunctionName,Value=$ZipFuncName" `
     --statistic Sum --period 900 --evaluation-periods 1 `
     --threshold 2 --comparison-operator GreaterThanOrEqualToThreshold `
     --treat-missing-data notBreaching `
@@ -112,7 +146,7 @@ aws cloudwatch put-metric-alarm --region $Region `
     --alarm-name $silenceAlarm `
     --alarm-description 'SPX scanner Lambda has not run in 2 hours -- schedule may be stopped.' `
     --namespace AWS/Lambda --metric-name Invocations `
-    --dimensions "Name=FunctionName,Value=$FuncName" `
+    --dimensions "Name=FunctionName,Value=$ZipFuncName" `
     --statistic Sum --period 7200 --evaluation-periods 1 `
     --threshold 1 --comparison-operator LessThanThreshold `
     --treat-missing-data breaching `

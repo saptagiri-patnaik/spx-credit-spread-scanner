@@ -5,7 +5,7 @@ import datetime as dt
 from contextlib import contextmanager
 from typing import Iterator
 
-from sqlalchemy import create_engine, select, text
+from sqlalchemy import and_, create_engine, or_, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -16,6 +16,7 @@ from .models import (
     CollectorState,
     Item,
     ItemScore,
+    PaperArmDecision,
     PaperPosition,
     Prediction,
     PredictionOutcome,
@@ -44,6 +45,18 @@ class Repository:
         ("spread_suggestions", "call_long_strike", "DOUBLE PRECISION"),
         ("spread_suggestions", "pop_real", "DOUBLE PRECISION"),
         ("spread_suggestions", "premium_edge_measured", "DOUBLE PRECISION"),
+        # JSONB rather than JSON: the snapshot is queried by key when comparing
+        # arms across a policy change, and JSON would make that a text parse.
+        ("paper_positions", "policy_version", "VARCHAR(64)"),
+        ("paper_positions", "policy_snapshot", "JSONB"),
+        ("paper_positions", "decision_session", "DATE"),
+        ("paper_positions", "entry_short_delta", "DOUBLE PRECISION"),
+        ("paper_positions", "entry_quote_quality", "VARCHAR(20)"),
+        ("paper_positions", "exit_quote_quality", "VARCHAR(20)"),
+        ("spread_suggestions", "quote_quality", "VARCHAR(20)"),
+        # paper_arm_decisions itself is a NEW table, so create_all() creates it
+        # without help; only columns on tables that already existed need an entry
+        # here.
     )
 
     def init_db(self) -> None:
@@ -121,14 +134,29 @@ class Repository:
             s.expunge_all()
             return list(rows)
 
-    def save_prediction(self, pred: dict, spreads: list[dict]) -> int:
+    def save_prediction(
+        self, pred: dict, spreads: list[dict]
+    ) -> tuple[int, list[tuple[dict, int]]]:
+        """Persist a prediction and pair each input spread with its saved id.
+
+        The source dict is returned by identity, not reconstructed from database
+        fields or inferred from list position. That lets the caller link a paper
+        entry to the exact spread it selected even when multiple counterfactual
+        suggestions are persisted in a different order later.
+        """
         with self.session() as s:
             p = Prediction(**pred)
             s.add(p)
             s.flush()
+            saved_spreads = []
             for sp in spreads:
-                s.add(SpreadSuggestion(prediction_id=p.id, **sp))
-            return p.id
+                saved = SpreadSuggestion(prediction_id=p.id, **sp)
+                s.add(saved)
+                saved_spreads.append((sp, saved))
+            # The suggestion ids are allocated only after a flush. The session
+            # context commits after this return value has been constructed.
+            s.flush()
+            return p.id, [(source, saved.id) for source, saved in saved_spreads]
 
     # --- paper positions ---------------------------------------------------
     def open_paper_position(self, data: dict) -> int:
@@ -148,6 +176,151 @@ class Repository:
                 )
             )
 
+    def arm_decided_session(
+        self, arm: str, session: dt.date, session_start: dt.datetime
+    ) -> bool:
+        """Whether an arm has already made its entry decision for `session`.
+
+        Counts CLOSED rows too: a position stopped out this morning is still the
+        decision this session made, and looking only at open rows is what let a
+        stopped arm re-enter on the next cycle.
+
+        `session_start` covers the transition. Rows written before
+        `decision_session` existed carry NULL, so a session-date match alone
+        would not see this morning's pre-upgrade entry and the arm would decide
+        twice on the changeover day. Matching those by timestamp instead closes
+        that window without backfilling anything.
+        """
+        with self.session() as s:
+            row = s.scalar(
+                select(PaperPosition.id)
+                .where(PaperPosition.arm == arm)
+                .where(
+                    or_(
+                        PaperPosition.decision_session == session,
+                        and_(
+                            PaperPosition.decision_session.is_(None),
+                            PaperPosition.opened_at >= session_start,
+                        ),
+                    )
+                )
+                .limit(1)
+            )
+            return row is not None
+
+    def paper_positions_since(self, arm: str, since: dt.datetime) -> list[PaperPosition]:
+        """Every position an arm opened since ``since``, open or CLOSED.
+
+        The re-entry rule needs the closed ones: a position stopped out earlier
+        in the session is exactly the one that must not be sold again, and it is
+        no longer in ``open_paper_positions()``.
+        """
+        with self.session() as s:
+            return list(
+                s.scalars(
+                    select(PaperPosition)
+                    .where(PaperPosition.arm == arm)
+                    .where(PaperPosition.opened_at >= since)
+                    .order_by(PaperPosition.opened_at)
+                )
+            )
+
+    def record_arm_decision(
+        self,
+        arm: str,
+        session: dt.date,
+        outcome: str,
+        reason: str | None = None,
+        paper_position_id: int | None = None,
+    ) -> None:
+        """Upsert this session's decision record for `arm`.
+
+        Read-modify-write rather than a dialect-specific ON CONFLICT clause, so
+        the same call works against the sqlite engine the test suite uses and
+        the Postgres engine production runs -- `(arm, decision_session)` is
+        unique, so there is at most one existing row to find.
+
+        Carries the same single-writer caveat as the session re-entry guard:
+        two overlapping invocations could both read no existing row and both
+        attempt an insert, and the second would fail the unique constraint
+        rather than merge into the first.
+        """
+        with self.session() as s:
+            now = dt.datetime.now(dt.timezone.utc)
+            existing = s.scalar(
+                select(PaperArmDecision)
+                .where(PaperArmDecision.arm == arm)
+                .where(PaperArmDecision.decision_session == session)
+            )
+            if existing is not None:
+                existing.outcome = outcome
+                existing.reason = reason
+                existing.last_attempt_at = now
+                if paper_position_id is not None:
+                    existing.paper_position_id = paper_position_id
+                return
+            s.add(PaperArmDecision(
+                arm=arm, decision_session=session, outcome=outcome, reason=reason,
+                paper_position_id=paper_position_id, first_attempt_at=now, last_attempt_at=now,
+            ))
+
+    def open_session_position_and_settle(
+        self, position_data: dict, arm: str, session: dt.date,
+    ) -> int:
+        """Open a session-scoped arm's position and settle its decision row atomically.
+
+        `open_paper_position()` + `record_arm_decision()` as two separate calls
+        left a window where a crash between them opened a real position with no
+        matching ledger row -- indistinguishable, from the ledger alone, from a
+        session nobody ever attempted. One transaction closes THAT window: both
+        writes commit together or neither does, for a single call.
+
+        It does NOT make the caller's check-then-act safe. `maybe_open_baseline`
+        reads `get_arm_decision()` in one transaction and calls this in a later
+        one; two overlapping invocations can both pass that read (e.g. both see
+        an existing `no_quote` row) and both reach here, each inserting its own
+        PaperPosition and each updating the SAME decision row -- the unique
+        constraint on `(arm, decision_session)` governs the decision row, not
+        the position count, so it rejects neither insert, and whichever update
+        commits last silently owns `paper_position_id`. This is the same
+        single-writer caveat already documented on the model arm's re-entry
+        guard, not a new one: real concurrency safety needs either row-level
+        locking here or the deployment's concurrency actually pinned to 1,
+        which provision.ps1 currently does not achieve (see maybe_open()).
+        """
+        with self.session() as s:
+            pos = PaperPosition(**position_data)
+            s.add(pos)
+            s.flush()
+            now = dt.datetime.now(dt.timezone.utc)
+            existing = s.scalar(
+                select(PaperArmDecision)
+                .where(PaperArmDecision.arm == arm)
+                .where(PaperArmDecision.decision_session == session)
+            )
+            if existing is not None:
+                existing.outcome = "opened"
+                existing.reason = None
+                existing.last_attempt_at = now
+                existing.paper_position_id = pos.id
+            else:
+                s.add(PaperArmDecision(
+                    arm=arm, decision_session=session, outcome="opened",
+                    paper_position_id=pos.id, first_attempt_at=now, last_attempt_at=now,
+                ))
+            return pos.id
+
+    def get_arm_decision(self, arm: str, session: dt.date) -> PaperArmDecision | None:
+        with self.session() as s:
+            row = s.scalar(
+                select(PaperArmDecision)
+                .where(PaperArmDecision.arm == arm)
+                .where(PaperArmDecision.decision_session == session)
+            )
+            if row is not None:
+                s.expunge(row)
+            return row
+
     def mark_paper_position(self, position_id: int, mark: float) -> None:
         with self.session() as s:
             pos = s.get(PaperPosition, position_id)
@@ -158,11 +331,17 @@ class Repository:
     def close_paper_position(
         self,
         position_id: int,
-        exit_mark: float,
+        exit_mark: float | None,
         exit_reason: str,
-        pnl: float,
+        pnl: float | None,
         underlying_at_close: float | None = None,
+        exit_quote_quality: str | None = None,
     ) -> None:
+        """Close a position. `exit_mark`/`pnl` are nullable for `expired_unpriced`:
+        a contract that expired without ever being markable has no real closing
+        price to report, and inventing zero would misstate the outcome as a
+        measured one.
+        """
         with self.session() as s:
             pos = s.get(PaperPosition, position_id)
             if not pos:
@@ -173,6 +352,7 @@ class Repository:
             pos.exit_reason = exit_reason
             pos.pnl = pnl
             pos.underlying_at_close = underlying_at_close
+            pos.exit_quote_quality = exit_quote_quality
             pos.last_mark = exit_mark
 
     def closed_paper_positions(self) -> list[PaperPosition]:

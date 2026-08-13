@@ -118,12 +118,25 @@ Write-Step "Uploading to $ZipFuncName"
 if (-not (Test-LambdaExists $ZipFuncName)) {
     throw "$ZipFuncName does not exist yet. Create it first -- this script updates code, it does not provision."
 }
+
+Write-Step 'Confirming concurrency is pinned before touching production code'
+# A live schedule can already be firing against $ZipFuncName even if it was
+# never routed through schedule.ps1's guard -- e.g. scheduled before that
+# guard existed, or enabled by hand. Checked here too, not only in
+# schedule.ps1, so a code deploy can never land on an unpinned production
+# function between cycles.
+Assert-ZipConcurrencyPinned
+Write-Ok 'confirmed: reserved concurrency = 1'
+
 # No --publish: that needs lambda:PublishVersion, which the deployer policy does
 # not grant, and nothing here uses versions or aliases. $LATEST is the target.
 aws lambda update-function-code --function-name $ZipFuncName --zip-file "fileb://$zip" `
     --region $Region | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'update-function-code failed.' }
 aws lambda wait function-updated --function-name $ZipFuncName --region $Region
+if ($LASTEXITCODE -ne 0) {
+    throw "function-updated wait failed or timed out for $ZipFuncName -- the new code may not be active. Not stamping APP_VERSION until this is confirmed."
+}
 
 # APP_VERSION must be MERGED into the existing environment, never assigned.
 # --environment replaces the whole map, so writing just APP_VERSION would delete
