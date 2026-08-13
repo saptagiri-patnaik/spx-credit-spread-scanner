@@ -74,6 +74,12 @@ def _closed_day(date: str) -> dict:
     return {"option": {"IND": {"date": date, "isOpen": False}}}
 
 
+def _closed_day_no_breakdown(date: str) -> dict:
+    # The shape actually returned live for a holiday or weekend (13 Aug 2026):
+    # no IND/EQO breakdown at all, just a single generic "option" node.
+    return {"option": {"option": {"date": date, "marketType": "OPTION", "product": "option", "isOpen": False}}}
+
+
 # --- normal, open, closed, early close --------------------------------------
 
 def test_a_normal_open_day_reports_the_standard_session():
@@ -150,13 +156,62 @@ def test_uses_index_options_and_ignores_equity_options_entirely():
 
 def test_missing_index_options_is_uncertain_not_a_fallback_to_equity_options():
     # No EQO fallback: a different product's hours are not a substitute for
-    # SPX's, so a missing IND node is uncertain rather than a guessed answer
-    # borrowed from a different instrument.
+    # SPX's, so a missing IND node -- with EQO still present, as on a normal
+    # trading day -- is uncertain rather than a guessed answer borrowed from a
+    # different instrument. Distinct from the generic collapsed-closed shape
+    # below, which has neither IND nor EQO at all.
     date = "2026-08-13"
     data = _normal_day(date)
     del data["option"]["IND"]
     cal = SessionCalendar(_Schwab({date: data}), _Log())
     assert cal.session_for(dt.date(2026, 8, 13)) is None
+
+
+def test_a_holiday_with_no_per_product_breakdown_is_confirmed_closed():
+    # The shape actually observed live: no IND key, no EQO key, just a
+    # generic "option" node. This must resolve to CLOSED, not uncertain --
+    # otherwise every real holiday and weekend retries forever without ever
+    # confirming an answer.
+    cal = SessionCalendar(_Schwab({"2026-09-07": _closed_day_no_breakdown("2026-09-07")}), _Log())
+    state = cal.session_for(dt.date(2026, 9, 7))
+    assert state.is_open is False
+    assert state.open_at is None
+    assert state.close_at is None
+
+
+def test_generic_closed_node_reporting_open_is_still_uncertain():
+    # Never observed live, and this module has no session hours to offer from
+    # this shape even if it did -- an unexpected isOpen=true here must not be
+    # treated as a confirmed open answer.
+    date = "2026-09-07"
+    data = {"option": {"option": {"date": date, "isOpen": True}}}
+    cal = SessionCalendar(_Schwab({date: data}), _Log())
+    assert cal.session_for(dt.date(2026, 9, 7)) is None
+
+
+def test_generic_closed_node_with_a_non_bool_isopen_is_uncertain():
+    date = "2026-09-07"
+    data = {"option": {"option": {"date": date, "isOpen": "false"}}}
+    cal = SessionCalendar(_Schwab({date: data}), _Log())
+    assert cal.session_for(dt.date(2026, 9, 7)) is None
+
+
+def test_generic_closed_node_with_a_mismatched_date_is_uncertain():
+    data = {"option": {"option": {"date": "2026-09-08", "isOpen": False}}}
+    cal = SessionCalendar(_Schwab({"2026-09-07": data}), _Log())
+    assert cal.session_for(dt.date(2026, 9, 7)) is None
+
+
+def test_generic_closed_node_with_no_date_is_uncertain():
+    data = {"option": {"option": {"isOpen": False}}}
+    cal = SessionCalendar(_Schwab({"2026-09-07": data}), _Log())
+    assert cal.session_for(dt.date(2026, 9, 7)) is None
+
+
+def test_neither_ind_nor_generic_option_node_is_uncertain():
+    data = {"option": {"EQO": {"date": "2026-09-07", "isOpen": False}}}
+    cal = SessionCalendar(_Schwab({"2026-09-07": data}), _Log())
+    assert cal.session_for(dt.date(2026, 9, 7)) is None
 
 
 # --- DST boundaries ----------------------------------------------------------

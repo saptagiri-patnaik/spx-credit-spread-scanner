@@ -27,7 +27,10 @@ def _client(monkeypatch, get_impl):
     return client
 
 
-def test_requests_the_option_market_with_the_date_as_a_query_param(monkeypatch):
+def test_requests_the_plural_markets_endpoint_with_market_as_a_query_param(monkeypatch):
+    # Not /markets/{market} as a path segment: confirmed against a live account
+    # that this 400s unconditionally ("markets param cannot be null or empty"),
+    # so a test asserting that shape would pass while every real call fails.
     captured = {}
 
     def fake_get(url, headers, params, timeout):
@@ -39,8 +42,8 @@ def test_requests_the_option_market_with_the_date_as_a_query_param(monkeypatch):
 
     client = _client(monkeypatch, fake_get)
     client.market_hours("option", dt.date(2026, 8, 13))
-    assert captured["url"] == f"{MARKETDATA_BASE}/markets/option"
-    assert captured["params"] == {"date": "2026-08-13"}
+    assert captured["url"] == f"{MARKETDATA_BASE}/markets"
+    assert captured["params"] == {"markets": "option", "date": "2026-08-13"}
 
 
 def test_returns_the_parsed_json_on_success(monkeypatch):

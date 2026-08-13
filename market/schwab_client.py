@@ -102,15 +102,26 @@ class SchwabClient:
 
         See market/session_calendar.py for what this feeds and why: the actual
         Cboe SPX index-options session, not a generic weekday rule.
+
+        Plural /markets with `market` as a query param, not singular
+        /markets/{market} as a path segment -- confirmed against a live
+        account on 13 Aug 2026. The path form 400s on this account with
+        "markets param cannot be null or empty", every single time,
+        regardless of date; the previous version of this method had never
+        been exercised against a real response and enshrined that shape in
+        its own test's mock. A caller relying on the documented fail-closed
+        behavior would have seen every session lookup come back UNCERTAIN
+        forever, silently, since a 400 degrades to None exactly like a real
+        outage does.
         """
         headers = self._headers()
         if not headers:
             return None
         try:
             resp = requests.get(
-                f"{MARKETDATA_BASE}/markets/{market}",
+                f"{MARKETDATA_BASE}/markets",
                 headers=headers,
-                params={"date": date.isoformat()},
+                params={"markets": market, "date": date.isoformat()},
                 timeout=15,
             )
             resp.raise_for_status()

@@ -9,16 +9,29 @@ and the closest thing this system has a live connection to is Schwab's own
 market-hours endpoint, which reports it directly rather than reimplementing a
 holiday table that will drift out of date.
 
-UNVERIFIED SCHEMA WARNING: the response shape this module parses is written
-from the publicly documented Schwab Trader API market-hours contract, not from
-a live call inspected against a real account -- this repo's sandbox has no
-network access to Schwab, and the public spec page did not expose a readable
-schema either. `_parse()` is written defensively for exactly that reason: an
-unrecognised shape returns `None` (UNCERTAIN), which the caller's required
-failure behavior turns into "fail closed for entries and priced exits," never
-into a wrong answer treated as a right one. A LIVE SMOKE TEST AGAINST A REAL
-ACCOUNT (a normal day, a holiday, an early close) IS A PRE-DEPLOYMENT
-BLOCKER, not optional hardening -- do not trust this module without one.
+SCHEMA STATUS: verified live against a real account on 13 Aug 2026 -- a normal
+open day, an early close (27 Nov 2026), three full holidays (7 Sep, 26 Nov,
+25 Dec 2026), and both weekend days. Two corrections came out of that call
+that no amount of reading the public spec page would have caught:
+
+  * `SchwabClient.market_hours()` was requesting the singular path form
+    (`/markets/{market}`), which 400s unconditionally on this account
+    ("markets param cannot be null or empty"). The account only accepts the
+    plural form with `market` as a query param (`/markets?markets={market}`).
+    Every date in this repo's own tests mocked `requests.get` directly, so
+    nothing ever caught that the request itself was wrong.
+  * On any non-trading day (holiday or weekend) Schwab does not return a
+    per-product breakdown at all -- there is no `IND` key to be missing or
+    present. It collapses to a single generic `{"option": {"date": ...,
+    "isOpen": false}}` node. `_parse()` treats that as a confirmed CLOSED
+    answer (see the comment where `generic` is read below), never as a
+    substitute for `IND`'s open-day session hours.
+
+Still not exercised live: an actual Schwab outage or malformed response
+(the fail-closed paths below remain defensive-by-construction, not
+observed), and whether a *partial* market disruption (a single-product
+closure while the index stays open) uses the per-product `isOpen=false`
+shape this module already supports or something else entirely.
 """
 from __future__ import annotations
 
@@ -177,6 +190,23 @@ class SessionCalendar:
             return None
 
     @staticmethod
+    def _matches_requested_date(node: dict, date: dt.date) -> bool:
+        """Whether `node["date"]` is present and equals the date actually asked for.
+
+        REQUIRED, not merely cross-checked when present: a response with no
+        `date` field is an unverifiable answer about the date that was
+        actually asked for, and accepting one anyway would be inconsistent
+        with treating every other unrecognised shape as uncertain.
+        """
+        reported_date = node.get("date")
+        if reported_date is None:
+            return False
+        try:
+            return dt.date.fromisoformat(str(reported_date)[:10]) == date
+        except ValueError:
+            return False
+
+    @staticmethod
     def _parse(data: dict, date: dt.date) -> SessionState | None:
         """Strict by construction: every check below narrows toward `None`.
 
@@ -198,25 +228,36 @@ class SessionCalendar:
         # options ("EQO") are a different instrument that is not guaranteed to
         # share the same close. No fallback to EQO: a missing IND node is
         # uncertain, not a reason to answer with a different product's
-        # calendar. If this fires on a live account, that is worth
-        # investigating on its own, not silently working around.
+        # calendar -- UNLESS the generic collapsed-closed shape below applies.
         node = products.get("IND")
-        if not isinstance(node, dict):
-            return None
+        if isinstance(node, dict):
+            return SessionCalendar._parse_open_product(node, date)
 
-        # REQUIRED, not merely cross-checked when present: a response with no
-        # `date` field is an unverifiable answer about the date that was
-        # actually asked for, and accepting one anyway would be inconsistent
-        # with treating every other unrecognised shape as uncertain. `date`
-        # is part of Schwab's documented contract for this node, so its
-        # absence itself is a signal something is already off.
-        reported_date = node.get("date")
-        if reported_date is None:
+        # On a non-trading day Schwab does not break the response out by
+        # product at all -- confirmed live (13 Aug 2026) on three holidays
+        # (7 Sep, 26 Nov, 25 Dec 2026) and both weekend days, every one of
+        # which returned {"option": {"option": {"date": ..., "isOpen": false}}}
+        # with no IND or EQO key whatsoever. Trusted ONLY as a confirmed
+        # CLOSED answer: this generic node has never been observed carrying
+        # session hours or isOpen=true -- hours only ever come from the
+        # per-product IND node above -- so an unexpected isOpen=true here
+        # stays uncertain rather than being assumed open.
+        generic = products.get("option")
+        if not isinstance(generic, dict):
             return None
-        try:
-            if dt.date.fromisoformat(str(reported_date)[:10]) != date:
-                return None
-        except ValueError:
+        if not SessionCalendar._matches_requested_date(generic, date):
+            return None
+        if generic.get("isOpen") is not False:
+            return None
+        return SessionState(
+            date=date, is_open=False, open_at=None, close_at=None,
+            is_early_close=False, source=SessionCalendar.VERSION,
+        )
+
+    @staticmethod
+    def _parse_open_product(node: dict, date: dt.date) -> SessionState | None:
+        """Parses one per-product node -- Schwab's shape when IND is present."""
+        if not SessionCalendar._matches_requested_date(node, date):
             return None
 
         if not isinstance(node.get("isOpen"), bool):
