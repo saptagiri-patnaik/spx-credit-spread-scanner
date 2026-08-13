@@ -170,8 +170,18 @@ if ($Status) {
             Write-Note "MISMATCH: $($info.Name) targets $seen, expected '$funcArn' -- this schedule may still be invoking the retired function"
         }
     }
-    aws scheduler get-schedule --name $SchedName --region $Region --query 'Name' --output text 2>$null | Out-Null
-    if ($LASTEXITCODE -eq 0) { Write-Note "legacy rate schedule '$SchedName' still exists" }
+    $legacyCheck = aws scheduler get-schedule --name $SchedName --region $Region --query 'Name' --output text 2>&1
+    if ($LASTEXITCODE -eq 0) {
+        Write-Note "legacy rate schedule '$SchedName' still exists"
+    } else {
+        # Same distinction as the cleanup path below: ResourceNotFoundException
+        # means it's genuinely gone; anything else is a real failure that
+        # -Status must not silently report as "no legacy schedule."
+        $message = ($legacyCheck | Out-String)
+        if ($message -notmatch 'NotFound|ResourceNotFoundException') {
+            throw "could not check whether legacy schedule '$SchedName' exists -- AWS call failed: $($message.Trim())"
+        }
+    }
     return
 }
 
