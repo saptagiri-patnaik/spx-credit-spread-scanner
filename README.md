@@ -411,6 +411,13 @@ biased; it ignores the volatility skew that makes it wrong in exactly the tails 
 sells into.
 
 **6. Market hours ignore holidays.** `is_market_hours()` checks weekday and clock only.
+`rth_still_ahead()` — which decides whether to hold back the X post reserve for the coming
+session — inherits this: on a weekday holiday it reserves capacity for a session that never
+opens, so paid X collection stays at the pre-session ceiling until 09:30 ET passes. The error
+is in the safe direction (under-spending on a day with no trading to inform) and costs only
+some holiday chatter, so it is documented rather than fixed — an exchange calendar is a
+dependency and an annual maintenance chore for a small return. Half-days are unaffected;
+only the open time is consulted.
 
 **6a. There is no migration framework, only a declared column list.** `--setup` calls
 SQLAlchemy's `create_all()`, which creates missing *tables* but never adds columns to

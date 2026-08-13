@@ -147,6 +147,49 @@ def is_market_hours(now_utc: dt.datetime, tz_name: str = "America/New_York") -> 
     return is_market_window(now_utc, tz_name)
 
 
+def rth_still_ahead(now_utc: dt.datetime, tz_name: str = "America/New_York") -> bool:
+    """True when this UTC day's RTH session has not opened yet. Ignores holidays.
+
+    The question a per-UTC-day budget has to answer before it will spend: is
+    there still a session inside THIS budget day that the spend would starve?
+
+    The budget day and the session are misaligned in a way that makes the naive
+    answer wrong. Budgets reset at 00:00 UTC, which is 20:00 ET in summer and
+    19:00 ET in winter -- both of them BEFORE the 22:00 ET end of the paid
+    collection window. So a budget day opens by funding the previous evening's
+    post-close cycles, then the pre-market block, and only then reaches the
+    session whose predictions actually get recorded. All three of those precede
+    the session and must be held back; the block between the close and the reset
+    does not, because its session is already over.
+
+    An RTH session always lies inside a single UTC day -- 09:30 ET is 13:30 or
+    14:30 UTC and 16:00 ET is 20:00 or 21:00 UTC, never crossing midnight -- so
+    "this UTC day's session" is unambiguous, and deriving both ends by tz
+    conversion is what keeps the boundary correct across the DST change instead
+    of drifting an hour twice a year.
+
+    Holidays: like the rest of this module, this reads the weekday and the clock,
+    not an exchange calendar. On Thanksgiving the reserve is therefore held for a
+    session that never opens, and X collection that day is capped at the
+    pre-session ceiling until 09:30 ET passes. That is the safe direction to be
+    wrong in -- it under-spends on a day with no trading to inform, rather than
+    over-spending ahead of a real session -- and it is why this is documented
+    rather than fixed: an exchange calendar is a dependency and a maintenance
+    burden that buys back only some holiday chatter. Half-days (13:00 ET closes)
+    are unaffected, since only the open time is consulted.
+    """
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:  # noqa: BLE001 - bad tz string -> don't hold anything back
+        return False
+    # The UTC date, not the local one: the budget day is what is being divided.
+    day = now_utc.astimezone(dt.timezone.utc).date()
+    if day.weekday() >= 5:
+        return False  # no session inside this budget day; nothing to protect
+    open_local = dt.datetime.combine(day, dt.time(9, 30), tzinfo=tz)
+    return now_utc < open_local.astimezone(dt.timezone.utc)
+
+
 class OptionsStrategy:
     def __init__(self, settings, logger):
         self.s = settings

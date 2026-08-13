@@ -17,7 +17,7 @@ from typing import List
 import requests
 from dateutil import parser as dateparser
 
-from market.options_strategy import is_market_window
+from market.options_strategy import is_market_window, rth_still_ahead
 
 from .base import BaseCollector, CollectedItem
 
@@ -107,17 +107,57 @@ class XCollector(BaseCollector):
                 )
                 return []
 
-        today = dt.datetime.now(dt.timezone.utc).date()
+        now = dt.datetime.now(dt.timezone.utc)
+        today = now.date()
         used = self.repo.daily_usage(self.provider, today)
         budget = self.settings.x_daily_post_budget
-        remaining = budget - used
+
+        # Hold back enough of the day's budget for the session's own cycles.
+        # Without this the guard is purely first-come: on 2026-08-12 the blocks
+        # ahead of the bell took 90 posts and the session itself only 74, and a
+        # heavier news night would have spent the whole 260 before the open --
+        # starving precisely the cycles whose predictions get recorded and
+        # settled, in favour of cycles that produce no prediction at all.
+        #
+        # The reserve is released once the session is behind us, so the
+        # post-close block still gets whatever the session did not use. A flat
+        # `budget - reserve` for every out-of-session cycle would instead
+        # suppress post-close collection the moment the day passed 125 used,
+        # which is a reserve defending a session that has already closed.
+        reserve = getattr(self.settings, "x_market_hours_reserve", 0)
+        ceiling = budget
+        if reserve and rth_still_ahead(now, getattr(self.settings, "market_tz", "America/New_York")):
+            if reserve >= budget:
+                # Not a silent corner to sit in: this is a live configuration that
+                # switches off every pre-session fetch, and the symptom (no X items
+                # before the bell) looks exactly like a broken token or a bad query.
+                self.log.warning(
+                    "X reserve %d >= budget %d: pre-session collection is disabled "
+                    "entirely. Size the reserve as RTH cycles x %d.",
+                    reserve,
+                    budget,
+                    getattr(self.settings, "x_max_results_per_run", 10),
+                )
+            ceiling = max(0, budget - reserve)
+
+        remaining = ceiling - used
         if remaining < 10:  # recent search returns a minimum of 10 posts
-            self.log.info(
-                "X budget for %s reached (used %d/%d posts); skipping to protect spend.",
-                today,
-                used,
-                budget,
-            )
+            if ceiling < budget:
+                self.log.info(
+                    "X pre-session cap for %s reached (used %d/%d, holding %d back for the "
+                    "session); skipping.",
+                    today,
+                    used,
+                    ceiling,
+                    reserve,
+                )
+            else:
+                self.log.info(
+                    "X budget for %s reached (used %d/%d posts); skipping to protect spend.",
+                    today,
+                    used,
+                    budget,
+                )
             return []
 
         max_results = max(10, min(100, remaining, self.settings.x_max_results_per_run))
@@ -173,12 +213,18 @@ class XCollector(BaseCollector):
         if newest_id:
             self.repo.set_state(STATE_KEY, str(newest_id))
 
+        # Reports the ceiling in force, not the raw budget, because they differ by
+        # phase and the phase is the thing worth being able to read back. A line
+        # that always said /260 would make a pre-session cycle and a session cycle
+        # indistinguishable in CloudWatch, which is precisely the distinction this
+        # guard exists to draw -- the reserve would be unverifiable in production.
         self.log.info(
-            "X: fetched %d new posts (~$%.3f); budget %d/%d posts used today.",
+            "X: fetched %d new posts (~$%.3f); budget %d/%d posts used today%s.",
             charged,
             charged * self.settings.x_post_unit_cost,
             used + charged,
-            budget,
+            ceiling,
+            f" (pre-session cap; {reserve} held for the bell)" if ceiling < budget else "",
         )
 
         items: List[CollectedItem] = []

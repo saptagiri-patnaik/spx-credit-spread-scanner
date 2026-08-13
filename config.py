@@ -160,11 +160,29 @@ class Settings(BaseSettings):
     # 150 minutes puts the window at 07:00 ET, ahead of the 08:30 ET macro prints.
     x_premarket_minutes: int = 150
     # ...and 360 past the close reaches 22:00 ET, covering the Asia-open headline
-    # burst. Note the budget resets on the UTC day, which starts at 17:00 ET: the
-    # evening slots therefore draw on the *next* session's allowance. That is
-    # affordable only because the window has capacity to spare over the budget --
-    # the evening takes its ~45 posts first and the morning session still clears.
+    # burst. Note the budget resets on the UTC day, which begins at 20:00 ET in
+    # summer and 19:00 ET in winter -- both BEFORE this window closes, so the
+    # evening slots draw on the *next* session's allowance. That used to be
+    # affordable only by luck of headroom; `x_market_hours_reserve` below is what
+    # makes it safe.
     x_postmarket_minutes: int = 360
+    # Posts held back for the session's own cycles while it is still ahead.
+    # Enforced phase-aware in x_collector: held back before the open, lifted during
+    # the session, released afterwards so the post-close block still gets whatever
+    # the session did not spend.
+    #
+    # Measured need, not a guess: on 2026-08-12 the blocks ahead of the bell took 90
+    # posts and the session itself only 74 of a 260 budget. Nothing broke that day,
+    # but the ordering was doing the protecting, and ordering is not a guarantee --
+    # a heavier news night spends the same budget before the market opens.
+    #
+    # SIZE IT WITH `x_max_results_per_run`: one session is (9 RTH slots on the
+    # 45-minute grid) x (per-run cap). This default is 9 x 10 to match the per-run
+    # default directly above; the deployment runs 15/run and sets 135 in .env. A
+    # reserve at or above the budget disables pre-session collection outright, so
+    # raising the per-run cap without revisiting this is the way to get that by
+    # accident -- x_collector warns when the two are configured into that corner.
+    x_market_hours_reserve: int = 90
     # Spend the paid X budget on high-signal accounts (market-movers, fast headline
     # feeds, analysts, Fed/macro officials), filtered to market-relevant posts. Retail
     # $SPX/$SPY cashtag chatter (spammy) is covered for free by StockTwits + Reddit.
