@@ -183,6 +183,14 @@ class Settings(BaseSettings):
     # raising the per-run cap without revisiting this is the way to get that by
     # accident -- x_collector warns when the two are configured into that corner.
     x_market_hours_reserve: int = 90
+
+    # Characters of the synthesis rationale that reach an alert. Discord caps a
+    # message at 2000 and the notifier truncates from the END, so an uncapped
+    # rationale does not lose itself -- it pushes the waterfall, the reject tally,
+    # the build stamp and the disclaimer off the bottom. 600 leaves ~250 chars of
+    # headroom on a worst-case alert. 0 disables the cap. The full text is always
+    # in the log and the predictions table.
+    alert_rationale_chars: int = 600
     # Spend the paid X budget on high-signal accounts (market-movers, fast headline
     # feeds, analysts, Fed/macro officials), filtered to market-relevant posts. Retail
     # $SPX/$SPY cashtag chatter (spammy) is covered for free by StockTwits + Reddit.

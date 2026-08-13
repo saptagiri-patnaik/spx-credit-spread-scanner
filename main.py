@@ -504,7 +504,25 @@ class Pipeline:
                     f"{context.get('stories_total', '?')} stories, "
                     f"{context.get('chatter_posts', 0)} chatter posts"
                 )
-        lines.append(f"Rationale : {prediction['rationale']}")
+        # Capped because the whole alert has a hard 2000-char ceiling on Discord
+        # and this line is most of it -- a synthesis rationale with its drivers
+        # appended runs ~1300 of ~2400. Everything below is fixed-size and
+        # decision-bearing (the waterfall, the reject tally, the build stamp, the
+        # disclaimer), so an uncapped rationale does not overflow itself: it
+        # pushes those off the end instead, and the reader loses the answer while
+        # keeping the prose. Measured on 12 Aug, truncation cut the waterfall
+        # exactly at `survived`/`offered` -- the two rows that carry the verdict.
+        #
+        # The rationale is also the safest thing to shorten. It is the one part
+        # that is pure prose, the log and the predictions table both keep it in
+        # full, and 30 replays of a single frozen prompt produced 30 distinct
+        # rationales -- the themes recur, the wording never does, so the tail of
+        # this sentence is the least reproducible content in the message.
+        rationale = prediction["rationale"] or ""
+        cap = int(getattr(self.s, "alert_rationale_chars", 600))
+        if cap and len(rationale) > cap:
+            rationale = rationale[: cap - 1].rstrip() + "…"
+        lines.append(f"Rationale : {rationale}")
         lines.append("-" * 56)
         # "scanned N verticals" read as the size of the search when it was only
         # ever the size of the RESULT -- num_candidates counts survivors, so a
