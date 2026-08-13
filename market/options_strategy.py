@@ -147,6 +147,49 @@ def is_market_hours(now_utc: dt.datetime, tz_name: str = "America/New_York") -> 
     return is_market_window(now_utc, tz_name)
 
 
+def rth_still_ahead(now_utc: dt.datetime, tz_name: str = "America/New_York") -> bool:
+    """True when this UTC day's RTH session has not opened yet. Ignores holidays.
+
+    The question a per-UTC-day budget has to answer before it will spend: is
+    there still a session inside THIS budget day that the spend would starve?
+
+    The budget day and the session are misaligned in a way that makes the naive
+    answer wrong. Budgets reset at 00:00 UTC, which is 20:00 ET in summer and
+    19:00 ET in winter -- both of them BEFORE the 22:00 ET end of the paid
+    collection window. So a budget day opens by funding the previous evening's
+    post-close cycles, then the pre-market block, and only then reaches the
+    session whose predictions actually get recorded. All three of those precede
+    the session and must be held back; the block between the close and the reset
+    does not, because its session is already over.
+
+    An RTH session always lies inside a single UTC day -- 09:30 ET is 13:30 or
+    14:30 UTC and 16:00 ET is 20:00 or 21:00 UTC, never crossing midnight -- so
+    "this UTC day's session" is unambiguous, and deriving both ends by tz
+    conversion is what keeps the boundary correct across the DST change instead
+    of drifting an hour twice a year.
+
+    Holidays: like the rest of this module, this reads the weekday and the clock,
+    not an exchange calendar. On Thanksgiving the reserve is therefore held for a
+    session that never opens, and X collection that day is capped at the
+    pre-session ceiling until 09:30 ET passes. That is the safe direction to be
+    wrong in -- it under-spends on a day with no trading to inform, rather than
+    over-spending ahead of a real session -- and it is why this is documented
+    rather than fixed: an exchange calendar is a dependency and a maintenance
+    burden that buys back only some holiday chatter. Half-days (13:00 ET closes)
+    are unaffected, since only the open time is consulted.
+    """
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:  # noqa: BLE001 - bad tz string -> don't hold anything back
+        return False
+    # The UTC date, not the local one: the budget day is what is being divided.
+    day = now_utc.astimezone(dt.timezone.utc).date()
+    if day.weekday() >= 5:
+        return False  # no session inside this budget day; nothing to protect
+    open_local = dt.datetime.combine(day, dt.time(9, 30), tzinfo=tz)
+    return now_utc < open_local.astimezone(dt.timezone.utc)
+
+
 class OptionsStrategy:
     def __init__(self, settings, logger):
         self.s = settings
@@ -167,6 +210,34 @@ class OptionsStrategy:
         """
         rejects[f"{side}.{reason}"] = rejects.get(f"{side}.{reason}", 0) + n
 
+    @staticmethod
+    def _new_stages() -> dict:
+        """The empty survivor ledger a scan fills in as it narrows the book.
+
+        Deliberately parallel to `rejects` rather than folded into it. A reject
+        tally can only ever say what died, so a stage that had nothing to reject
+        and a stage that rejected everything both read as silence -- which is how
+        an empty put side came to be reported as a confidence problem. These are
+        the counts at each boundary, so every stage says how many entered it:
+
+            gate     -> permission to sell the side at all (tail risk / trend)
+            shorts   -> short legs inside the delta / buffer / liquidity band
+            pairs    -> short x long pairings enumerated and TESTED. Not priced:
+                        width and liquidity are checked before a credit is ever
+                        computed, so most of this number never reached a price.
+            priced   -> pairings that survived every filter into a real vertical
+            offered  -> priced verticals passed on to ranking (the confidence gate
+                        sits here, and can only ever withhold what `priced` found)
+        """
+        return {
+            "put": {"gate": None, "shorts": 0, "pairs": 0, "priced": 0, "offered": 0},
+            "call": {"gate": None, "shorts": 0, "pairs": 0, "priced": 0, "offered": 0},
+            "condor": {"built": 0, "reason": None},
+            "confidence_withheld": False,
+            "candidates": 0,
+            "halted": None,
+        }
+
     # --- public API -------------------------------------------------------
     def scan(self, chain: dict | None, prediction: dict, now: dt.datetime | None = None) -> dict:
         """Rank all verticals and decide whether *now* is the right time to trade."""
@@ -175,13 +246,14 @@ class OptionsStrategy:
             now, self._cfg("market_tz", "America/New_York")
         )
         rejects: dict[str, int] = {}
-        candidates = self._candidates(chain, prediction, rejects)
+        stages = self._new_stages()
+        candidates = self._candidates(chain, prediction, rejects, stages)
         best = candidates[0] if candidates else None
         min_edge = self._cfg("min_edge_score", 0.05)
 
         if best is None:
             recommended = False
-            reason = self._no_candidate_reason(chain, prediction)
+            reason = self._no_candidate_reason(chain, prediction, stages)
         elif not market_open:
             recommended = False
             reason = "Best edge found, but the market is closed - wait for regular hours."
@@ -208,6 +280,7 @@ class OptionsStrategy:
             "num_puts": sum(1 for c in candidates if c["strategy"] == "PUT_CREDIT_SPREAD"),
             "num_calls": sum(1 for c in candidates if c["strategy"] == "CALL_CREDIT_SPREAD"),
             "rejects": rejects,
+            "stages": stages,
         }
 
     def build(self, chain: dict | None, prediction: dict) -> dict | None:
@@ -220,7 +293,7 @@ class OptionsStrategy:
         return candidates[0] if candidates else None
 
     # --- candidate generation --------------------------------------------
-    def _sides_allowed(self, prediction: dict) -> tuple[bool, bool]:
+    def _sides_allowed(self, prediction: dict, notes: dict | None = None) -> tuple[bool, bool]:
         """Which sides are safe to sell, from the per-tail risk estimates.
 
         A credit spread is short a tail, not short a direction. Selling puts is
@@ -231,6 +304,13 @@ class OptionsStrategy:
 
         Falls back to the old direction gate when the aggregator supplies no
         tail estimates (the mean aggregator does not).
+
+        `notes` optionally collects the per-side verdict as text. This gate grants
+        PERMISSION to sell a side and nothing else -- it says a tail is quiet
+        enough, not that a sellable spread exists there. Reporting "both sides
+        open" as though it were a finding about the book is what made a cycle
+        with an empty put side read as a cycle with two live sides, so the phrase
+        now travels with the stage counts that say whether anything survived.
         """
         context = prediction.get("market_context") or {}
         downside = context.get("downside_risk")
@@ -238,10 +318,22 @@ class OptionsStrategy:
         if downside is None or upside is None:
             directional = prediction["label"] != "NEUTRAL"
             bullish = prediction["direction"] > 0
-            return (directional and bullish, directional and not bullish)
+            put_ok, call_ok = (directional and bullish, directional and not bullish)
+            if notes is not None:
+                why = f"{prediction['label']}, no tail estimate"
+                notes["put"] = "open" if put_ok else f"blocked ({why})"
+                notes["call"] = "open" if call_ok else f"blocked ({why})"
+            return (put_ok, call_ok)
 
         cap = self._cfg("max_tail_risk", 0.55)
         put_ok, call_ok = float(downside) <= cap, float(upside) <= cap
+        if notes is not None:
+            notes["put"] = (
+                "open" if put_ok else f"blocked (down {float(downside):.0%} > {cap:.0%})"
+            )
+            notes["call"] = (
+                "open" if call_ok else f"blocked (up {float(upside):.0%} > {cap:.0%})"
+            )
 
         # Trend is used here to pick a SIDE, never to predict a move. Selling puts
         # into a falling index is the standard way to be run over: the short strike
@@ -255,8 +347,12 @@ class OptionsStrategy:
             if trend is not None:
                 if float(trend) <= -block:
                     put_ok = False
+                    if notes is not None:
+                        notes["put"] = f"blocked (trend {float(trend):+.2f} <= {-block:+.2f})"
                 elif float(trend) >= block:
                     call_ok = False
+                    if notes is not None:
+                        notes["call"] = f"blocked (trend {float(trend):+.2f} >= {block:+.2f})"
         return (put_ok, call_ok)
 
     @staticmethod
@@ -302,21 +398,33 @@ class OptionsStrategy:
         return self._cfg("premium_weight", 0.15) * (ratio - 1.0)
 
     def _candidates(
-        self, chain: dict | None, prediction: dict, rejects: dict | None = None
+        self,
+        chain: dict | None,
+        prediction: dict,
+        rejects: dict | None = None,
+        stages: dict | None = None,
     ) -> list[dict]:
         if rejects is None:
             rejects = {}
+        if stages is None:
+            stages = self._new_stages()
         if not chain:
+            stages["halted"] = "no option chain"
             return []
         price = self._underlying_price(chain)
         if not price:
+            stages["halted"] = "no underlying price in chain"
             return []
-        put_ok, call_ok = self._sides_allowed(prediction)
+        gate_notes: dict[str, str] = {}
+        put_ok, call_ok = self._sides_allowed(prediction, gate_notes)
+        stages["put"]["gate"] = gate_notes.get("put", "open" if put_ok else "blocked")
+        stages["call"]["gate"] = gate_notes.get("call", "open" if call_ok else "blocked")
         if not put_ok:
             self._reject(rejects, "put", "side_blocked")
         if not call_ok:
             self._reject(rejects, "call", "side_blocked")
         if not (put_ok or call_ok):
+            stages["condor"]["reason"] = "both sides blocked at the tail gate"
             return []
 
         premium = self._premium_edge(prediction)
@@ -326,11 +434,13 @@ class OptionsStrategy:
         verticals: list[dict] = []
         if put_ok:
             verticals += self._verticals(
-                chain, prediction, price, premium, want_puts=True, rejects=rejects
+                chain, prediction, price, premium, want_puts=True,
+                rejects=rejects, stage=stages["put"],
             )
         if call_ok:
             verticals += self._verticals(
-                chain, prediction, price, premium, want_puts=False, rejects=rejects
+                chain, prediction, price, premium, want_puts=False,
+                rejects=rejects, stage=stages["call"],
             )
 
         results: list[dict] = []
@@ -345,17 +455,44 @@ class OptionsStrategy:
         # filters, none of which ask which way the market is going.
         if float(prediction["confidence"]) >= self.s.confidence_gate:
             results += verticals
+            for v in verticals:
+                side = "put" if v["strategy"] == "PUT_CREDIT_SPREAD" else "call"
+                stages[side]["offered"] += 1
         elif verticals:
             # Constructed and priced, then withheld on confidence alone. Counted
             # per side so a low-confidence cycle is distinguishable from one where
             # the pricing filters emptied the book.
+            #
+            # This counter only ever fires for a side that SURVIVED pricing, which
+            # is exactly why "confidence excluded the verticals" was never the
+            # whole story: a side that priced nothing reaches this branch with
+            # nothing to withhold and leaves no mark at all.
             for v in verticals:
                 side = "put" if v["strategy"] == "PUT_CREDIT_SPREAD" else "call"
                 self._reject(rejects, side, "confidence_gate")
-        if put_ok and call_ok and self._cfg("allow_iron_condor", True):
-            results += self._condors(verticals, premium)
+            stages["confidence_withheld"] = True
+
+        # A condor needs one priced vertical on each side; the tail gate opening
+        # both sides is a precondition, not a supply. Recorded as its own stage
+        # because an empty put book silently removes the ONE structure that wants
+        # low confidence, and that removal was invisible in the old output.
+        if not self._cfg("allow_iron_condor", True):
+            stages["condor"]["reason"] = "disabled"
+        elif not (put_ok and call_ok):
+            blocked = "put" if not put_ok else "call"
+            stages["condor"]["reason"] = f"{blocked} side blocked at the tail gate"
+        elif not stages["put"]["priced"] or not stages["call"]["priced"]:
+            empty = "put" if not stages["put"]["priced"] else "call"
+            stages["condor"]["reason"] = f"{empty} side priced 0 verticals"
+        else:
+            condors = self._condors(verticals, premium)
+            results += condors
+            stages["condor"]["built"] = len(condors)
+            if not condors:
+                stages["condor"]["reason"] = "no pairing met the pricing filters"
 
         results.sort(key=lambda c: c["edge"], reverse=True)
+        stages["candidates"] = len(results)
         return results
 
     def _verticals(
@@ -366,9 +503,16 @@ class OptionsStrategy:
         premium: float,
         want_puts: bool,
         rejects: dict | None = None,
+        stage: dict | None = None,
     ) -> list[dict]:
         if rejects is None:
             rejects = {}
+        # Survivor counts per stage, alongside the reject tally. The rejects dict
+        # answers "why did candidates die"; this answers "how many were ever
+        # alive", and only the pair tells you whether a stage was selective or
+        # simply had nothing to work on.
+        if stage is None:
+            stage = {}
         side = "put" if want_puts else "call"
         exp_map = chain.get("putExpDateMap" if want_puts else "callExpDateMap", {})
         if not exp_map:
@@ -434,6 +578,7 @@ class OptionsStrategy:
                 shorts.append((o, strike, d, buffer))
             if not shorts:
                 self._reject(rejects, side, "no_eligible_short")
+            stage["shorts"] = stage.get("shorts", 0) + len(shorts)
 
             # pair each short with every valid long leg (scans all widths)
             for short, ss, sd, buffer in shorts:
@@ -448,6 +593,12 @@ class OptionsStrategy:
                         continue
                     if not want_puts and not ls > ss:
                         continue
+                    # Everything from here on is a real pairing that was examined,
+                    # so this is the denominator the reject counts below are a
+                    # fraction OF. It is NOT a count of priced spreads -- the
+                    # width and liquidity tests immediately below reject most
+                    # pairings before a credit is computed for them.
+                    stage["pairs"] = stage.get("pairs", 0) + 1
                     width = abs(ss - ls)
                     if width < min_width or width > max_width:
                         self._reject(rejects, side, "width")
@@ -522,6 +673,7 @@ class OptionsStrategy:
                         }
                     )
 
+        stage["priced"] = stage.get("priced", 0) + len(results)
         return results
 
     # --- iron condors -----------------------------------------------------
@@ -610,44 +762,60 @@ class OptionsStrategy:
             price = underlying.get("last") or underlying.get("mark")
         return price
 
-    def _no_candidate_reason(self, chain: dict | None, prediction: dict) -> str:
+    def _no_candidate_reason(
+        self, chain: dict | None, prediction: dict, stages: dict | None = None
+    ) -> str:
+        """Name the stage that actually emptied each side.
+
+        The previous version asked the gates in the order they are DEFINED and
+        reported the first one that was unhappy, which is not the order they
+        BIND. On a skewed tape it read the confidence gate, found it low, and
+        announced that confidence had excluded the verticals -- while the put
+        side had in fact priced nothing at all several stages earlier, and the
+        condor had died with it. One sentence cannot carry that, so this one
+        reads the survivor counts and reports each side where it really stopped.
+        """
         if not chain:
             return "No option chain available."
+        if stages is None:
+            stages = self._new_stages()
+        if stages.get("halted"):
+            return f"Scan halted: {stages['halted']}."
+
         context = prediction.get("market_context") or {}
         downside, upside = context.get("downside_risk"), context.get("upside_risk")
-        if downside is not None and upside is not None:
-            cap = self._cfg("max_tail_risk", 0.55)
-            put_ok, call_ok = self._sides_allowed(prediction)
-            if not (put_ok or call_ok):
+        gates = (stages["put"]["gate"], stages["call"]["gate"])
+        if all(g and g != "open" for g in gates):
+            if downside is not None and upside is not None:
+                cap = self._cfg("max_tail_risk", 0.55)
                 return (
                     f"Both tails elevated (down {float(downside):.0%}, up {float(upside):.0%} "
                     f"vs {cap:.0%} cap) - a gap either way breaks a spread. Stay flat."
                 )
-            if prediction["confidence"] < self.s.confidence_gate:
-                # Low confidence no longer means "stay flat" -- it excludes the
-                # directional trade and leaves the condor, so say which one failed.
-                if put_ok and call_ok and self._cfg("allow_iron_condor", True):
-                    return (
-                        f"Confidence {prediction['confidence'] * 100:.0f}% is below the gate "
-                        f"{self.s.confidence_gate * 100:.0f}%, so verticals are excluded - and "
-                        "no iron condor met the return / POP / liquidity filters."
-                    )
-                side = "put" if put_ok else "call"
-                return (
-                    f"Confidence {prediction['confidence'] * 100:.0f}% is below the gate "
-                    f"{self.s.confidence_gate * 100:.0f}%, so verticals are excluded, and only "
-                    f"the {side} tail is sellable - a condor needs both."
+            return "Neither side is sellable - stay flat."
+
+        conf = float(prediction["confidence"]) * 100
+        gate_pct = self.s.confidence_gate * 100
+        clauses = []
+        for side in ("put", "call"):
+            st = stages[side]
+            if st["gate"] and st["gate"] != "open":
+                clauses.append(f"{side}s {st['gate']}")
+            elif not st["shorts"]:
+                clauses.append(f"no {side} short leg in the delta/buffer band")
+            elif not st["priced"]:
+                clauses.append(f"{side}s survived 0 of {st['pairs']} pairings tested")
+            elif not st["offered"]:
+                clauses.append(
+                    f"{st['priced']} {side} verticals withheld "
+                    f"(confidence {conf:.0f}% < {gate_pct:.0f}%)"
                 )
-            side = "put" if put_ok else "call"
-            return f"No {side} vertical met the return / POP / liquidity filters."
-        if prediction["label"] == "NEUTRAL":
-            return "Directional read is neutral - no credit-spread edge."
-        if prediction["confidence"] < self.s.confidence_gate:
-            return (
-                f"Confidence {prediction['confidence'] * 100:.0f}% is below the gate "
-                f"{self.s.confidence_gate * 100:.0f}% - stay flat."
-            )
-        return "No vertical met the return / POP / liquidity filters in the DTE window."
+            else:
+                clauses.append(f"{st['offered']} {side} verticals ranked but none led")
+        condor = stages["condor"]["reason"]
+        if condor:
+            clauses.append(f"condor: {condor}")
+        return "; ".join(clauses).capitalize() + "."
 
     def _parse_exp(self, key: str):
         # Schwab keys look like "2024-06-21:23"

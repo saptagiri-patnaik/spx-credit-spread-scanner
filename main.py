@@ -478,6 +478,13 @@ class Pipeline:
 
         # Surface the tail estimates: they decide which side may be sold, so
         # they matter more to the reader than the direction does.
+        #
+        # "both sides open" was the wrong words for the right fact. This gate
+        # grants PERMISSION to sell a tail; it says nothing about whether a
+        # sellable spread exists there, and on 08-12 it read as two live sides
+        # every cycle while the put book was empty in all of them. "permitted"
+        # is the honest verb, and the waterfall below answers the availability
+        # question the old phrasing appeared to have already answered.
         context = prediction.get("market_context") or {}
         down, up = context.get("downside_risk"), context.get("upside_risk")
         if down is not None and up is not None:
@@ -489,7 +496,7 @@ class Pipeline:
                 verdict.append("no call spreads")
             lines.append(
                 f"Tail risk : DOWN {float(down):.0%}  UP {float(up):.0%}   (cap {cap:.0%})"
-                + (f"  -> {', '.join(verdict)}" if verdict else "  -> both sides open")
+                + (f"  -> {', '.join(verdict)}" if verdict else "  -> both sides permitted")
             )
             if context.get("stories_considered"):
                 lines.append(
@@ -499,9 +506,13 @@ class Pipeline:
                 )
         lines.append(f"Rationale : {prediction['rationale']}")
         lines.append("-" * 56)
+        # "scanned N verticals" read as the size of the search when it was only
+        # ever the size of the RESULT -- num_candidates counts survivors, so a
+        # cycle that priced eight thousand pairings and kept none reported as a
+        # scan that never ran. The waterfall below carries the search itself.
         lines.append(
             f"Market    : {'OPEN' if scan['market_open'] else 'CLOSED'}  |  "
-            f"scanned {scan['num_candidates']} verticals "
+            f"{scan['num_candidates']} candidates "
             f"({scan.get('num_puts', 0)} put / {scan.get('num_calls', 0)} call)"
         )
         if best:
@@ -529,6 +540,49 @@ class Pipeline:
         else:
             lines.append("BEST SPREAD: none.")
         lines.append(f"Timing    : {scan['reason']}")
+        # Directly under the verdict it explains, and above the optional
+        # diagnostics, because this is no longer a diagnostic: on a no-trade
+        # cycle it IS the decision. Fixed size (six rows plus at most three
+        # notes) so it cannot be the line that pushes a long rationale into
+        # Discord's 2000-char truncation.
+        #
+        # Read down a column and you get one side's whole life: permission,
+        # then supply, then pricing, then the confidence gate. Each stage can
+        # only ever narrow the one above it, so the row where a column reaches
+        # zero is the stage that actually decided -- which is the question the
+        # single Timing sentence kept getting wrong.
+        stages = scan.get("stages") or {}
+        if stages.get("put") and not stages.get("halted"):
+            put, call = stages["put"], stages["call"]
+
+            def _gate(st: dict) -> str:
+                # "open" / "blocked" in the column; the parenthesised reason is
+                # too wide for it and gets its own note line below.
+                return "-" if not st["gate"] else st["gate"].split(" (")[0]
+
+            lines.append(f"{'Waterfall :':<16}{'put':>8}{'call':>8}")
+            lines.append(f"  {'tail gate':<14}{_gate(put):>8}{_gate(call):>8}")
+            for label, key in (
+                ("shorts", "shorts"), ("pairs tested", "pairs"),
+                ("survived", "priced"), ("offered", "offered"),
+            ):
+                lines.append(f"  {label:<14}{put[key]:>8}{call[key]:>8}")
+            for side, st in (("put", put), ("call", call)):
+                if st["gate"] and st["gate"] != "open":
+                    lines.append(f"  > {side}s {st['gate']}")
+            if stages.get("confidence_withheld"):
+                withheld = " and ".join(
+                    f"{st['priced']} {side}"
+                    for side, st in (("put", put), ("call", call))
+                    if st["priced"] and not st["offered"]
+                )
+                lines.append(
+                    f"  > {withheld} priced then withheld: confidence "
+                    f"{float(prediction['confidence']) * 100:.0f}% < "
+                    f"{self.s.confidence_gate * 100:.0f}%"
+                )
+            if stages["condor"]["reason"]:
+                lines.append(f"  > condor: {stages['condor']['reason']}")
         # Applied against measured, for the one term whose weight was inherited.
         # `premium_edge` is premium_weight * (IV/RV - 1) with the weight set by
         # hand; the second figure reprices POP on realised vol at this strike and
