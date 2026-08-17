@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+from collections import Counter
 
 from apscheduler.schedulers.blocking import BlockingScheduler
 
@@ -106,6 +107,7 @@ class Pipeline:
     def collect_new(self) -> int:
         new_count = 0
         thin_count = 0
+        by_type: Counter = Counter()
         min_words = getattr(self.s, "min_item_words", 0)
         for collector in self.collectors:
             try:
@@ -118,6 +120,7 @@ class Pipeline:
                         continue
                     if self.repo.upsert_item(item.to_row()):
                         new_count += 1
+                        by_type[item.source_type] += 1
             except Exception as exc:  # noqa: BLE001
                 self.log.warning("Collector %s failed: %s", type(collector).__name__, exc)
         if thin_count:
@@ -129,15 +132,26 @@ class Pipeline:
             )
         else:
             self.log.info("Collected %d new items.", new_count)
+        if by_type:
+            self.log.info(
+                "Collected by type: %s",
+                " ".join(f"{k}={v}" for k, v in by_type.most_common()),
+            )
         return new_count
 
     def score_new(self) -> None:
         if not self.llm.available():
             self.log.warning("Scorer not available; skipping scoring.")
             return
+        if hasattr(self.llm, "reset_usage"):
+            self.llm.reset_usage()
+        total = 0
+        scored_count = 0
         for item in self.repo.fetch_unscored(limit=80):
+            total += 1
             score = self.analyzer.score(item)
             if score:
+                scored_count += 1
                 # Record the model that actually produced the score. Hardcoding
                 # the Ollama name here silently mislabelled every Claude-scored
                 # row, which makes it impossible to tell which scorer produced
@@ -153,6 +167,12 @@ class Pipeline:
                     getattr(self.llm, "model", "unknown"),
                     prompt=getattr(self.analyzer, "prompt_name", None),
                 )
+        if getattr(self.llm, "requests", 0):
+            self.log.info(
+                "Scorer usage: %d request(s), %d in / %d out tokens (%d/%d items scored).",
+                self.llm.requests, self.llm.input_tokens, self.llm.output_tokens,
+                scored_count, total,
+            )
 
     def run_once(self) -> None:
         # Collection runs on every cycle regardless of schedule mode: RSS feeds

@@ -54,6 +54,14 @@ class ClaudeClient:
         self._client = None
         self._api_key = api_key
         self._import_error: str | None = None
+        # Per-cycle usage, reset by the caller (Pipeline.score_new,
+        # SynthesisAggregator.aggregate) at the start of each cycle -- the
+        # client itself is reused across warm Lambda invocations, so without
+        # an explicit reset these would accumulate for the container's whole
+        # lifetime instead of describing one cycle.
+        self.requests = 0
+        self.input_tokens = 0
+        self.output_tokens = 0
         try:
             import anthropic
 
@@ -73,6 +81,11 @@ class ClaudeClient:
             self._import_error = "anthropic package not installed (pip install anthropic)"
         except Exception as exc:  # noqa: BLE001 - missing/!invalid key
             self._import_error = str(exc)
+
+    def reset_usage(self) -> None:
+        self.requests = 0
+        self.input_tokens = 0
+        self.output_tokens = 0
 
     def available(self) -> bool:
         if self._client is None:
@@ -108,6 +121,12 @@ class ClaudeClient:
         except anthropic.APIConnectionError as exc:
             self.log.warning("Claude connection error: %s", exc)
             return None
+
+        usage = getattr(response, "usage", None)
+        if usage is not None:
+            self.requests += 1
+            self.input_tokens += getattr(usage, "input_tokens", 0) or 0
+            self.output_tokens += getattr(usage, "output_tokens", 0) or 0
 
         if response.stop_reason == "refusal":
             self.log.warning("Claude declined to score an item.")

@@ -185,13 +185,17 @@ class SynthesisAggregator:
             bucket = clusters.setdefault(key, {
                 "title": item.title,
                 "count": 0, "weight": 0.0, "direction": 0.0,
-                "sources": set(), "macro": False, "latest": None,
+                "sources": set(), "publishers": set(), "macro": False, "latest": None,
             })
             weight = weight_hint
             bucket["count"] += 1
             bucket["weight"] += weight
             bucket["direction"] += weight * score.direction
             bucket["sources"].add(item.source_type)
+            # The publisher (e.g. "OilPrice", "Fed Press"), not just the
+            # source_type bucket it falls in -- "macro=24" alone cannot say
+            # whether one feed is quietly occupying the whole diversity cap.
+            bucket["publishers"].add(getattr(item, "source", None) or item.source_type)
             if item.source_type in MACRO_TYPES:
                 bucket["macro"] = True
             published = item.published_at
@@ -285,6 +289,8 @@ class SynthesisAggregator:
         now = dt.datetime.now(dt.timezone.utc)
         event_risk, event_notes = self.fallback._event_risk(upcoming_events, now)
         prompt = self.build_prompt(selected, market_context, event_notes, chatter)
+        if hasattr(self.llm, "reset_usage"):
+            self.llm.reset_usage()
         out = self.llm.generate_json(prompt, system=SYSTEM, schema=PREDICTION_SCHEMA)
 
         if not out:
@@ -334,20 +340,37 @@ class SynthesisAggregator:
         mix = Counter(stype for story in selected for stype in story["sources"])
         mix_str = " ".join(f"{k}={v}" for k, v in mix.most_common()) or "(none)"
 
+        # Which publishers actually filled the macro slots -- "macro=24" in
+        # `mix` cannot distinguish four feeds sharing the cap evenly from one
+        # feed (e.g. OilPrice) quietly occupying all of it.
+        macro_selected = [s for s in selected if self._primary_type(s) == "macro"]
+        macro_pubs = Counter(pub for s in macro_selected for pub in s["publishers"])
+        macro_pub_str = " ".join(f"{k}={v}" for k, v in macro_pubs.most_common()) or "(none)"
+
         # Median age of what actually reached the model. The mix alone cannot tell
         # you whether recency decay is working: a prompt can stay diverse by source
         # and still be a week stale.
         ages = sorted((now - s["latest"]).total_seconds() / 3600.0
                       for s in selected if s.get("latest"))
         age_str = f"{ages[len(ages) // 2]:.0f}h median" if ages else "age unknown"
+        stale_count = sum(1 for a in ages if a > 72.0)
+
+        usage_str = ""
+        if getattr(self.llm, "requests", 0):
+            usage_str = (
+                f" | {self.llm.requests} req, "
+                f"{self.llm.input_tokens} in / {self.llm.output_tokens} out tok"
+            )
 
         self.log.info(
             "SYNTHESIS (%s) direction %+.3f | confidence %.2f | "
             "downside %.0f%% | upside %.0f%% | %d of %d stories [%s, %s], "
-            "%d chatter posts\n  rationale: %s\n  drivers  : %s",
+            "%d chatter posts | macro publishers: %s | stale(>72h): %d%s"
+            "\n  rationale: %s\n  drivers  : %s",
             getattr(self.llm, "model", "?"), direction, confidence,
             downside_risk * 100, upside_risk * 100,
             len(selected), len(stories), mix_str, age_str, chatter.get("count", 0),
+            macro_pub_str, stale_count, usage_str,
             rationale or "(none)",
             "; ".join(str(d) for d in drivers) or "(none)",
         )
