@@ -131,6 +131,8 @@ Plan for the first market day after r92 (18 August):
 
 No manual invocation or strategy/gating changes either way.
 
+**Deployed, same day (17 August):** `spx-scanner-zip` is running `r94-g283e74c`, deployed via `deploy/build-zip.ps1 -Deploy`, well ahead of the 06:10 PDT cycle. (An intermediate deploy landed `r93-g85015fc-dirty` — the `-dirty` suffix was a false positive from `PROJECT_MEMORY.md` being untracked at that point, not unreproducible application code; `PROJECT_MEMORY.md` isn't part of the ZIP's source list either way. It was committed and the redeploy produced the clean `r94-g283e74c` stamp that is now live.) All deploy steps reported success: code update, function-updated wait, concurrency-pinned guard (still 1), and the APP_VERSION merge (66 env vars preserved, matching the pre-deploy count). So the 06:20 PDT build-version check above should expect **`r94-g283e74c`** specifically.
+
 ## 2026-08-17: observability logging added (behavior-neutral)
 
 Implemented same day, ahead of the 18 August cycle, at explicit user authorization ("implement both"). Log-only additions, no change to gating, scoring, selection, or synthesis math:
