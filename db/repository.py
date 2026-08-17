@@ -9,6 +9,8 @@ from sqlalchemy import and_, create_engine, or_, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session, sessionmaker
 
+from collectors.macro import effective_source_type
+
 from .models import (
     ApiUsage,
     Base,
@@ -22,6 +24,8 @@ from .models import (
     PredictionOutcome,
     SpreadSuggestion,
 )
+
+RETIRED_SCORING_SOURCE_TYPES = ("social", "youtube")
 
 
 class Repository:
@@ -94,9 +98,14 @@ class Repository:
             return s.execute(stmt).first() is not None
 
     def fetch_unscored(self, limit: int = 100) -> list[Item]:
+        """Return only items that belong to the measured production corpus."""
         with self.session() as s:
             rows = s.scalars(
-                select(Item).where(Item.scored.is_(False)).order_by(Item.fetched_at).limit(limit)
+                select(Item)
+                .where(Item.scored.is_(False))
+                .where(Item.source_type.notin_(RETIRED_SCORING_SOURCE_TYPES))
+                .order_by(Item.fetched_at)
+                .limit(limit)
             ).all()
             s.expunge_all()
             return list(rows)
@@ -111,16 +120,25 @@ class Repository:
                 item.scored = True
 
     def recent_scores(self, since: dt.datetime) -> list[tuple[Item, ItemScore]]:
-        """Latest score per item published since `since` (excludes future-dated econ events)."""
+        """Scores in the active corpus (excluding future-dated econ events).
+
+        Rows from broad world desks may predate the macro/news split and still
+        carry ``source_type=macro`` in storage.  Correct the detached read model
+        so the split takes effect immediately without rewriting historical data.
+        """
         with self.session() as s:
             rows = s.execute(
                 select(Item, ItemScore)
                 .join(ItemScore, ItemScore.item_id == Item.id)
                 .where(Item.published_at >= since)
                 .where(Item.published_at <= dt.datetime.now(dt.timezone.utc))
+                .where(Item.source_type.notin_(RETIRED_SCORING_SOURCE_TYPES))
             ).all()
             s.expunge_all()
-            return [(r[0], r[1]) for r in rows]
+            result = [(r[0], r[1]) for r in rows]
+        for item, _score in result:
+            item.source_type = effective_source_type(item.source, item.source_type)
+        return result
 
     def fetch_events(self, start: dt.datetime, end: dt.datetime) -> list[Item]:
         """Scheduled economic-calendar items whose event time falls in [start, end]."""

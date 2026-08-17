@@ -175,17 +175,15 @@
         <span class="name">Collect</span>
         <span class="chip c-ok">healthy</span>
         <span class="caret">&rsaquo;</span>
-        <span class="io"><b>in</b> 6 collectors <span>&rarr;</span> <b>out</b> ~65 new items/cycle
-          <span>&middot;</span> ~40% dropped by the substance filter</span>
+        <span class="io"><b>in</b> 4 active collectors <span>&rarr;</span> news + macro + econ + wire
+          <span>&middot;</span> cleaned corpus</span>
         <span class="bar"><i style="width:62%"></i></span>
       </button>
       <div class="detail" id="d1">
-        <h4>Six sources, very unequal</h4>
+        <h4>Four active collectors</h4>
         <dl class="kv">
-          <dt>social</dt><dd>StockTwits + Reddit &mdash; <b>67% of everything scored</b></dd>
-          <dt>macro</dt><dd>Fed, ECB, BBC World, Al Jazeera, Guardian, NPR, OilPrice</dd>
-          <dt>youtube</dt><dd>US-restricted search, transcripts</dd>
-          <dt>news</dt><dd>6 publisher-direct RSS feeds, SPX-keyword filtered</dd>
+          <dt>macro</dt><dd>Fed, ECB, NPR Business, CNBC Politics, OilPrice</dd>
+          <dt>news</dt><dd>publisher-direct RSS plus BBC World, Al Jazeera, Guardian World and NPR World</dd>
           <dt>wire</dt><dd>15 curated X accounts &mdash; NickTimiraos, LiveSquawk, Reuters</dd>
           <dt>econ</dt><dd>FRED calendar &mdash; scheduled releases, not news</dd>
         </dl>
@@ -201,12 +199,9 @@
           (<code>double free or corruption</code>, ~1 invocation in 18) lands in this stage, while
           eight threads do concurrent HTTPS. Suspect is <code>psycopg2-binary</code>'s bundled
           OpenSSL beside Python's own.</div>
-        <div class="flag warn"><b>Scheduled to shrink.</b> 199 hand-labelled items found social and
-          YouTube produce <b>one</b> actionable item in 107. Cutting both drops scoring volume 79%
-          and lifts precision from 44% to 57%. <b>Recommended 9 Aug: hold the 13 Aug date to 17
-          Aug</b> &mdash; the 13th lands three sessions into the new premium series and on PPI day,
-          moving the corpus and a fresh measurement inside the same five days. The 17th is also when
-          the put side reopens.</div>
+        <div class="flag good"><b>Cleanup shipped 16 Aug.</b> StockTwits, Reddit and YouTube are not
+          registered in production. The modules remain available only for historical replay.
+          Re-grade the newly collected corpus before building the provider replay harness.</div>
       </div>
     </div>
 
@@ -219,8 +214,8 @@
         <span class="name">Score each item</span>
         <span class="chip c-ok">running</span>
         <span class="caret">&rsaquo;</span>
-        <span class="io"><b>model</b> claude-haiku-4-5 <span>&middot;</span> ~700 items/day
-          <span>&middot;</span> ~$1.13/day</span>
+        <span class="io"><b>model</b> claude-haiku-4-5 <span>&middot;</span> metered per item
+          <span>&middot;</span> post-cleanup cost pending measurement</span>
         <span class="bar"><i style="width:88%"></i></span>
       </button>
       <div class="detail" id="d2">
@@ -266,15 +261,15 @@
         <span class="name">Cluster into stories</span>
         <span class="chip c-ok">healthy</span>
         <span class="caret">&rsaquo;</span>
-        <span class="io"><b>in</b> ~2,268 stories <span>&rarr;</span> <b>out</b> top 40
-          <span>&middot;</span> ~5,500 untitled &rarr; one chatter number</span>
+        <span class="io"><b>in</b> active scored stories <span>&rarr;</span> <b>out</b> top 40
+          <span>&middot;</span> retired chatter excluded</span>
         <span class="bar"><i style="width:2%"></i></span>
       </button>
       <div class="detail" id="d3">
         <h4>Three things decide which 40 get sent</h4>
         <ul>
-          <li><b>Source weight</b> &mdash; macro 1.2, news/wire 1.0, social 0.6, plus a 1.3 ranking
-            nudge for macro</li>
+          <li><b>Source weight</b> &mdash; macro 1.2, econ 1.1, news/wire 1.0, plus a 1.3 ranking
+            nudge for macro/econ</li>
           <li><b>Recency decay</b> &mdash; weight halves every 72h, per item. Before this shipped, a
             98-hour-old &ldquo;U.S. and Iran halt attacks&rdquo; outranked a 23-hour-old
             &ldquo;attacks resume&rdquo; on the same conflict.</li>
@@ -283,12 +278,11 @@
         <h4>What the cap actually does</h4>
         <p>Macro sits at <b>exactly 24 of 40 in every cycle since it shipped</b> &mdash; the cap is
           saturated, not slack. Without it macro took 39 of 40.</p>
-        <div class="flag warn"><b>But macro is the weakest source.</b> Labels put macro at 24%
-          relevant against news at 79%. The weights are inverted relative to measured value: the best
-          source has the lowest weight. BBC World / Al Jazeera / NPR World are general news, not
-          macro &mdash; every <i>relevant</i> macro item had a price channel.</div>
-        <p>Items with no title (retail chatter) never become stories. They collapse into one
-          aggregate tone number, so 5,500 posts contribute a single figure.</p>
+        <div class="flag good"><b>The macro split shipped 16 Aug.</b> BBC World, Al Jazeera,
+          Guardian World and NPR World are emitted as news. Only feeds with a price channel retain
+          the macro weight and ranking nudge.</div>
+        <p>The historical chatter-aggregation path remains for reproducible replay, but retired
+          social and YouTube rows are filtered before the live synthesis corpus is assembled.</p>
       </div>
     </div>
 

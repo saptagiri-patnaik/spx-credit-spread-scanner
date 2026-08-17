@@ -20,9 +20,7 @@ from collectors.base import has_substance
 from collectors.econ_calendar import EconCalendarCollector
 from collectors.macro import MacroCollector
 from collectors.news import NewsCollector
-from collectors.social import SocialCollector
 from collectors.x_collector import XCollector
-from collectors.youtube import YouTubeCollector
 from config import get_settings
 from db.repository import Repository
 from market.options_strategy import OptionsStrategy, is_market_hours
@@ -36,6 +34,23 @@ from utils.version import get_version
 # against. Kept in the existing key/value store rather than a new table: it is one
 # short JSON list, written once a day.
 IV_HISTORY_KEY = "atm_iv_history"
+
+
+def build_collectors(settings, logger, repo):
+    """Build the measured production corpus.
+
+    StockTwits, Reddit, and YouTube deliberately stay out of the active list:
+    together they supplied one actionable item in 107 hand-labelled examples
+    while consuming most first-pass scoring calls.  The modules remain in the
+    repository so the decision can be replayed, but production neither fetches
+    nor scores them.
+    """
+    return [
+        NewsCollector(settings, logger),
+        MacroCollector(settings, logger),
+        EconCalendarCollector(settings, logger),
+        XCollector(settings, logger, repo),
+    ]
 
 
 class Pipeline:
@@ -68,14 +83,7 @@ class Pipeline:
         self.strategy = OptionsStrategy(settings, logger)
         self.paper = PaperTracker(settings, self.repo, logger)
         self.notifier = Notifier(settings, logger)
-        self.collectors = [
-            NewsCollector(settings, logger),
-            YouTubeCollector(settings, logger),
-            SocialCollector(settings, logger),
-            MacroCollector(settings, logger),
-            EconCalendarCollector(settings, logger),
-            XCollector(settings, logger, self.repo),
-        ]
+        self.collectors = build_collectors(settings, logger, self.repo)
 
     def setup(self) -> None:
         self.repo.init_db()

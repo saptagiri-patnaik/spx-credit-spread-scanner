@@ -141,6 +141,7 @@
   .step.crit { border-left-color: var(--block); }
   .step.now { border-left-color: var(--active); }
   .step.auto { border-left-color: var(--accent); }
+  .step.done { border-left-color: var(--done); }
   .step .date {
     font-family: var(--mono); font-size: .78rem; font-variant-numeric: tabular-nums;
     color: var(--ink-2); font-weight: 600; padding-top: .1rem;
@@ -744,7 +745,7 @@
         <div class="check"><b>Check</b><span>Sopana logs the scanner's tails on every tick, and behaves identically while ignoring them.</span></div>
       </div>
 
-      <div class="step now">
+      <div class="step done">
         <span class="date">Thu 13 Aug</span>
         <span class="what">Drop StockTwits / Reddit and split the macro feeds</span>
         <span class="tag t-scan">scanner</span>
@@ -752,8 +753,10 @@
           Social and YouTube are 54% of the corpus and produced <strong>one</strong> actionable item in
           107 labelled. Macro is 24% relevant because BBC World, Al&nbsp;Jazeera and NPR World are
           general news, not macro &mdash; every relevant macro item had a price channel.
+          <strong>Shipped 16 Aug:</strong> production now registers only news, price-channel macro,
+          econ-calendar and X-wire collectors; the general-world desks are retained as news.
         </div>
-        <div class="check"><b>Check</b><span>relevance precision on a re-grade rises toward the 56.8% measured on the macro/news/econ subset.</span></div>
+        <div class="check"><b>Next check</b><span>relevance precision on the cleaned-corpus re-grade rises toward the 56.8% measured on the macro/news/econ subset.</span></div>
       </div>
     </div>
 

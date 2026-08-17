@@ -1,15 +1,17 @@
 # SPX Sentiment + Macro Edge Scanner
 
-**A local 8B LLM reads the news, and the output drives an options strategy.**
+**A language model reads market-moving information, and the output drives an options strategy.**
 
-Every 45 minutes this pipeline pulls from six sources — financial RSS, central-bank and
-geopolitical feeds, the US economic calendar, StockTwits, Reddit, X, and YouTube transcripts —
-scores each new item with a local Ollama model, blends the scores into a 5–7 day directional
-call on the S&P 500, then scans *every* SPX vertical in the 20–25 DTE window and ranks them
-by an edge score. Three independent gates decide whether any of it becomes a trade signal.
+Every 45 minutes this pipeline pulls financial news, price-channel macro feeds, the US economic
+calendar, and a curated X wire; scores each new item; synthesises the strongest distinct stories
+into a 5–7 day directional call on the S&P 500; then scans *every* SPX vertical in the 20–25 DTE
+window and ranks it by an edge score. Three independent gates decide whether any of it becomes
+a trade signal.
 
-It runs on one laptop at **zero marginal inference cost**. No LLM API bill — the scoring
-happens on a local `llama3.1:8b`.
+The live deployment uses Anthropic (`claude-haiku-4-5` for item scoring and `claude-opus-5`
+for cycle synthesis), so inference is metered. Ollama remains available as a local backend.
+StockTwits, Reddit, and YouTube were removed from the production collector list on 16 August
+2026 after producing only one actionable item in 107 labelled examples.
 
 > ### ⚠️ Educational research only
 > This is a research tool that prints reports. **It does not place trades, and nothing it
@@ -24,9 +26,9 @@ happens on a local `llama3.1:8b`.
 Most retail sentiment projects stop at "score the headlines and print a number." The part
 worth looking at here is what happens *after* the score:
 
-- **Two independent channels.** Macro/econ items and news/social items are weighted and
-  averaged separately, then blended — so a policy shift and a Reddit thread can't drown
-  each other out. If one channel is empty, weights redistribute instead of averaging in zero.
+- **Item scoring and story synthesis are separate.** The high-volume scorer labels each item;
+  the cycle synthesiser then reasons over at most 40 deduplicated, recency-weighted stories.
+  A 60% source-type cap prevents one feed class from consuming the prompt.
 - **Confidence is computed separately from direction**, from conviction, coverage, and
   cross-channel agreement. A strong direction built on eight items still fails the gate.
 - **The strategy is exhaustive, not templated.** It doesn't pick a delta and build one spread;
@@ -41,9 +43,9 @@ it in a browser; it's self-contained.
 ## How it works
 
 ```
-collectors/  news · macro · econ calendar · social · YouTube · X   → dedupe by content hash
+collectors/  news · price-channel macro · econ calendar · X wire  → dedupe by content hash
      ↓  (skip everything below if nothing new arrived)
-analysis/    Ollama scores each item  →  aggregator blends 2 channels + market trend
+analysis/    Haiku scores each item  →  Opus synthesises up to 40 distinct stories
      ↓
 market/      Schwab option chain  →  rank every 20–25 DTE vertical by edge
      ↓
@@ -86,21 +88,23 @@ wrong, so it was lowered. `min_edge_score` is now the gate that does the decidin
 |---|---|
 | **Python** | 3.11 or newer |
 | **Postgres** | Any reachable instance — local Docker is fine |
-| **[Ollama](https://ollama.com)** | Running locally |
-| **Disk** | ~5 GB for the model |
-| **RAM/GPU** | 8B at Q4 wants ~6 GB. It runs CPU-only, just slower — expect a few minutes per cycle with GPU offload, considerably more without |
+| **Scorer** | Anthropic API key (live configuration), or local Ollama |
 
-**No API keys are required to start.** Every collector skips itself when its key is
-blank, so a zero-key install still runs — you just get fewer items and no options data.
+Most feeds need no key. A useful run does require a configured scorer; Schwab is required only
+for options data and trade-candidate ranking.
 
-### 1. Get the model running
+### 1. Choose the scoring backend
 
-```bash
-ollama pull llama3.1:8b
-ollama list                      # confirm it's there
+The deployed configuration is:
+
+```ini
+LLM_PROVIDER=anthropic
+ANTHROPIC_API_KEY=...
+ANTHROPIC_MODEL=claude-haiku-4-5
 ```
 
-Ollama must be running when the scanner starts. It serves on `localhost:11434`.
+For local inference instead, set `LLM_PROVIDER=ollama`, install Ollama, and run
+`ollama pull llama3.1:8b`.
 
 ### 2. Install the project
 
@@ -128,8 +132,7 @@ docker run -d --name spx-pg -p 5432:5432 \
 cp .env.example .env
 ```
 
-Open `.env`. **The only setting you must fill in is the database.** Two options —
-pick one:
+Open `.env`. Configure the database and the scorer selected above. The database has two forms:
 
 ```ini
 # (a) full URL — you percent-encode the password yourself
@@ -150,7 +153,6 @@ Everything else is optional. Add keys later to widen coverage:
 |---|---|
 | `FRED_API_KEY`, `FINNHUB_KEY` | Economic calendar and event-risk detection |
 | `NEWSAPI_KEY` | More headlines than RSS alone |
-| `YOUTUBE_API_KEY` | Video transcripts |
 | `SCHWAB_*` | **The entire options half** — chain, expected move, spread scan |
 | `DISCORD_WEBHOOK_URL` / `TELEGRAM_*` | Alerts pushed off the machine |
 | `X_BEARER_TOKEN` | X/Twitter posts (**the one paid source** — budget-capped) |
@@ -170,9 +172,8 @@ python main.py --setup
 python main.py --check
 ```
 
-Prints one line each for Ollama, Postgres, and Schwab. Ollama and Postgres should
-both report OK before continuing; Schwab is expected to be `False` until you
-configure it.
+Prints one line each for the configured scorer, Postgres, and Schwab. The scorer and Postgres
+should both report available before continuing; Schwab is expected to be `False` until configured.
 
 ### 7. First run
 
@@ -253,7 +254,7 @@ Do prompt work here.
 
 | Symptom | Cause |
 |---|---|
-| `Ollama not available; skipping scoring` | Ollama isn't running, or `OLLAMA_MODEL` names a model you haven't pulled |
+| `Scorer not available; skipping scoring` | The selected backend is unreachable or its credentials/model are not configured |
 | `Schwab access token is stale` | Expected without a token refresher. The sentiment half keeps working; the options half returns nothing |
 | `Market: CLOSED \| scanned 0 verticals` | Normal outside 09:30–16:00 ET. Set `REQUIRE_MARKET_HOURS=false` to scan anyway |
 | `No new information; keeping prior prediction` | Nothing new since last cycle — the pass exits early by design |
@@ -269,15 +270,15 @@ without them the sentiment/macro half still produces a directional call.
 |-----------|----------------------------------------------------------|-----------------|-----------|
 | News      | Yahoo · CNBC · MarketWatch · Reuters · Investing RSS      | —               | free      |
 | News+     | NewsAPI                                                   | `NEWSAPI_KEY`   | free tier |
-| Macro     | Fed · ECB · world · politics · commodities RSS            | —               | free      |
+| Macro     | Fed · ECB · business · politics · commodities RSS          | —               | free      |
 | Econ cal. | FRED release dates · Finnhub · FOMC schedule              | `FRED_API_KEY`, `FINNHUB_KEY` | free tier |
-| Social    | StockTwits · Reddit public JSON                           | —               | free      |
-| Social    | X / Twitter recent search                                 | `X_BEARER_TOKEN`| **paid** — budget-capped |
-| Video     | YouTube Data API + transcripts                            | `YOUTUBE_API_KEY` | free tier |
+| News      | BBC World · Al Jazeera · Guardian World · NPR World       | —               | free      |
+| Wire      | X / Twitter recent search                                 | `X_BEARER_TOKEN`| **paid** — budget-capped |
 | Market    | Schwab Trader API — option chain, quotes                  | `SCHWAB_*` OAuth | free w/ account |
 
-The X collector is the only paid source. It enforces a daily post budget
-(`X_DAILY_POST_BUDGET`) tracked in Postgres, so cost is bounded across restarts.
+The X collector is the only paid data source. It enforces a daily post budget
+(`X_DAILY_POST_BUDGET`) tracked in Postgres, so that cost is bounded across restarts.
+Anthropic inference is billed separately.
 
 ## Self-calibration
 

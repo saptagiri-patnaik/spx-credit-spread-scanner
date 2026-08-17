@@ -33,7 +33,8 @@ class Item(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     source: Mapped[str] = mapped_column(String(160))
-    # news/youtube/social/macro/econ/wire ("wire" = curated X accounts)
+    # Active: news/macro/econ/wire ("wire" = curated X accounts).
+    # youtube/social remain valid only for historical rows and replay tooling.
     source_type: Mapped[str] = mapped_column(String(30), index=True)
     external_id: Mapped[str] = mapped_column(String(512))
     content_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)

@@ -1845,6 +1845,7 @@
         <span class="rail">Thu<br>13 Aug</span>
         <span class="kicker">Drop StockTwits and Reddit; split the macro feeds</span>
         <div class="body">
+          <p><span class="chip c-done">shipped 16 Aug</span></p>
           <p>
             Social and YouTube are 54% of the corpus &mdash; 67% of everything scored &mdash; and
             produced <b>one</b> actionable item in 107 labelled. Cutting them removes 79% of scoring
@@ -1855,8 +1856,14 @@
             news filed as macro. Every genuinely relevant macro item had a price channel; splitting
             the feeds is what lets the weights follow the measurement.
           </p>
+          <p>
+            Production now registers news, price-channel macro, econ-calendar and X-wire only.
+            BBC World, Al Jazeera, Guardian World and NPR World remain available for geopolitical
+            discovery but are emitted as <code>news</code>, so they no longer receive macro weight
+            or consume the macro share of the synthesis prompt.
+          </p>
         </div>
-        <div class="check"><b>Check</b><span>relevance precision on a re-grade rises toward the 56.8% measured on the macro / news / econ subset alone.</span></div>
+        <div class="check"><b>Next check</b><span>relevance precision on a cleaned-corpus re-grade rises toward the 56.8% measured on the macro / news / econ subset alone.</span></div>
       </div>
 
       <div class="entry">

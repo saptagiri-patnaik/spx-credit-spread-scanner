@@ -144,12 +144,12 @@ class Settings(BaseSettings):
             ) from exc
         return self
 
-    # --- LLM (local Ollama) ---
+    # --- Local-backend settings (used only when llm_provider="ollama") ---
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "llama3.1:8b"
 
     # --- Free data-source keys ---
-    youtube_api_key: str | None = None
+    youtube_api_key: str | None = None  # retired collector; historical replay only
     newsapi_key: str | None = None
     finnhub_key: str | None = None
     fred_api_key: str | None = None
@@ -215,8 +215,8 @@ class Settings(BaseSettings):
     # in the log and the predictions table.
     alert_rationale_chars: int = 600
     # Spend the paid X budget on high-signal accounts (market-movers, fast headline
-    # feeds, analysts, Fed/macro officials), filtered to market-relevant posts. Retail
-    # $SPX/$SPY cashtag chatter (spammy) is covered for free by StockTwits + Reddit.
+    # feeds, analysts, Fed/macro officials), filtered to market-relevant posts. Bare
+    # retail cashtag chatter was removed after the labelled source-value review.
     # Override via X_QUERY in .env. Edit the account list to taste.
     # NickTimiraos is the WSJ reporter the market treats as the Fed's messaging
     # channel -- his posts move rates pricing directly, and no free feed carries
@@ -373,9 +373,8 @@ class Settings(BaseSettings):
     llm_max_chunks: int = 3          # max chunks scored per item
 
     # Drop items with fewer than this many words once cashtags, @mentions and
-    # URLs are stripped. A post like "$SPY $GOOG" has nothing to score but
-    # still votes in the aggregate. 8 removes ~31% of the corpus, ~97% of it
-    # social; 0 disables the filter.
+    # URLs are stripped. This still protects the curated X wire from terse
+    # symbol-only posts; 0 disables the filter.
     min_item_words: int = 8
     # Which prompt variant analysis/prompts.py should score with.
     scoring_prompt: str = "current"

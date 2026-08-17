@@ -37,6 +37,28 @@ MACRO_FEEDS = {
     },
 }
 
+# These broad world desks are useful for discovering geopolitical events, but
+# they are not macro/market channels.  Filing them as ``macro`` gave every item
+# the strongest source weight plus the macro ranking nudge; in production that
+# bucket then occupied the full 24-of-40 diversity cap despite grading only 24%
+# relevant.  Keep the feeds and the macro-keyword filter, but classify their
+# surviving stories as ordinary news so the weighting matches what they are.
+GENERAL_NEWS_SOURCES = frozenset({
+    "BBC World",
+    "Al Jazeera",
+    "Guardian World",
+    "NPR World",
+})
+
+
+def source_type_for_feed(name: str) -> str:
+    return "news" if name in GENERAL_NEWS_SOURCES else "macro"
+
+
+def effective_source_type(name: str, stored_source_type: str) -> str:
+    """Apply the feed split to rows collected before it shipped."""
+    return "news" if name in GENERAL_NEWS_SOURCES else stored_source_type
+
 MACRO_KEYWORDS = (
     # policy / monetary
     "tax", "tariff", "trade war", "trade deal", "trade talks", "interest rate",
@@ -79,7 +101,7 @@ class MacroCollector(BaseCollector):
                     items.append(
                         CollectedItem(
                             source=name,
-                            source_type=self.source_type,
+                            source_type=source_type_for_feed(name),
                             external_id=getattr(entry, "id", None) or link or title,
                             title=title,
                             content=summary,
