@@ -193,7 +193,7 @@ read-only outside `/tmp`.
 
 **Lambda: Tail logs (live)** is the closest equivalent to what you had.
 **Lambda: Recent errors** filters 24 hours to errors and tracebacks. In the
-browser: CloudWatch → Log groups → `/aws/lambda/spx-scanner`, where Log Insights
+browser: CloudWatch → Log groups → `/aws/lambda/spx-scanner-zip`, where Log Insights
 can query across days in ways the CLI cannot.
 
 Retention is set to 30 days. CloudWatch otherwise keeps logs forever and bills
