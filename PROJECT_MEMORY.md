@@ -144,3 +144,29 @@ Implemented same day, ahead of the 18 August cycle, at explicit user authorizati
 
 Full test suite (601 tests) passes unchanged after this change.
 
+## 2026-08-19: hazard-horizon export shipped (producer side only; Sopana consumer is out of workspace)
+
+Implemented and deployed same day, at explicit user authorization ("approved to commit and deploy... Deploy tonight"). Closes the tracker item "The event-risk window is right for the scanner and wrong for Sopana's veto" (docs/tracker.html) on the producer side.
+
+**What changed.** Every prediction's `market_context.hazard` now carries:
+- `downside_risk_raw` / `upside_risk_raw` (pre-calibration) and `downside_risk_effective` / `upside_risk_effective` (what gating actually reads) — identical numbers when calibration hasn't run, which is the correct answer, not a gap.
+- `next_high_impact_at` and `days_until_next_high_impact` — the earliest high-impact release inside the scanner's `dte_max` window (25 days), which happens to equal Sopana's own DTE, so no window-widening was needed.
+- `as_of`, `calibration_mode`, `build_version`.
+
+`event_risk` (the 4-day scanner flag) and the gating fields it feeds are **unchanged** — this is purely additive. `Aggregator._event_risk` in `analysis/aggregator.py` now returns a 3-tuple (flag, notes, earliest-event-datetime); `Pipeline._stamp_hazard_export` in `main.py` builds it for every newly synthesized prediction, regardless of calibration mode. Quiet and out-of-session Lambda cycles do not create prediction rows.
+
+**Production-blocking bug caught in review before deploy, and fixed:** the aggregators originally returned `event_horizon` as a top-level prediction key. `Repository.save_prediction` persists with `Prediction(**pred)`, and `Prediction` has no `event_horizon` column — the first populated cycle would have synthesized fine and then died at the save with `TypeError: 'event_horizon' is an invalid keyword argument`. Fixed by having `_stamp_hazard_export` `pop()` the key (fold it into `market_context.hazard`, then remove it) instead of reading it with `get()`. Regression coverage added in `tests/test_hazard_export.py`: direct `Prediction(**pred)` construction reproducing the exact failure, a full round trip through a real in-memory-SQLite `Repository.save_prediction()` confirming `market_context.hazard` survives persistence, and an unordered-events test confirming the earliest release is selected regardless of input order.
+
+**Contract decision (explicit, not a default):** the shadow phase exports through `predictions.market_context.hazard` rather than a dedicated shared-signal table — a separate table would duplicate the atomic prediction write and introduce drift risk. Sopana's read contract:
+- Read the newest prediction row containing `market_context.hazard`.
+- Treat `next_high_impact_at` as authoritative; `days_until_next_high_impact` is diagnostic only (derived, can go stale between `as_of` and read time).
+- Reject stale data using `hazard.as_of` and fail open (do not veto on missing/stale data).
+- Apply its own 25-day window against `next_high_impact_at` — never read the scanner's `event_risk` boolean, which stays scoped to this scanner's 4-day hold.
+- Initially log both raw and effective tails without binding either to a decision.
+
+**Verification before deploy:** full suite 607 passed, only the pre-existing unrelated `test_expire_stale_ignores_a_position_expiring_today` (local-date/UTC boundary bug, not touched by this change) failing, same as every prior run this week. `git diff --check` clean, no unrelated working-tree changes.
+
+**Deployed same day:** commit `703b09a` ("Export consumer-facing hazard horizon in prediction context"), built and uploaded via `deploy/build-zip.ps1 -Deploy`. All steps reported success: version resolved clean (no `-dirty`) as `r97-g703b09a`, Linux-native payload verified (21 `.so` files, psycopg2 + lxml present, no `.pyd`), concurrency-pinned guard held at 1, code update + function-updated wait completed, APP_VERSION merge preserved all 66 environment variables (matching the pre-deploy count — no accidental env wipe). `spx-scanner-zip` is running `r97-g703b09a`.
+
+**Validation plan for tomorrow (20 August), no manual invocation:** let the scheduled populated cycle run on its own. Expected evidence: the cycle completes as `r97-g703b09a` with no warnings/errors, and its `market_context.hazard` shows `next_high_impact_at` pointing at the 26 August GDP/PCE release (~7 days out at that point) while `event_risk` reads `false` — the scanner's own 4-day flag correctly not tripping for a release outside its hold period, with the horizon data available for a 25-DTE consumer to act on independently.
+
