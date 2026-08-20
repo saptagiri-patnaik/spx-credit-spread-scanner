@@ -101,9 +101,10 @@ def test_distant_events_still_reach_the_model_prompt():
     """
     agg = Aggregator(_settings(), _Log())
     now = dt.datetime.now(dt.timezone.utc)
-    flag, notes = agg._event_risk([_event(20, "Nonfarm Payrolls")], now)
+    flag, notes, next_at = agg._event_risk([_event(20, "Nonfarm Payrolls")], now)
     assert flag is False
     assert len(notes) == 1 and "Nonfarm Payrolls" in notes[0]
+    assert next_at is not None
 
 
 def test_empty_input_is_neutral():

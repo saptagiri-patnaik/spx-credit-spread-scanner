@@ -486,9 +486,25 @@
       <article class="item sev-risk">
         <div class="item-top">
           <h3>The event-risk window is right for the scanner and wrong for Sopana's veto</h3>
-          <span class="pill p-risk">open &middot; blocks the handoff</span>
-          <span class="when">found 9 Aug</span>
+          <span class="pill p-new">shipped 19 Aug &middot; producer only</span>
+          <span class="when">found 9 Aug &middot; shipped 19 Aug</span>
         </div>
+        <p>
+          <strong>Shipped the producer side.</strong> Every prediction's <code>market_context.hazard</code>
+          now carries the event <em>horizon</em> alongside the unchanged <code>event_risk</code> flag:
+          <code>next_high_impact_at</code> and <code>days_until_next_high_impact</code>, computed from the
+          same <code>dte_max</code>-windowed event query the flag already used (25 days today, which happens
+          to equal Sopana's own DTE, so nothing needed widening). The same block also names raw vs.
+          effective downside/upside risk explicitly (<code>*_raw</code> from the calibration stamp,
+          <code>*_effective</code> from what gating actually reads &mdash; identical numbers when calibration
+          hasn't run, which is correct, not a gap) plus <code>as_of</code>, <code>calibration_mode</code> and
+          <code>build_version</code>, so a consumer reading this block never has to also join the
+          predictions row for its own recency check. <code>event_risk</code> and the gating fields are
+          untouched byte-for-byte &mdash; this is purely additive. See
+          <code>Pipeline._stamp_hazard_export</code> in <code>main.py</code> and
+          <code>Aggregator._event_risk</code> in <code>analysis/aggregator.py</code>.
+        </p>
+        <p class="was">The original finding, kept because it is what the fix was aimed at:</p>
         <p>
           <code>r70</code> narrowed <code>event_risk</code> from &ldquo;a high-impact release anywhere
           in <code>dte_max</code>&rdquo; (25 days, therefore always true &mdash; 190 of 190) to
@@ -509,7 +525,7 @@
           &mdash; that would restore the always-true behaviour for the scanner &mdash; but to stop
           exporting a boolean at all.
         </p>
-        <div class="trigger"><b>Act, before 21 Aug</b><span>export the <em>event horizon</em> rather than the verdict: the next high-impact release date and its distance in days, and let each consumer apply its own window. The scanner keeps 4, Sopana uses 25. Cheap, and it removes the class of bug rather than this instance. Blocks the shadow veto, so it is on the critical path in a way none of the pricing items are.</span></div>
+        <div class="trigger"><b>Open: wire the consumer</b><span>the producer side is done and the field validation window (Thu 20 Aug) is available before Friday's planned shadow handoff. What remains is entirely on Sopana's side, outside this workspace: read <code>market_context.hazard.next_high_impact_at</code> / <code>days_until_next_high_impact</code> and apply its own 25-day window instead of this scanner's 4-day <code>event_risk</code> flag.</span></div>
       </article>
 
       <article class="item sev-watch">

@@ -309,6 +309,7 @@ class Pipeline:
         # scan below must see the corrected tails, which decide which sides may
         # be sold at all.
         prediction = self._calibrate(prediction)
+        self._stamp_hazard_export(prediction, cycle_now)
         # `market_open` is the real session (`session_open`, computed above),
         # not options_strategy.py's own internal `is_market_hours()` fallback
         # -- explicitly passed so a half day or a holiday cannot be read as
@@ -441,6 +442,50 @@ class Pipeline:
             if key in corrected and context.get(key) is not None:
                 parts.append(f"{name} {float(context[key]):.0%} -> {corrected[key]:.0%}")
         self.log.info("Calibration %s: %s", verb, " | ".join(parts))
+
+    def _stamp_hazard_export(self, prediction: dict, as_of: dt.datetime) -> None:
+        """Add the consumer-facing hazard export to `market_context`, in place.
+
+        Gating and paper trading read `event_risk` (a 4-day flag) and
+        `market_context["downside_risk"/"upside_risk"]` (post-calibration, if
+        calibration is active) exactly as before -- nothing here touches those.
+        This adds a second, explicitly-named export for consumers with a
+        different holding period: the raw model output, the effective
+        (post-calibration) numbers, and the event *horizon* rather than a
+        verdict, so a 25-DTE consumer can apply its own window instead of
+        inheriting the scanner's 4-day one. See docs/tracker.html, "The
+        event-risk window is right for the scanner and wrong for Sopana's veto".
+
+        Runs unconditionally -- including when calibration_mode is "off" or
+        there are no settled outcomes yet, in which case raw and effective are
+        the same numbers, which is the correct answer, not a missing one.
+
+        Pops `event_horizon` off `prediction` rather than reading it with
+        `get()`: both aggregators return it as a top-level key, but
+        `Repository.save_prediction` persists with `Prediction(**pred)` and
+        `Prediction` has no `event_horizon` column. Left in place, the first
+        populated cycle synthesizes fine and then dies at the save with
+        `TypeError: 'event_horizon' is an invalid keyword argument`. Once
+        folded into `market_context["hazard"]` here, the top-level key must
+        not survive to the persistence call.
+        """
+        context = prediction.get("market_context")
+        if context is None:
+            context = {}
+            prediction["market_context"] = context
+        calib_stamp = context.get("calibration") or {}
+        horizon = prediction.pop("event_horizon", None) or {}
+        context["hazard"] = {
+            "downside_risk_raw": calib_stamp.get("downside_raw", context.get("downside_risk")),
+            "upside_risk_raw": calib_stamp.get("upside_raw", context.get("upside_risk")),
+            "downside_risk_effective": context.get("downside_risk"),
+            "upside_risk_effective": context.get("upside_risk"),
+            "next_high_impact_at": horizon.get("next_high_impact_at"),
+            "days_until_next_high_impact": horizon.get("days_until_next_high_impact"),
+            "as_of": as_of.isoformat(),
+            "calibration_mode": getattr(self.s, "calibration_mode", "shadow"),
+            "build_version": get_version(),
+        }
 
     def _marking_chain(self, scan_chain: dict | None) -> dict | None:
         """A chain that actually contains the legs of every open position.

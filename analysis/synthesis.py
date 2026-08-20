@@ -287,7 +287,7 @@ class SynthesisAggregator:
         selected = self.select(stories, max_stories)
 
         now = dt.datetime.now(dt.timezone.utc)
-        event_risk, event_notes = self.fallback._event_risk(upcoming_events, now)
+        event_risk, event_notes, _next_high_impact_at = self.fallback._event_risk(upcoming_events, now)
         prompt = self.build_prompt(selected, market_context, event_notes, chatter)
         if hasattr(self.llm, "reset_usage"):
             self.llm.reset_usage()
@@ -389,6 +389,7 @@ class SynthesisAggregator:
             "sentiment_score": baseline["sentiment_score"],
             "macro_score": baseline["macro_score"],
             "event_risk": event_risk,
+            "event_horizon": baseline["event_horizon"],
             "market_context": context,
             "num_new_items": len(scored_items),
             "rationale": rationale,

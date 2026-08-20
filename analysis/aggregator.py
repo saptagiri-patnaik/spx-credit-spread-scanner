@@ -98,7 +98,7 @@ class Aggregator:
         confidence = magnitude * 0.6 + coverage * 0.2 + agreement * 0.2
         confidence = max(0.0, min(1.0, confidence))
 
-        event_risk, event_notes = self._event_risk(upcoming_events, now)
+        event_risk, event_notes, next_high_impact_at = self._event_risk(upcoming_events, now)
         if event_risk:
             # discount confidence around binary events (mild: it's on nearly always)
             confidence *= getattr(self.settings, "event_risk_confidence_factor", 0.92)
@@ -118,6 +118,15 @@ class Aggregator:
             "sentiment_score": round(sent_score, 4),
             "macro_score": round(macro_score, 4),
             "event_risk": event_risk,
+            "event_horizon": {
+                "next_high_impact_at": (
+                    next_high_impact_at.isoformat() if next_high_impact_at else None
+                ),
+                "days_until_next_high_impact": (
+                    round((next_high_impact_at - now).total_seconds() / 86400.0, 2)
+                    if next_high_impact_at else None
+                ),
+            },
             "market_context": market_context or {},
             "num_new_items": num_items,
             "rationale": self._rationale(
@@ -129,7 +138,7 @@ class Aggregator:
         return recency_weight(published, now, _RECENCY_HALF_LIFE_HOURS)
 
     def _event_risk(self, events, now):
-        """Return (flag, notes) -- deliberately on two different windows.
+        """Return (flag, notes, next_at) -- deliberately on two different windows.
 
         `notes` lists every high-impact release inside the DTE window, because
         that is context the synthesis model should reason about: a payrolls print
@@ -143,6 +152,13 @@ class Aggregator:
         branch permanently and left `short_delta_max` / `min_buffer` unreachable.
         Splitting the two lets the flag mean something again without changing a
         byte of the prompt the model sees.
+
+        `next_at` is the earliest high-impact release inside the DTE window,
+        exported alongside `flag` so a consumer with a *different* holding
+        period (e.g. a 25-DTE strategy sharing this scanner's 25-day
+        `dte_max`) can apply its own window instead of inheriting this one's
+        4-day answer. See docs/tracker.html, "The event-risk window is right
+        for the scanner and wrong for Sopana's veto".
         """
         window_end = now + dt.timedelta(days=self.settings.dte_max)
         flag_end = now + dt.timedelta(
@@ -150,6 +166,7 @@ class Aggregator:
         )
         high_impact = []
         imminent = False
+        next_at = None
         for event in events:
             when = event.published_at
             if not when:
@@ -160,7 +177,9 @@ class Aggregator:
                 high_impact.append(f"{event.title} @ {when.date()}")
                 if when <= flag_end:
                     imminent = True
-        return (imminent, high_impact)
+                if next_at is None or when < next_at:
+                    next_at = when
+        return (imminent, high_impact, next_at)
 
     def _rationale(self, direction, macro, sentiment, num_items, events, market_context) -> str:
         parts = [
